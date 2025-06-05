@@ -5,6 +5,7 @@
 #include "Character2DAsset.h"
 #include "Character2DActor.h"
 #include "Character2DEnums.h"
+#include "TimerManager.h"
 
 class ACharacter2DActor;
 
@@ -73,6 +74,15 @@ private:
     void OnTalkChanged(ECheckBoxState NewState);
     FReply OnTestBlink();
     FReply OnTestTalk();
+
+    // Helper methods to keep preview visible
+    void StopAllPreviewAnimations();
+    void EnsurePreviewVisible();
+
+    // Timer handles for temporary tests
+    FTimerHandle BlinkTestHandle;
+    FTimerHandle TalkTestHandle;
+    FTimerHandle TransitionTestHandle;
 
     // Visibility (CheckBox изменил состояние)
     void OnToggleSprites(ECheckBoxState NewState);

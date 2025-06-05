@@ -199,6 +199,7 @@ FReply SCharacter2DActionPanel::OnAppearInstantly()
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->AppearInstantly();
+        EnsurePreviewVisible(); // keep preview visible after action
         SyncStateFromActor();
     }
     return FReply::Handled();
@@ -209,7 +210,10 @@ FReply SCharacter2DActionPanel::OnDisappearInstantly()
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->DisappearInstantly();
-        SyncStateFromActor();
+        // Reappear shortly so preview is not left hidden
+        FTimerDelegate Del;
+        Del.BindLambda([this]() { EnsurePreviewVisible(); });
+        Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, 0.5f, false);
     }
     return FReply::Handled();
 }
@@ -219,6 +223,7 @@ FReply SCharacter2DActionPanel::OnAppearDefault()
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->AppearWithDefaultTransition();
+        EnsurePreviewVisible();
         SyncStateFromActor();
     }
     return FReply::Handled();
@@ -229,7 +234,11 @@ FReply SCharacter2DActionPanel::OnDisappearDefault()
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->DisappearWithDefaultTransition();
-        SyncStateFromActor();
+        // Show again after transition duration using timer
+        FCharacter2DTransitionSettings Settings = GetCurrentTransitionSettings();
+        FTimerDelegate Del;
+        Del.BindLambda([this]() { EnsurePreviewVisible(); });
+        Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
     }
     return FReply::Handled();
 }
@@ -238,15 +247,13 @@ FReply SCharacter2DActionPanel::OnResetCharacter()
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        // Останавливаем эмоции, говорение и мигание через публичное API
-        Actor->PlayEmotionWithDefaults(ECharacter2DEmotionEffect::None);
-        Actor->EnableTalking(false);
-        Actor->EnableBlinking(false);
+        Actor->GetWorldTimerManager().ClearTimer(BlinkTestHandle);
+        Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
+        Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
 
-        // Сбрасываем видимость и «появляем» мгновенно
-        Actor->SetSpritesVisible(true);
-        Actor->SetSkeletalVisible(true);
+        StopAllPreviewAnimations();
         Actor->AppearInstantly();
+        EnsurePreviewVisible();
 
         // Обновляем флаги UI
         SyncStateFromActor();
@@ -347,15 +354,15 @@ FReply SCharacter2DActionPanel::OnTestBlink()
     {
         Actor->EnableBlinking(true);
         FTimerDelegate TimerDel;
-        TimerDel.BindLambda([Actor]()
+        TimerDel.BindLambda([this]()
         {
-            if (IsValid(Actor))
+            if (ACharacter2DActor* InnerActor = PreviewActor.Get())
             {
-                Actor->EnableBlinking(false);
+                InnerActor->EnableBlinking(false);
+                EnsurePreviewVisible();
             }
         });
-        FTimerHandle TimerHandle;
-        Actor->GetWorldTimerManager().SetTimer(TimerHandle, TimerDel, 1.0f, false);
+        Actor->GetWorldTimerManager().SetTimer(BlinkTestHandle, TimerDel, 1.0f, false);
     }
     return FReply::Handled();
 }
@@ -366,15 +373,15 @@ FReply SCharacter2DActionPanel::OnTestTalk()
     {
         Actor->EnableTalking(true);
         FTimerDelegate TimerDel;
-        TimerDel.BindLambda([Actor]()
+        TimerDel.BindLambda([this]()
         {
-            if (IsValid(Actor))
+            if (ACharacter2DActor* InnerActor = PreviewActor.Get())
             {
-                Actor->EnableTalking(false);
+                InnerActor->EnableTalking(false);
+                EnsurePreviewVisible();
             }
         });
-        FTimerHandle TimerHandle;
-        Actor->GetWorldTimerManager().SetTimer(TimerHandle, TimerDel, 1.0f, false);
+        Actor->GetWorldTimerManager().SetTimer(TalkTestHandle, TimerDel, 1.0f, false);
     }
     return FReply::Handled();
 }
@@ -523,6 +530,11 @@ FReply SCharacter2DActionPanel::OnTestTransition()
         default:
             break;
     }
+
+    // Ensure actor becomes visible again after transition completes
+    FTimerDelegate Del;
+    Del.BindLambda([this]() { EnsurePreviewVisible(); });
+    Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
 
     return FReply::Handled();
 }
@@ -705,6 +717,11 @@ FReply SCharacter2DActionPanel::OnTestEmotion()
             break;
     }
 
+    // Ensure mesh visible after emotion finishes
+    FTimerDelegate Del;
+    Del.BindLambda([this]() { EnsurePreviewVisible(); });
+    Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
+
     return FReply::Handled();
 }
 
@@ -714,6 +731,7 @@ FReply SCharacter2DActionPanel::OnStopEmotion()
     {
         // Чтобы прервать текущую эмоцию, просто запустим «None»
         Actor->PlayEmotionWithDefaults(ECharacter2DEmotionEffect::None);
+        EnsurePreviewVisible();
     }
     return FReply::Handled();
 }
@@ -801,6 +819,25 @@ ECheckBoxState SCharacter2DActionPanel::GetSkeletalVisibleState() const
         return Actor->bSkeletalVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
     }
     return bSkeletalVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void SCharacter2DActionPanel::StopAllPreviewAnimations()
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->EnableBlinking(false);
+        Actor->EnableTalking(false);
+        Actor->StopCurrentEmotion();
+    }
+}
+
+void SCharacter2DActionPanel::EnsurePreviewVisible()
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->SetActorHiddenInGame(false);
+        Actor->SetBothVisible(true, true);
+    }
 }
 
 // =========================================
