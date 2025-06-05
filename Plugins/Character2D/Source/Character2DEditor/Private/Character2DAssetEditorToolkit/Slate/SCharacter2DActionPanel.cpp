@@ -25,14 +25,14 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
     // Initialize state from actor if valid
     SyncStateFromActor();
 
-    // --- Заполняем опции Dropdown для Transition ---
-    TransitionOptions.Empty();
-    for (int32 i = 0; i < static_cast<int32>(ECharacter2DTransitionType::ScaleOut) + 1; ++i)
+    // --- Заполняем опции Dropdown для Interpolation ---
+    InterpOptions.Empty();
+    for (int32 i = 0; i <= static_cast<int32>(EInterpType::Cubic); ++i)
     {
-        ECharacter2DTransitionType Type = static_cast<ECharacter2DTransitionType>(i);
-        TransitionOptions.Add(MakeShared<ECharacter2DTransitionType>(Type));
+        EInterpType Type = static_cast<EInterpType>(i);
+        InterpOptions.Add(MakeShared<EInterpType>(Type));
     }
-    CurrentTransition = TransitionOptions[0]; // по умолчанию «None»
+    CurrentInterp = InterpOptions[0];
 
     // --- Заполняем опции Dropdown для Emotion ---
     EmotionOptions.Empty();
@@ -115,6 +115,11 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
             ]
         ]
     ];
+
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->GetWorldTimerManager().SetTimer(LocationSyncHandle, FTimerDelegate::CreateSP(this, &SCharacter2DActionPanel::UpdateTargetFromActor), 0.1f, true);
+    }
 }
 
 void SCharacter2DActionPanel::SyncStateFromActor()
@@ -204,6 +209,7 @@ FReply SCharacter2DActionPanel::OnAppearInstantly()
     {
         Actor->AppearInstantly();
         EnsurePreviewVisible(); // keep preview visible after action
+        UpdateTargetFromActor();
         SyncStateFromActor();
     }
     return FReply::Handled();
@@ -216,7 +222,7 @@ FReply SCharacter2DActionPanel::OnDisappearInstantly()
         Actor->DisappearInstantly();
         // Reappear shortly so preview is not left hidden
         FTimerDelegate Del;
-        Del.BindLambda([this]() { EnsurePreviewVisible(); });
+        Del.BindLambda([this]() { EnsurePreviewVisible(); UpdateTargetFromActor(); });
         Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, 0.5f, false);
     }
     return FReply::Handled();
@@ -228,6 +234,7 @@ FReply SCharacter2DActionPanel::OnAppearDefault()
     {
         Actor->AppearWithDefaultTransition();
         EnsurePreviewVisible();
+        UpdateTargetFromActor();
         SyncStateFromActor();
     }
     return FReply::Handled();
@@ -242,7 +249,7 @@ FReply SCharacter2DActionPanel::OnDisappearDefault()
         FCharacter2DTransitionSettings Settings = GetCurrentTransitionSettings();
         float TotalTime = Settings.StartDelay + Settings.Duration;
         FTimerDelegate Del;
-        Del.BindLambda([this]() { EnsurePreviewVisible(); });
+        Del.BindLambda([this]() { EnsurePreviewVisible(); UpdateTargetFromActor(); });
         Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
         Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, TotalTime, false);
     }
@@ -256,6 +263,7 @@ FReply SCharacter2DActionPanel::OnResetCharacter()
         StopAllPreviewAnimations();
         Actor->AppearInstantly();
         EnsurePreviewVisible();
+        UpdateTargetFromActor();
 
         // Обновляем флаги UI
         SyncStateFromActor();
@@ -396,7 +404,7 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildTransitionTestingSection()
 {
     return SNew(SVerticalBox)
 
-    // Dropdown: Transition Type
+    // Dropdown: Interpolation Type
     + SVerticalBox::Slot().AutoHeight().Padding(2)
     [
         SNew(SHorizontalBox)
@@ -404,20 +412,20 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildTransitionTestingSection()
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
         [
             SNew(STextBlock)
-            .Text(LOCTEXT("TransitionTypeLabel", "Transition Type:"))
+            .Text(LOCTEXT("InterpTypeLabel", "Interpolation Type:"))
         ]
 
         + SHorizontalBox::Slot().FillWidth(1.0f).Padding(4, 0, 0, 0)
         [
-            SNew(SComboBox<TSharedPtr<ECharacter2DTransitionType>>)
-            .OptionsSource(&TransitionOptions)
-            .OnSelectionChanged(this, &SCharacter2DActionPanel::OnTransitionChanged)
-            .OnGenerateWidget_Lambda([](TSharedPtr<ECharacter2DTransitionType> Item)
+            SNew(SComboBox<TSharedPtr<EInterpType>>)
+            .OptionsSource(&InterpOptions)
+            .OnSelectionChanged(this, &SCharacter2DActionPanel::OnInterpChanged)
+            .OnGenerateWidget_Lambda([](TSharedPtr<EInterpType> Item)
             {
-                return SNew(STextBlock).Text(TransitionTypeToText(*Item));
+                return SNew(STextBlock).Text(InterpTypeToText(*Item));
             })
             [
-                SNew(STextBlock).Text(this, &SCharacter2DActionPanel::GetTransitionTypeText)
+                SNew(STextBlock).Text(this, &SCharacter2DActionPanel::GetInterpTypeText)
             ]
         ]
     ]
@@ -529,11 +537,11 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildTransitionTestingSection()
     ];
 }
 
-void SCharacter2DActionPanel::OnTransitionChanged(TSharedPtr<ECharacter2DTransitionType> NewSelection, ESelectInfo::Type SelectInfo)
+void SCharacter2DActionPanel::OnInterpChanged(TSharedPtr<EInterpType> NewSelection, ESelectInfo::Type SelectInfo)
 {
     if (NewSelection.IsValid())
     {
-        CurrentTransition = NewSelection;
+        CurrentInterp = NewSelection;
     }
 }
 
@@ -562,9 +570,9 @@ void SCharacter2DActionPanel::OnTeleportInstantChanged(ECheckBoxState NewState)
     bTeleportInstant = (NewState == ECheckBoxState::Checked);
 }
 
-FText SCharacter2DActionPanel::GetTransitionTypeText() const
+FText SCharacter2DActionPanel::GetInterpTypeText() const
 {
-    return TransitionTypeToText(*CurrentTransition);
+    return InterpTypeToText(*CurrentInterp);
 }
 
 FCharacter2DTransitionSettings SCharacter2DActionPanel::GetCurrentTransitionSettings() const
@@ -597,48 +605,13 @@ FReply SCharacter2DActionPanel::OnTestTransition()
     }
 
     ACharacter2DActor* Actor = PreviewActor.Get();
-    FCharacter2DTransitionSettings Settings = GetCurrentTransitionSettings();
 
-    switch (*CurrentTransition)
-    {
-        case ECharacter2DTransitionType::FadeIn:
-            Actor->PlayTransition(ECharacter2DTransitionType::FadeIn, Settings);
-            break;
-        case ECharacter2DTransitionType::FadeOut:
-            Actor->PlayTransition(ECharacter2DTransitionType::FadeOut, Settings);
-            break;
-        case ECharacter2DTransitionType::SlideInLeft:
-            Actor->PlayTransition(ECharacter2DTransitionType::SlideInLeft, Settings);
-            break;
-        case ECharacter2DTransitionType::SlideInRight:
-            Actor->PlayTransition(ECharacter2DTransitionType::SlideInRight, Settings);
-            break;
-        case ECharacter2DTransitionType::SlideOutLeft:
-            Actor->PlayTransition(ECharacter2DTransitionType::SlideOutLeft, Settings);
-            break;
-        case ECharacter2DTransitionType::SlideOutRight:
-            Actor->PlayTransition(ECharacter2DTransitionType::SlideOutRight, Settings);
-            break;
-        case ECharacter2DTransitionType::ScaleIn:
-            Actor->PlayTransition(ECharacter2DTransitionType::ScaleIn, Settings);
-            break;
-        case ECharacter2DTransitionType::ScaleOut:
-            Actor->PlayTransition(ECharacter2DTransitionType::ScaleOut, Settings);
-            break;
-        default:
-            break;
-    }
-
-    // Move actor to specified location and keep it visible
+    // Move actor to specified location using selected interpolation
     FVector TargetLocation(TargetX, TargetY, TargetZ);
-    MovePreviewToLocation(TargetLocation, bTeleportInstant ? 0.0f : TransitionDuration, bTeleportInstant);
-
-    // Removed SetVisibility(false) to prevent preview from disappearing
-    float TotalTime = Settings.StartDelay + Settings.Duration;
-    FTimerDelegate Del;
-    Del.BindLambda([this]() { EnsurePreviewVisible(); });
-    Actor->GetWorldTimerManager().ClearTimer(VisibilityHandle);
-    Actor->GetWorldTimerManager().SetTimer(VisibilityHandle, Del, TotalTime, false);
+    MovePreviewToLocation(TargetLocation, bTeleportInstant ? 0.0f : TransitionDuration, *CurrentInterp);
+    UpdateTargetFromActor();
+    // Ensure visibility in case any timeline hid the actor previously
+    EnsurePreviewVisible();
 
     return FReply::Handled();
 }
@@ -944,16 +917,16 @@ void SCharacter2DActionPanel::StopAllPreviewAnimations()
         Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
         Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
         Actor->GetWorldTimerManager().ClearTimer(VisibilityHandle);
+        Actor->GetWorldTimerManager().ClearTimer(LocationSyncHandle);
     }
 }
 
-void SCharacter2DActionPanel::MovePreviewToLocation(FVector NewLocation, float Duration, bool bInstant)
+void SCharacter2DActionPanel::MovePreviewToLocation(FVector NewLocation, float Duration, EInterpType InterpType)
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
-
-        if (bInstant || Duration <= 0.0f)
+        if (Duration <= 0.0f)
         {
             Actor->SetActorLocation(NewLocation);
             EnsurePreviewVisible();
@@ -965,11 +938,25 @@ void SCharacter2DActionPanel::MovePreviewToLocation(FVector NewLocation, float D
         TSharedRef<float> Elapsed = MakeShared<float>(0.0f);
 
         FTimerDelegate Tick;
-        Tick.BindLambda([this, Actor, StartLocation, NewLocation, Duration, Elapsed, Step]() mutable
+        Tick.BindLambda([this, Actor, StartLocation, NewLocation, Duration, Elapsed, Step, InterpType]() mutable
         {
             *Elapsed += Step;
             float Alpha = FMath::Clamp(*Elapsed / Duration, 0.0f, 1.0f);
-            FVector Pos = FMath::Lerp(StartLocation, NewLocation, Alpha);
+            FVector Pos;
+            switch (InterpType)
+            {
+                case EInterpType::EaseIn:
+                    Pos = FMath::InterpEaseIn(StartLocation, NewLocation, Alpha, 2.0f); break;
+                case EInterpType::EaseOut:
+                    Pos = FMath::InterpEaseOut(StartLocation, NewLocation, Alpha, 2.0f); break;
+                case EInterpType::EaseInOut:
+                    Pos = FMath::InterpEaseInOut(StartLocation, NewLocation, Alpha, 2.0f); break;
+                case EInterpType::Cubic:
+                    Pos = FMath::CubicInterp(StartLocation, FVector::ZeroVector, NewLocation, FVector::ZeroVector, Alpha); break;
+                case EInterpType::Linear:
+                default:
+                    Pos = FMath::Lerp(StartLocation, NewLocation, Alpha); break;
+            }
             Actor->SetActorLocation(Pos);
             if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
             {
@@ -979,6 +966,17 @@ void SCharacter2DActionPanel::MovePreviewToLocation(FVector NewLocation, float D
         });
 
         Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Tick, Step, true);
+    }
+}
+
+void SCharacter2DActionPanel::UpdateTargetFromActor()
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        FVector Loc = Actor->GetActorLocation();
+        TargetX = Loc.X;
+        TargetY = Loc.Y;
+        TargetZ = Loc.Z;
     }
 }
 
@@ -995,20 +993,16 @@ void SCharacter2DActionPanel::EnsurePreviewVisible()
 // === Конвертеры enum -> текст для Dropdown'ов ===
 // =========================================
 
-FText SCharacter2DActionPanel::TransitionTypeToText(ECharacter2DTransitionType Type)
+FText SCharacter2DActionPanel::InterpTypeToText(EInterpType Type)
 {
     switch (Type)
     {
-        case ECharacter2DTransitionType::None:            return LOCTEXT("Trans_None", "None");
-        case ECharacter2DTransitionType::FadeIn:          return LOCTEXT("Trans_FadeIn", "Fade In");
-        case ECharacter2DTransitionType::FadeOut:         return LOCTEXT("Trans_FadeOut", "Fade Out");
-        case ECharacter2DTransitionType::SlideInLeft:     return LOCTEXT("Trans_SlideInLeft", "Slide In From Left");
-        case ECharacter2DTransitionType::SlideInRight:    return LOCTEXT("Trans_SlideInRight", "Slide In From Right");
-        case ECharacter2DTransitionType::SlideOutLeft:    return LOCTEXT("Trans_SlideOutLeft", "Slide Out To Left");
-        case ECharacter2DTransitionType::SlideOutRight:   return LOCTEXT("Trans_SlideOutRight", "Slide Out To Right");
-        case ECharacter2DTransitionType::ScaleIn:         return LOCTEXT("Trans_ScaleIn", "Scale In");
-        case ECharacter2DTransitionType::ScaleOut:        return LOCTEXT("Trans_ScaleOut", "Scale Out");
-        default:                                         return LOCTEXT("Trans_Unknown", "Unknown");
+        case EInterpType::Linear:     return LOCTEXT("Interp_Linear", "Linear");
+        case EInterpType::EaseIn:     return LOCTEXT("Interp_EaseIn", "Ease In");
+        case EInterpType::EaseOut:    return LOCTEXT("Interp_EaseOut", "Ease Out");
+        case EInterpType::EaseInOut:  return LOCTEXT("Interp_EaseInOut", "Ease In Out");
+        case EInterpType::Cubic:      return LOCTEXT("Interp_Cubic", "Cubic");
+        default:                      return LOCTEXT("Interp_Unknown", "Unknown");
     }
 }
 

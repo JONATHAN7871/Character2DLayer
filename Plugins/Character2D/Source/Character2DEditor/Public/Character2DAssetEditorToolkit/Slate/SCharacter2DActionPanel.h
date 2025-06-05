@@ -39,8 +39,17 @@ private:
     bool bSkeletalVisible = true;
 
     // Для Transition Section
-    TArray<TSharedPtr<ECharacter2DTransitionType>> TransitionOptions;
-    TSharedPtr<ECharacter2DTransitionType> CurrentTransition;
+    enum class EInterpType : uint8
+    {
+        Linear,
+        EaseIn,
+        EaseOut,
+        EaseInOut,
+        Cubic
+    };
+
+    TArray<TSharedPtr<EInterpType>> InterpOptions;
+    TSharedPtr<EInterpType> CurrentInterp;
     float TransitionDuration = 1.0f;
     float TargetX = 0.0f;
     float TargetY = 0.0f;
@@ -88,6 +97,7 @@ private:
     FTimerHandle TalkTestHandle;
     FTimerHandle TransitionTestHandle;
     FTimerHandle VisibilityHandle;
+    FTimerHandle LocationSyncHandle;
 
     // Visibility (CheckBox изменил состояние)
     void OnToggleSprites(ECheckBoxState NewState);
@@ -96,15 +106,16 @@ private:
     ECheckBoxState GetSkeletalVisibleState() const;
 
     // Transition UI callbacks
-    void OnTransitionChanged(TSharedPtr<ECharacter2DTransitionType> NewSelection, ESelectInfo::Type SelectInfo);
+    void OnInterpChanged(TSharedPtr<EInterpType> NewSelection, ESelectInfo::Type SelectInfo);
     void OnTransitionDurationChanged(float NewValue);
     void OnTargetXChanged(float NewValue);
     void OnTargetYChanged(float NewValue);
     void OnTargetZChanged(float NewValue);
     void OnTeleportInstantChanged(ECheckBoxState NewState);
-    FText GetTransitionTypeText() const;
+    FText GetInterpTypeText() const;
     FCharacter2DTransitionSettings GetCurrentTransitionSettings() const;
-    void MovePreviewToLocation(FVector NewLocation, float Duration, bool bInstant);
+    void MovePreviewToLocation(FVector NewLocation, float Duration, EInterpType InterpType);
+    void UpdateTargetFromActor();
     FReply OnTestTransition();
 
     // Emotion UI callbacks
@@ -124,6 +135,7 @@ private:
     }
 
     // Конвертеры enum -> текст
-    static FText TransitionTypeToText(ECharacter2DTransitionType Type);
+    static FText InterpTypeToText(EInterpType Type);
     static FText EmotionTypeToText(ECharacter2DEmotionEffect Type);
 };
+

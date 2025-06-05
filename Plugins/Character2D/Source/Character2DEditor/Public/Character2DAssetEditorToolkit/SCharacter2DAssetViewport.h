@@ -37,7 +37,16 @@ protected:
 	// Создатель viewport client
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override;
 
-	virtual void OnFloatingButtonClicked() override ;
+       virtual void OnFloatingButtonClicked() override;
+
+       /** Camera control handlers */
+       FReply OnViewPerspective();
+       FReply OnViewTop();
+       FReply OnViewSide();
+       FReply OnViewFront();
+       FReply OnResetCamera();
+
+       TSharedRef<SWidget> BuildCameraToolbar();
 
 private:
 	TSharedPtr<FPreviewScene> PreviewScene;
@@ -45,3 +54,4 @@ private:
 	UCharacter2DAsset* Asset = nullptr;
 	TSharedPtr<FEditorViewportClient> EditorViewportClient;
 };
+
