@@ -234,11 +234,13 @@ FReply SCharacter2DActionPanel::OnDisappearDefault()
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
         Actor->DisappearWithDefaultTransition();
-        // Show again after transition duration using timer
+        // Restore visibility after the entire transition including any delay
         FCharacter2DTransitionSettings Settings = GetCurrentTransitionSettings();
+        float TotalTime = Settings.StartDelay + Settings.Duration;
         FTimerDelegate Del;
         Del.BindLambda([this]() { EnsurePreviewVisible(); });
-        Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
+        Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
+        Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, TotalTime, false);
     }
     return FReply::Handled();
 }
@@ -528,9 +530,11 @@ FReply SCharacter2DActionPanel::OnTestTransition()
     }
 
     // Ensure actor becomes visible again after transition completes
+    float TotalTime = Settings.StartDelay + Settings.Duration;
     FTimerDelegate Del;
     Del.BindLambda([this]() { EnsurePreviewVisible(); });
-    Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
+    Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
+    Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, TotalTime, false);
 
     return FReply::Handled();
 }
