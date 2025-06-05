@@ -247,10 +247,6 @@ FReply SCharacter2DActionPanel::OnResetCharacter()
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        Actor->GetWorldTimerManager().ClearTimer(BlinkTestHandle);
-        Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
-        Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
-
         StopAllPreviewAnimations();
         Actor->AppearInstantly();
         EnsurePreviewVisible();
@@ -717,9 +713,17 @@ FReply SCharacter2DActionPanel::OnTestEmotion()
             break;
     }
 
-    // Ensure mesh visible after emotion finishes
+    // Stop the emotion after the requested duration and make sure the actor stays visible
+    Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
     FTimerDelegate Del;
-    Del.BindLambda([this]() { EnsurePreviewVisible(); });
+    Del.BindLambda([this]()
+    {
+        if (ACharacter2DActor* Inner = PreviewActor.Get())
+        {
+            Inner->StopCurrentEmotion();
+            EnsurePreviewVisible();
+        }
+    });
     Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, Settings.Duration, false);
 
     return FReply::Handled();
@@ -828,6 +832,9 @@ void SCharacter2DActionPanel::StopAllPreviewAnimations()
         Actor->EnableBlinking(false);
         Actor->EnableTalking(false);
         Actor->StopCurrentEmotion();
+        Actor->GetWorldTimerManager().ClearTimer(BlinkTestHandle);
+        Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
+        Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
     }
 }
 
