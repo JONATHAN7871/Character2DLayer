@@ -55,7 +55,8 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 		EditorViewportClient->SetViewLocation(FVector(0.f, 500.f, 75.f));
 		EditorViewportClient->SetViewRotation(FRotator(0.f, -90.f, 0.f));
                 EditorViewportClient->EngineShowFlags.SetPaper2DSprites(true);
-                EditorViewportClient->SetWidgetMode(UE::Widget::EWidgetMode::Translate);
+                // Use legacy widget mode enum to avoid compile issues
+                EditorViewportClient->SetWidgetMode(UE::Widget::WM_Translate);
         }
 }
 
