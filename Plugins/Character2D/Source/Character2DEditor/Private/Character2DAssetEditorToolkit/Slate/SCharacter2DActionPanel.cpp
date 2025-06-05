@@ -354,7 +354,8 @@ FReply SCharacter2DActionPanel::OnTestBlink()
                 Actor->EnableBlinking(false);
             }
         });
-        Actor->GetWorldTimerManager().SetTimer(TimerDel, 1.0f, false);
+        FTimerHandle TimerHandle;
+        Actor->GetWorldTimerManager().SetTimer(TimerHandle, TimerDel, 1.0f, false);
     }
     return FReply::Handled();
 }
@@ -372,7 +373,8 @@ FReply SCharacter2DActionPanel::OnTestTalk()
                 Actor->EnableTalking(false);
             }
         });
-        Actor->GetWorldTimerManager().SetTimer(TimerDel, 1.0f, false);
+        FTimerHandle TimerHandle;
+        Actor->GetWorldTimerManager().SetTimer(TimerHandle, TimerDel, 1.0f, false);
     }
     return FReply::Handled();
 }
