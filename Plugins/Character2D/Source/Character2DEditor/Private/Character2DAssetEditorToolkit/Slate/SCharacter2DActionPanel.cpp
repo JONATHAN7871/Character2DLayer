@@ -20,12 +20,7 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
     CharacterAsset = InArgs._CharacterAsset;
     PreviewActor   = InArgs._PreviewActor;
 
-    if (ACharacter2DActor* Actor = PreviewActor.Get())
-    {
-        // When the preview actor finishes an emotion, ensure it stays visible
-        EmotionFinishedHandle = Actor->OnEmotionFinished.AddSP(
-            this, &SCharacter2DActionPanel::HandleEmotionFinished);
-    }
+    // Preview restoration is managed by timers instead of event bindings
 
     // Initialize state from actor if valid
     SyncStateFromActor();
@@ -891,21 +886,4 @@ FText SCharacter2DActionPanel::EmotionTypeToText(ECharacter2DEmotionEffect Type)
         default:                                    return LOCTEXT("Emo_Unknown", "Unknown");
     }
 }
-
-SCharacter2DActionPanel::~SCharacter2DActionPanel()
-{
-    if (ACharacter2DActor* Actor = PreviewActor.Get())
-    {
-        if (EmotionFinishedHandle.IsValid())
-        {
-            Actor->OnEmotionFinished.Remove(EmotionFinishedHandle);
-        }
-    }
-}
-
-void SCharacter2DActionPanel::HandleEmotionFinished(ECharacter2DEmotionEffect /*Emotion*/)
-{
-    EnsurePreviewVisible();
-}
-
 #undef LOCTEXT_NAMESPACE

@@ -24,7 +24,6 @@ public:
     SLATE_END_ARGS()
 
     void Construct(const FArguments& InArgs);
-    ~SCharacter2DActionPanel();
 
 private:
     // Ссылка на DataAsset (вдруг понадобится читать настройки)
@@ -84,7 +83,6 @@ private:
     FTimerHandle BlinkTestHandle;
     FTimerHandle TalkTestHandle;
     FTimerHandle TransitionTestHandle;
-    FDelegateHandle EmotionFinishedHandle;
 
     // Visibility (CheckBox изменил состояние)
     void OnToggleSprites(ECheckBoxState NewState);
@@ -108,8 +106,6 @@ private:
     FReply OnTestEmotion();
     FReply OnStopEmotion();
 
-    // Callback when preview actor finishes an emotion
-    void HandleEmotionFinished(ECharacter2DEmotionEffect Emotion);
 
     // Помощники
     bool IsPreviewActorValid() const
