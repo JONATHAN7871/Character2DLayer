@@ -71,6 +71,8 @@ private:
     // Blink / Talk
     void OnBlinkChanged(ECheckBoxState NewState);
     void OnTalkChanged(ECheckBoxState NewState);
+    FReply OnTestBlink();
+    FReply OnTestTalk();
 
     // Visibility (CheckBox изменил состояние)
     void OnToggleSprites(ECheckBoxState NewState);

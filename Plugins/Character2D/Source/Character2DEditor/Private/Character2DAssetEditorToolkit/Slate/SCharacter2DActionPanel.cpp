@@ -2,6 +2,7 @@
 #include "Character2DActor.h"
 #include "Character2DAsset.h"
 #include "Character2DEnums.h"
+#include "TimerManager.h"
 
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SExpandableArea.h"
@@ -261,7 +262,7 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
 {
     return SNew(SVerticalBox)
 
-    // Blink
+    // Blink Row
     + SVerticalBox::Slot().AutoHeight().Padding(2)
     [
         SNew(SHorizontalBox)
@@ -281,9 +282,17 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
             SNew(STextBlock)
             .Text(LOCTEXT("EnableBlinking", "Enable Blinking"))
         ]
+
+        + SHorizontalBox::Slot().AutoWidth().Padding(8,0)
+        [
+            SNew(SButton)
+            .Text(LOCTEXT("TestBlink", "Test Blink"))
+            .OnClicked(this, &SCharacter2DActionPanel::OnTestBlink)
+            .IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid)
+        ]
     ]
 
-    // Talk
+    // Talk Row
     + SVerticalBox::Slot().AutoHeight().Padding(2)
     [
         SNew(SHorizontalBox)
@@ -302,6 +311,14 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
         [
             SNew(STextBlock)
             .Text(LOCTEXT("EnableTalking", "Enable Talking"))
+        ]
+
+        + SHorizontalBox::Slot().AutoWidth().Padding(8,0)
+        [
+            SNew(SButton)
+            .Text(LOCTEXT("TestTalk", "Test Talk"))
+            .OnClicked(this, &SCharacter2DActionPanel::OnTestTalk)
+            .IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid)
         ]
     ];
 }
@@ -322,6 +339,42 @@ void SCharacter2DActionPanel::OnTalkChanged(ECheckBoxState NewState)
     {
         Actor->EnableTalking(bTalkingEnabled);
     }
+}
+
+FReply SCharacter2DActionPanel::OnTestBlink()
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->EnableBlinking(true);
+        FTimerDelegate TimerDel;
+        TimerDel.BindLambda([Actor]()
+        {
+            if (IsValid(Actor))
+            {
+                Actor->EnableBlinking(false);
+            }
+        });
+        Actor->GetWorldTimerManager().SetTimer(TimerDel, 1.0f, false);
+    }
+    return FReply::Handled();
+}
+
+FReply SCharacter2DActionPanel::OnTestTalk()
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->EnableTalking(true);
+        FTimerDelegate TimerDel;
+        TimerDel.BindLambda([Actor]()
+        {
+            if (IsValid(Actor))
+            {
+                Actor->EnableTalking(false);
+            }
+        });
+        Actor->GetWorldTimerManager().SetTimer(TimerDel, 1.0f, false);
+    }
+    return FReply::Handled();
 }
 
 // =========================================
