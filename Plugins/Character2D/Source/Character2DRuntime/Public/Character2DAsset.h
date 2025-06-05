@@ -4,7 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "PaperSprite.h"
 #include "PaperFlipbook.h"
-#include "AssetRegistry/FAssetRegistryTagsContext.h"
+#include "AssetRegistry/AssetRegistryTagsContext.h"
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
@@ -319,7 +319,6 @@ public:
     // Editor-only methods for validation and migration
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
     virtual void GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const override;
-    virtual void GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const override;
     
     /** Get a human-readable description of the current rendering mode */
     UFUNCTION(CallInEditor, Category = "Character2D|Debug")

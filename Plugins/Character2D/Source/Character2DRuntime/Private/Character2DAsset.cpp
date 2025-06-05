@@ -1,6 +1,6 @@
 #include "Character2DAsset.h"
 #include "Engine/World.h"
-#include "AssetRegistry/FAssetRegistryTagsContext.h"
+#include "AssetRegistry/AssetRegistryTagsContext.h"
 
 void UCharacter2DAsset::PostLoad()
 {

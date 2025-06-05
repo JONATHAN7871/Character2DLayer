@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Widgets/SWidget.h"
+#include "Widgets/SLeafWidget.h"
 
 /**
  * Custom widget that overrides Prepass without recursive loops.
