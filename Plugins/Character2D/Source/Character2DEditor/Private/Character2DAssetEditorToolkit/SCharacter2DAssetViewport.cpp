@@ -34,7 +34,7 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
             SNew(SOverlay)
             + SOverlay::Slot()
             [
-                SEditorViewport::GetWidget().ToSharedRef()
+                GetViewportWidget()
             ]
             + SOverlay::Slot()
             .HAlign(HAlign_Left)
@@ -55,7 +55,7 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 		EditorViewportClient->SetViewLocation(FVector(0.f, 500.f, 75.f));
 		EditorViewportClient->SetViewRotation(FRotator(0.f, -90.f, 0.f));
                 EditorViewportClient->EngineShowFlags.SetPaper2DSprites(true);
-                EditorViewportClient->SetWidgetMode(FWidget::WM_Translate);
+                EditorViewportClient->SetWidgetMode(UE::Widget::EWidgetMode::Translate);
         }
 }
 
