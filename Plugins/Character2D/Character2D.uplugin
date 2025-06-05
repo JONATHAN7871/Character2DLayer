@@ -1,0 +1,33 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "0.1.0",
+    "FriendlyName": "2D Character Toolkit",
+    "Description": "Runtime + Editor инструменты для послойных 2D-персонажей",
+    "Category": "Animation",
+    "CreatedBy": "Evgene",
+    "CompatibleEngineVersions": [
+        {
+            "MajorVersion": 5,
+            "MinorVersion": 5
+        }
+    ],
+    "CanContainContent": true,
+    "Installed": true,
+    "Modules": [
+        {
+            "Name": "Character2DRuntime",
+            "Type": "Runtime",
+            "LoadingPhase": "PreDefault"
+        },
+        {
+            "Name": "Character2DEditor",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
+        }
+
+    ],
+    "Plugins": [
+        { "Name": "Paper2D", "Enabled": true }
+    ]
+}
