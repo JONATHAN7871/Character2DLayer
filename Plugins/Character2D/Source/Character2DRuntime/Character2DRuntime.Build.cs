@@ -7,8 +7,8 @@ public class Character2DRuntime : ModuleRules
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		// Только рантайм-модули
-		PublicDependencyModuleNames.AddRange(
-			new[] { "Core", "CoreUObject", "Engine", "Paper2D" });
+                PublicDependencyModuleNames.AddRange(
+                        new[] { "Core", "CoreUObject", "Engine", "Paper2D", "AssetRegistry" });
 
 		PrivateDependencyModuleNames.AddRange(
 			new[] { "SlateCore" });

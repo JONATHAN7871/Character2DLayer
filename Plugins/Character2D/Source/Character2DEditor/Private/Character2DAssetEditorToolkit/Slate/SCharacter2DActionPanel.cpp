@@ -1019,3 +1019,4 @@ FText SCharacter2DActionPanel::EmotionTypeToText(ECharacter2DEmotionEffect Type)
     }
 }
 #undef LOCTEXT_NAMESPACE
+

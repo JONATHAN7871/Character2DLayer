@@ -15,8 +15,9 @@ public:
 
     void Construct(const FArguments& InArgs);
 
-    // Override Prepass using the same signature as SWidget
-    virtual void SlatePrepass(float LayoutScaleMultiplier) override;
+    // Custom Prepass function using the same name as SWidget's method.
+    // Not marked override because SlatePrepass is not virtual in UE5.5.
+    void SlatePrepass(float LayoutScaleMultiplier);
 
 protected:
     void NonRecursivePrepass(float LayoutScaleMultiplier);
