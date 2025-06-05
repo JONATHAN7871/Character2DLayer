@@ -42,6 +42,10 @@ private:
     TArray<TSharedPtr<ECharacter2DTransitionType>> TransitionOptions;
     TSharedPtr<ECharacter2DTransitionType> CurrentTransition;
     float TransitionDuration = 1.0f;
+    float TargetX = 0.0f;
+    float TargetY = 0.0f;
+    float TargetZ = 0.0f;
+    bool bTeleportInstant = false;
 
     // Для Emotion Section
     TArray<TSharedPtr<ECharacter2DEmotionEffect>> EmotionOptions;
@@ -83,6 +87,7 @@ private:
     FTimerHandle BlinkTestHandle;
     FTimerHandle TalkTestHandle;
     FTimerHandle TransitionTestHandle;
+    FTimerHandle VisibilityHandle;
 
     // Visibility (CheckBox изменил состояние)
     void OnToggleSprites(ECheckBoxState NewState);
@@ -93,8 +98,13 @@ private:
     // Transition UI callbacks
     void OnTransitionChanged(TSharedPtr<ECharacter2DTransitionType> NewSelection, ESelectInfo::Type SelectInfo);
     void OnTransitionDurationChanged(float NewValue);
+    void OnTargetXChanged(float NewValue);
+    void OnTargetYChanged(float NewValue);
+    void OnTargetZChanged(float NewValue);
+    void OnTeleportInstantChanged(ECheckBoxState NewState);
     FText GetTransitionTypeText() const;
     FCharacter2DTransitionSettings GetCurrentTransitionSettings() const;
+    void MovePreviewToLocation(FVector NewLocation, float Duration, bool bInstant);
     FReply OnTestTransition();
 
     // Emotion UI callbacks

@@ -43,10 +43,12 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
     }
     CurrentEmotion = EmotionOptions[0]; // по умолчанию «Shake»
 
-    // Начальные значения для Duration / Intensity
+    // Начальные значения для Duration / Intensity and target location
     TransitionDuration = 1.0f;
     EmotionDuration    = 2.0f;
     EmotionIntensity   = 0.5f;
+    TargetX = TargetY = TargetZ = 0.0f;
+    bTeleportInstant = false;
 
     // Собираем весь UI в SScrollBox
     ChildSlot
@@ -441,6 +443,82 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildTransitionTestingSection()
         ]
     ]
 
+    // Target X
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("TargetXLabel", "Target X:"))
+        ]
+
+        + SHorizontalBox::Slot().FillWidth(1.0f).Padding(4, 0, 0, 0)
+        [
+            SNew(SNumericEntryBox<float>)
+            .Value_Lambda([this]() { return TargetX; })
+            .OnValueChanged(this, &SCharacter2DActionPanel::OnTargetXChanged)
+        ]
+    ]
+
+    // Target Y
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("TargetYLabel", "Target Y:"))
+        ]
+
+        + SHorizontalBox::Slot().FillWidth(1.0f).Padding(4, 0, 0, 0)
+        [
+            SNew(SNumericEntryBox<float>)
+            .Value_Lambda([this]() { return TargetY; })
+            .OnValueChanged(this, &SCharacter2DActionPanel::OnTargetYChanged)
+        ]
+    ]
+
+    // Target Z
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("TargetZLabel", "Target Z:"))
+        ]
+
+        + SHorizontalBox::Slot().FillWidth(1.0f).Padding(4, 0, 0, 0)
+        [
+            SNew(SNumericEntryBox<float>)
+            .Value_Lambda([this]() { return TargetZ; })
+            .OnValueChanged(this, &SCharacter2DActionPanel::OnTargetZChanged)
+        ]
+    ]
+
+    // Teleport instantly checkbox
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(SCheckBox)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnTeleportInstantChanged)
+            .IsChecked_Lambda([this]() { return bTeleportInstant ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+        ]
+
+        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8,0,0,0)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("TeleportInstant", "Teleport Instantly"))
+        ]
+    ]
+
     // Кнопка Test Transition
     + SVerticalBox::Slot().AutoHeight().Padding(2)
     [
@@ -462,6 +540,26 @@ void SCharacter2DActionPanel::OnTransitionChanged(TSharedPtr<ECharacter2DTransit
 void SCharacter2DActionPanel::OnTransitionDurationChanged(float NewValue)
 {
     TransitionDuration = FMath::Clamp(NewValue, 0.1f, 10.0f);
+}
+
+void SCharacter2DActionPanel::OnTargetXChanged(float NewValue)
+{
+    TargetX = NewValue;
+}
+
+void SCharacter2DActionPanel::OnTargetYChanged(float NewValue)
+{
+    TargetY = NewValue;
+}
+
+void SCharacter2DActionPanel::OnTargetZChanged(float NewValue)
+{
+    TargetZ = NewValue;
+}
+
+void SCharacter2DActionPanel::OnTeleportInstantChanged(ECheckBoxState NewState)
+{
+    bTeleportInstant = (NewState == ECheckBoxState::Checked);
 }
 
 FText SCharacter2DActionPanel::GetTransitionTypeText() const
@@ -531,12 +629,16 @@ FReply SCharacter2DActionPanel::OnTestTransition()
             break;
     }
 
-    // Ensure actor becomes visible again after transition completes
+    // Move actor to specified location and keep it visible
+    FVector TargetLocation(TargetX, TargetY, TargetZ);
+    MovePreviewToLocation(TargetLocation, bTeleportInstant ? 0.0f : TransitionDuration, bTeleportInstant);
+
+    // Removed SetVisibility(false) to prevent preview from disappearing
     float TotalTime = Settings.StartDelay + Settings.Duration;
     FTimerDelegate Del;
     Del.BindLambda([this]() { EnsurePreviewVisible(); });
-    Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
-    Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Del, TotalTime, false);
+    Actor->GetWorldTimerManager().ClearTimer(VisibilityHandle);
+    Actor->GetWorldTimerManager().SetTimer(VisibilityHandle, Del, TotalTime, false);
 
     return FReply::Handled();
 }
@@ -841,6 +943,42 @@ void SCharacter2DActionPanel::StopAllPreviewAnimations()
         Actor->GetWorldTimerManager().ClearTimer(BlinkTestHandle);
         Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
         Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
+        Actor->GetWorldTimerManager().ClearTimer(VisibilityHandle);
+    }
+}
+
+void SCharacter2DActionPanel::MovePreviewToLocation(FVector NewLocation, float Duration, bool bInstant)
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
+
+        if (bInstant || Duration <= 0.0f)
+        {
+            Actor->SetActorLocation(NewLocation);
+            EnsurePreviewVisible();
+            return;
+        }
+
+        const FVector StartLocation = Actor->GetActorLocation();
+        const float Step = 0.02f;
+        TSharedRef<float> Elapsed = MakeShared<float>(0.0f);
+
+        FTimerDelegate Tick;
+        Tick.BindLambda([this, Actor, StartLocation, NewLocation, Duration, Elapsed, Step]() mutable
+        {
+            *Elapsed += Step;
+            float Alpha = FMath::Clamp(*Elapsed / Duration, 0.0f, 1.0f);
+            FVector Pos = FMath::Lerp(StartLocation, NewLocation, Alpha);
+            Actor->SetActorLocation(Pos);
+            if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
+            {
+                Actor->GetWorldTimerManager().ClearTimer(TransitionTestHandle);
+                EnsurePreviewVisible();
+            }
+        });
+
+        Actor->GetWorldTimerManager().SetTimer(TransitionTestHandle, Tick, Step, true);
     }
 }
 
