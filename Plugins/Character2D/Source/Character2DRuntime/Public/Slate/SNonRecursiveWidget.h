@@ -13,11 +13,9 @@ public:
     SLATE_BEGIN_ARGS(SNonRecursiveWidget) {}
     SLATE_END_ARGS()
 
-    void Construct(const FArguments& InArgs)
-    {
-    }
+    void Construct(const FArguments& InArgs);
 
-    // Override Prepass to avoid infinite recursion between Prepass_Internal and Prepass_ChildLoop
+    // Override Prepass using the same signature as SWidget
     virtual void SlatePrepass(float LayoutScaleMultiplier) override;
 
 protected:

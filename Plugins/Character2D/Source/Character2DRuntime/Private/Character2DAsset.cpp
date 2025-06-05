@@ -1,5 +1,6 @@
 #include "Character2DAsset.h"
 #include "Engine/World.h"
+#include "AssetRegistry/FAssetRegistryTagsContext.h"
 
 void UCharacter2DAsset::PostLoad()
 {
@@ -216,27 +217,27 @@ bool UCharacter2DAsset::IsValidForRuntime() const
 	return (bHasSprites || bHasSkeletalMeshes);
 }
 
-void UCharacter2DAsset::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
+void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const
 {
-	Super::GetAssetRegistryTags(OutTags);
-	
-	// Add custom tags for asset browser filtering
-	OutTags.Add(FAssetRegistryTag("RenderingMode", GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical));
-	
-	OutTags.Add(FAssetRegistryTag("HasSprites", 
-		HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"), 
-		FAssetRegistryTag::TT_Alphabetical));
-		
-	OutTags.Add(FAssetRegistryTag("HasSkeletalMeshes", 
-		HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"), 
-		FAssetRegistryTag::TT_Alphabetical));
-		
-	OutTags.Add(FAssetRegistryTag("SupportsBlinking", 
-		(bAutoBlink && SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"), 
-		FAssetRegistryTag::TT_Alphabetical));
-		
-	OutTags.Add(FAssetRegistryTag("SupportsTalking", 
-		(bAutoTalk && SpriteStructure.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"), 
-		FAssetRegistryTag::TT_Alphabetical));
+        Super::GetAssetRegistryTags(Context);
+
+        // Add custom tags for asset browser filtering using the new context API
+        Context.AddTag(TEXT("RenderingMode"), GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical);
+
+        Context.AddTag(TEXT("HasSprites"),
+                HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"),
+                FAssetRegistryTag::TT_Alphabetical);
+
+        Context.AddTag(TEXT("HasSkeletalMeshes"),
+                HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"),
+                FAssetRegistryTag::TT_Alphabetical);
+
+        Context.AddTag(TEXT("SupportsBlinking"),
+                (bAutoBlink && SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"),
+                FAssetRegistryTag::TT_Alphabetical);
+
+        Context.AddTag(TEXT("SupportsTalking"),
+                (bAutoTalk && SpriteStructure.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"),
+                FAssetRegistryTag::TT_Alphabetical);
 }
 #endif // WITH_EDITOR
