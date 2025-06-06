@@ -7,7 +7,7 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SOverlay.h"
+#include "Widgets/SOverlay.h"
 
 void SCharacter2DAssetViewport::OnFloatingButtonClicked()
 {
@@ -72,7 +72,7 @@ TSharedRef<FEditorViewportClient> SCharacter2DAssetViewport::MakeEditorViewportC
         return EditorViewportClient.ToSharedRef();
 }
 
-TSharedRef<SWidget> SCharacter2DAssetViewport::MakeViewportToolbar()
+TSharedPtr<SWidget> SCharacter2DAssetViewport::MakeViewportToolbar()
 {
     return BuildCameraToolbar();
 }

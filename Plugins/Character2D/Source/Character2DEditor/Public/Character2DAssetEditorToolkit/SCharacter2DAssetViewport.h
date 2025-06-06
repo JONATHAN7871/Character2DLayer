@@ -4,7 +4,7 @@
 #include "SEditorViewport.h"
 #include "Character2DAsset.h"
 #include "SCommonEditorViewportToolbarBase.h"
-#include "Widgets/Layout/SOverlay.h"
+#include "Widgets/SOverlay.h"
 
 class FPreviewScene;
 class ACharacter2DActor;
@@ -39,7 +39,7 @@ protected:
         virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override;
 
         // Override to add toolbar and overlays
-        virtual TSharedRef<SWidget> MakeViewportToolbar() override;
+        virtual TSharedPtr<SWidget> MakeViewportToolbar() override;
         virtual void PopulateViewportOverlays(TSharedRef<SOverlay> Overlay) override;
 
        virtual void OnFloatingButtonClicked() override;
