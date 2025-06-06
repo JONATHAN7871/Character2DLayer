@@ -5,7 +5,7 @@
 
 class FAssetTypeActions_Character2DAsset;
 
-class FCharacter2DEditorModule : public IModuleInterface
+class CHARACTER2DEDITOR_API FCharacter2DEditorModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;

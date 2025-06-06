@@ -4,7 +4,6 @@
 #include "Engine/DataAsset.h"
 #include "PaperSprite.h"
 #include "PaperFlipbook.h"
-#include "AssetRegistry/AssetRegistryTagsContext.h"
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
@@ -316,20 +315,9 @@ public:
     bool bEnableDualRendering = false;
 
 #if WITH_EDITOR
-    // Editor-only methods for validation and migration
+    // Editor-only hooks are implemented in the editor module.
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const override;
-    
-    /** Get a human-readable description of the current rendering mode */
-    UFUNCTION(CallInEditor, Category = "Character2D|Debug")
-    FString GetRenderingModeDescription() const;
-    
-    /** Get a list of configuration warnings */
-    UFUNCTION(CallInEditor, Category = "Character2D|Debug")
-    TArray<FString> GetConfigurationWarnings() const;
-    
-    /** Validate animation settings and log warnings */
-    void ValidateAnimationSettings();
+    virtual void GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const override;
 #endif
 
     /** Runtime validation methods */
