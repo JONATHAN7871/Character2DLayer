@@ -8,84 +8,264 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SOverlay.h"
+#include "SEditorViewportToolBarMenu.h"
+#include "SEditorViewportToolBarButton.h"
+#include "SViewportToolBar.h"
+#include "EditorViewportCommands.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "SEditorViewport.h"
+#include "EditorStyleSet.h"
+#include "EngineUtils.h"
 
+#define LOCTEXT_NAMESPACE "SCharacter2DAssetViewport"
+
+// Custom viewport client with transform widget support
+class FCharacter2DViewportClient : public FEditorViewportClient
+{
+public:
+    FCharacter2DViewportClient(FPreviewScene* InPreviewScene, const TWeakPtr<SCharacter2DAssetViewport>& InViewport)
+        : FEditorViewportClient(nullptr, InPreviewScene)
+        , ViewportPtr(InViewport)
+    {
+        SetViewMode(VMI_Lit);
+        SetRealtime(true);
+        
+        // Enable widget for transform
+        Widget->SetDefaultVisibility(true);
+        EngineShowFlags.SetPaper2DSprites(true);
+        
+        // Set default view
+        SetViewLocation(FVector(0.f, 500.f, 75.f));
+        SetViewRotation(FRotator(0.f, -90.f, 0.f));
+        
+        // Enable widget
+        SetWidgetMode(UE::Widget::WM_Translate);
+    }
+
+    virtual void ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY) override
+    {
+        if (HitProxy && HitProxy->IsA(HActor::StaticGetType()))
+        {
+            HActor* ActorProxy = static_cast<HActor*>(HitProxy);
+            AActor* Actor = ActorProxy->Actor;
+            
+            if (TSharedPtr<SCharacter2DAssetViewport> Viewport = ViewportPtr.Pin())
+            {
+                Viewport->OnActorSelected(Actor);
+            }
+        }
+        
+        FEditorViewportClient::ProcessClick(View, HitProxy, Key, Event, HitX, HitY);
+    }
+
+    virtual bool InputWidgetDelta(FViewport* InViewport, EAxisList::Type CurrentAxis, FVector& Drag, FRotator& Rot, FVector& Scale) override
+    {
+        bool bHandled = FEditorViewportClient::InputWidgetDelta(InViewport, CurrentAxis, Drag, Rot, Scale);
+        
+        if (bHandled && SelectedActor.IsValid())
+        {
+            // Apply transform based on current widget mode
+            switch (GetWidgetMode())
+            {
+                case UE::Widget::WM_Translate:
+                    SelectedActor->SetActorLocation(SelectedActor->GetActorLocation() + Drag);
+                    break;
+                case UE::Widget::WM_Rotate:
+                    SelectedActor->SetActorRotation(SelectedActor->GetActorRotation() + Rot);
+                    break;
+                case UE::Widget::WM_Scale:
+                    SelectedActor->SetActorScale3D(SelectedActor->GetActorScale3D() + Scale);
+                    break;
+                default:
+                    break;
+            }
+        }
+        
+        return bHandled;
+    }
+
+    void SetSelectedActor(AActor* Actor)
+    {
+        SelectedActor = Actor;
+        if (Actor && Widget)
+        {
+            Widget->SetUsesEditorModeTools(false);
+        }
+    }
+
+private:
+    TWeakPtr<SCharacter2DAssetViewport> ViewportPtr;
+    TWeakObjectPtr<AActor> SelectedActor;
+};
+
+// Main viewport implementation
 void SCharacter2DAssetViewport::OnFloatingButtonClicked()
 {
 }
 
 SCharacter2DAssetViewport::~SCharacter2DAssetViewport()
 {
-	if (PreviewActor && PreviewActor->IsValidLowLevel())
-	{
-		PreviewActor->Destroy();
-	}
+    if (PreviewActor && PreviewActor->IsValidLowLevel())
+    {
+        PreviewActor->Destroy();
+    }
 }
 
 void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 {
-	Asset = InArgs._CharacterAsset;
-	PreviewScene = MakeShareable(
-		new FAdvancedPreviewScene(FPreviewScene::ConstructionValues())
-	);
+    Asset = InArgs._CharacterAsset;
+    PreviewScene = MakeShareable(
+        new FAdvancedPreviewScene(FPreviewScene::ConstructionValues())
+    );
 
     SEditorViewport::Construct(SEditorViewport::FArguments());
 
-
-	if (Asset && PreviewScene->GetWorld())
-	{
-		PreviewActor = PreviewScene->GetWorld()->SpawnActor<ACharacter2DActor>();
-		PreviewActor->CharacterAsset = Asset;
-		PreviewActor->RefreshFromAsset();
-
-		// фронтальный вид
-		EditorViewportClient->SetViewLocation(FVector(0.f, 500.f, 75.f));
-		EditorViewportClient->SetViewRotation(FRotator(0.f, -90.f, 0.f));
-                EditorViewportClient->EngineShowFlags.SetPaper2DSprites(true);
-                // Use legacy widget mode enum to avoid compile issues
-                EditorViewportClient->SetWidgetMode(UE::Widget::WM_Translate);
-        }
+    if (Asset && PreviewScene->GetWorld())
+    {
+        PreviewActor = PreviewScene->GetWorld()->SpawnActor<ACharacter2DActor>();
+        PreviewActor->CharacterAsset = Asset;
+        PreviewActor->RefreshFromAsset();
+    }
 }
 
 void SCharacter2DAssetViewport::Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime)
 {
-	SEditorViewport::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+    SEditorViewport::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
-	if (PreviewScene.IsValid() && PreviewScene->GetWorld())
-	{
-		PreviewScene->GetWorld()->Tick(LEVELTICK_All, InDeltaTime);
-	}
+    if (PreviewScene.IsValid() && PreviewScene->GetWorld())
+    {
+        PreviewScene->GetWorld()->Tick(LEVELTICK_All, InDeltaTime);
+    }
 }
 
 void SCharacter2DAssetViewport::RefreshPreview()
 {
-	if (PreviewActor)
-	{
-		PreviewActor->RefreshFromAsset();
-	}
+    if (PreviewActor)
+    {
+        PreviewActor->RefreshFromAsset();
+    }
 }
 
 TSharedRef<FEditorViewportClient> SCharacter2DAssetViewport::MakeEditorViewportClient()
 {
-        EditorViewportClient = MakeShareable(new FEditorViewportClient(nullptr, PreviewScene.Get()));
-        EditorViewportClient->SetViewModes(VMI_Lit, VMI_Lit);
-        EditorViewportClient->SetRealtime(true);
-        return EditorViewportClient.ToSharedRef();
+    EditorViewportClient = MakeShareable(new FCharacter2DViewportClient(PreviewScene.Get(), SharedThis(this)));
+    return EditorViewportClient.ToSharedRef();
 }
 
 TSharedPtr<SWidget> SCharacter2DAssetViewport::MakeViewportToolbar()
 {
-    return BuildCameraToolbar();
+    // Build the toolbar
+    TSharedRef<SHorizontalBox> ToolbarBox = SNew(SHorizontalBox);
+    
+    // Add transform toolbar
+    ToolbarBox->AddSlot()
+        .AutoWidth()
+        .Padding(2.0f, 2.0f)
+        [
+            BuildTransformToolBar()
+        ];
+    
+    // Add camera toolbar
+    ToolbarBox->AddSlot()
+        .AutoWidth()
+        .Padding(2.0f, 2.0f)
+        [
+            BuildCameraToolbar()
+        ];
+    
+    return ToolbarBox;
 }
 
 void SCharacter2DAssetViewport::PopulateViewportOverlays(TSharedRef<SOverlay> Overlay)
 {
+    SEditorViewport::PopulateViewportOverlays(Overlay);
+
+    // Add toolbar at the top
     Overlay->AddSlot()
-        .HAlign(HAlign_Left)
         .VAlign(VAlign_Top)
-        .Padding(FMargin(2))
+        .HAlign(HAlign_Left)
+        .Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
     [
-        BuildCameraToolbar()
+        MakeViewportToolbar().ToSharedRef()
     ];
+}
+
+TSharedRef<SWidget> SCharacter2DAssetViewport::BuildTransformToolBar()
+{
+    FSlimHorizontalToolBarBuilder ToolbarBuilder(GetCommandList(), FMultiBoxCustomization::None);
+    
+    // Transform mode buttons
+    ToolbarBuilder.BeginSection("Transform");
+    {
+        // Translate
+        ToolbarBuilder.AddToolBarButton(
+            FUIAction(
+                FExecuteAction::CreateLambda([this]() {
+                    if (EditorViewportClient.IsValid())
+                    {
+                        EditorViewportClient->SetWidgetMode(UE::Widget::WM_Translate);
+                    }
+                }),
+                FCanExecuteAction(),
+                FIsActionChecked::CreateLambda([this]() {
+                    return EditorViewportClient.IsValid() && 
+                           EditorViewportClient->GetWidgetMode() == UE::Widget::WM_Translate;
+                })
+            ),
+            NAME_None,
+            LOCTEXT("TranslateMode", "Translate"),
+            LOCTEXT("TranslateModeTooltip", "Translate Mode"),
+            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.TranslateMode"),
+            EUserInterfaceActionType::ToggleButton
+        );
+        
+        // Rotate
+        ToolbarBuilder.AddToolBarButton(
+            FUIAction(
+                FExecuteAction::CreateLambda([this]() {
+                    if (EditorViewportClient.IsValid())
+                    {
+                        EditorViewportClient->SetWidgetMode(UE::Widget::WM_Rotate);
+                    }
+                }),
+                FCanExecuteAction(),
+                FIsActionChecked::CreateLambda([this]() {
+                    return EditorViewportClient.IsValid() && 
+                           EditorViewportClient->GetWidgetMode() == UE::Widget::WM_Rotate;
+                })
+            ),
+            NAME_None,
+            LOCTEXT("RotateMode", "Rotate"),
+            LOCTEXT("RotateModeTooltip", "Rotate Mode"),
+            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.RotateMode"),
+            EUserInterfaceActionType::ToggleButton
+        );
+        
+        // Scale
+        ToolbarBuilder.AddToolBarButton(
+            FUIAction(
+                FExecuteAction::CreateLambda([this]() {
+                    if (EditorViewportClient.IsValid())
+                    {
+                        EditorViewportClient->SetWidgetMode(UE::Widget::WM_Scale);
+                    }
+                }),
+                FCanExecuteAction(),
+                FIsActionChecked::CreateLambda([this]() {
+                    return EditorViewportClient.IsValid() && 
+                           EditorViewportClient->GetWidgetMode() == UE::Widget::WM_Scale;
+                })
+            ),
+            NAME_None,
+            LOCTEXT("ScaleMode", "Scale"),
+            LOCTEXT("ScaleModeTooltip", "Scale Mode"),
+            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.ScaleMode"),
+            EUserInterfaceActionType::ToggleButton
+        );
+    }
+    ToolbarBuilder.EndSection();
+    
+    return ToolbarBuilder.MakeWidget();
 }
 
 TSharedRef<SWidget> SCharacter2DAssetViewport::BuildCameraToolbar()
@@ -93,24 +273,42 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildCameraToolbar()
     return SNew(SHorizontalBox)
         + SHorizontalBox::Slot().AutoWidth().Padding(2)
         [
-            SNew(SButton).Text(FText::FromString("Perspective")).OnClicked(this, &SCharacter2DAssetViewport::OnViewPerspective)
+            SNew(SButton)
+            .Text(FText::FromString("Perspective"))
+            .OnClicked(this, &SCharacter2DAssetViewport::OnViewPerspective)
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(2)
         [
-            SNew(SButton).Text(FText::FromString("Top")).OnClicked(this, &SCharacter2DAssetViewport::OnViewTop)
+            SNew(SButton)
+            .Text(FText::FromString("Top"))
+            .OnClicked(this, &SCharacter2DAssetViewport::OnViewTop)
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(2)
         [
-            SNew(SButton).Text(FText::FromString("Side")).OnClicked(this, &SCharacter2DAssetViewport::OnViewSide)
+            SNew(SButton)
+            .Text(FText::FromString("Side"))
+            .OnClicked(this, &SCharacter2DAssetViewport::OnViewSide)
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(2)
         [
-            SNew(SButton).Text(FText::FromString("Front")).OnClicked(this, &SCharacter2DAssetViewport::OnViewFront)
+            SNew(SButton)
+            .Text(FText::FromString("Front"))
+            .OnClicked(this, &SCharacter2DAssetViewport::OnViewFront)
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(2)
         [
-            SNew(SButton).Text(FText::FromString("Reset Camera")).OnClicked(this, &SCharacter2DAssetViewport::OnResetCamera)
+            SNew(SButton)
+            .Text(FText::FromString("Reset Camera"))
+            .OnClicked(this, &SCharacter2DAssetViewport::OnResetCamera)
         ];
+}
+
+void SCharacter2DAssetViewport::OnActorSelected(AActor* Actor)
+{
+    if (FCharacter2DViewportClient* Client = static_cast<FCharacter2DViewportClient*>(EditorViewportClient.Get()))
+    {
+        Client->SetSelectedActor(Actor);
+    }
 }
 
 FReply SCharacter2DAssetViewport::OnViewPerspective()
@@ -163,3 +361,4 @@ FReply SCharacter2DAssetViewport::OnResetCamera()
     return FReply::Handled();
 }
 
+#undef LOCTEXT_NAMESPACE
