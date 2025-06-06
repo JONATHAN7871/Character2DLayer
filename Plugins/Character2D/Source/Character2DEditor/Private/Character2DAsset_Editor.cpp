@@ -8,9 +8,9 @@ void UCharacter2DAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
     FCharacter2DAssetEditorUtils::HandlePostEditChange(this, PropertyChangedEvent);
 }
 
-void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const
+void UCharacter2DAsset::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
 {
-    Super::GetAssetRegistryTags(Context);
-    FCharacter2DAssetEditorUtils::AddAssetRegistryTags(this, Context);
+    Super::GetAssetRegistryTags(OutTags);
+    FCharacter2DAssetEditorUtils::AddAssetRegistryTags(this, OutTags);
 }
 #endif // WITH_EDITOR

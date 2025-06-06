@@ -4,7 +4,6 @@
 #include "Engine/DataAsset.h"
 #include "PaperSprite.h"
 #include "PaperFlipbook.h"
-#include "AssetRegistry/AssetRegistryTagsContext.h"
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
@@ -318,7 +317,7 @@ public:
 #if WITH_EDITOR
     // Editor-only hooks are implemented in the editor module.
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const override;
+    virtual void GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const override;
 #endif
 
     /** Runtime validation methods */

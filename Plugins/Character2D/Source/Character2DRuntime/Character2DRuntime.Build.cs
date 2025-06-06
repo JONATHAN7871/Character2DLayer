@@ -8,7 +8,7 @@ public class Character2DRuntime : ModuleRules
 
 		// Только рантайм-модули
                 PublicDependencyModuleNames.AddRange(
-                        new[] { "Core", "CoreUObject", "Engine", "Paper2D", "AssetRegistry" });
+                        new[] { "Core", "CoreUObject", "Engine", "Paper2D" });
 
 		PrivateDependencyModuleNames.AddRange(
 			new[] { "SlateCore" });
