@@ -1,6 +1,8 @@
 #include "Character2DAsset.h"
 #include "Engine/World.h"
+#if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryTagsContext.h"
+#endif
 
 void UCharacter2DAsset::PostLoad()
 {
@@ -72,172 +74,67 @@ bool UCharacter2DAsset::HasValidSkeletalConfiguration() const
 	        Head.Mesh != nullptr);
 }
 
+bool UCharacter2DAsset::IsValidForRuntime() const
+{
+        bool bHasSprites = HasValidSpriteConfiguration();
+        bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
+
+        // At least one rendering method must be available
+        return (bHasSprites || bHasSkeletalMeshes);
+}
+
 #if WITH_EDITOR
 void UCharacter2DAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-	
-	FProperty* Property = PropertyChangedEvent.Property;
-	if (Property)
-	{
-		FString PropertyName = Property->GetName();
-		
-		// Handle property changes that might affect rendering mode
-		if (PropertyName == TEXT("bEnableDualRendering"))
-		{
-			// Validate dual rendering settings
-			bool bHasSprites = HasValidSpriteConfiguration();
-			bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
-			
-			// Warn if dual rendering is enabled but only one type is configured
-			if (bEnableDualRendering && (!bHasSprites || !bHasSkeletalMeshes))
-			{
-				UE_LOG(LogTemp, Warning, TEXT("Dual rendering enabled but missing sprites or skeletal meshes in %s"), *GetName());
-			}
-		}
-		
-		// Automatically update animation settings based on sprite configuration
-		if (PropertyName.Contains(TEXT("Sprite")) || PropertyName.Contains(TEXT("Flipbook")))
-		{
-			ValidateAnimationSettings();
-		}
-	}
-}
+        Super::PostEditChangeProperty(PropertyChangedEvent);
 
-void UCharacter2DAsset::ValidateAnimationSettings()
-{
-	// Validate blink settings
-	if (bAutoBlink)
-	{
-		const auto& BlinkSettings = SpriteStructure.EyelidsBlinkSettings;
-		if (!BlinkSettings.BlinkFlipbook)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Auto blink enabled but no blink flipbook set in %s"), *GetName());
-		}
-		if (!SpriteStructure.Eyelids.Sprite)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Auto blink enabled but no eyelids sprite set in %s"), *GetName());
-		}
-	}
-	
-	// Validate talk settings
-	if (bAutoTalk)
-	{
-		const auto& TalkSettings = SpriteStructure.MouthTalkSettings;
-		if (!TalkSettings.TalkFlipbook)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Auto talk enabled but no talk flipbook set in %s"), *GetName());
-		}
-		if (!SpriteStructure.Mouth.Sprite)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Auto talk enabled but no mouth sprite set in %s"), *GetName());
-		}
-	}
-}
+        FProperty* Property = PropertyChangedEvent.Property;
+        if (Property)
+        {
+                const FString PropertyName = Property->GetName();
 
-FString UCharacter2DAsset::GetRenderingModeDescription() const
-{
-	bool bHasSprites = HasValidSpriteConfiguration();
-	bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
-	
-	if (bEnableDualRendering && bHasSprites && bHasSkeletalMeshes)
-	{
-		return TEXT("Dual Rendering (Sprites + Skeletal)");
-	}
-	else if (bHasSprites && !bHasSkeletalMeshes)
-	{
-		return TEXT("Sprite Only");
-	}
-	else if (!bHasSprites && bHasSkeletalMeshes)
-	{
-		return TEXT("Skeletal Mesh Only");
-	}
-	else if (bEnableDualRendering)
-	{
-		return TEXT("Dual Rendering (Incomplete Configuration)");
-	}
-	else
-	{
-		return TEXT("No Valid Configuration");
-	}
-}
-
-TArray<FString> UCharacter2DAsset::GetConfigurationWarnings() const
-{
-	TArray<FString> Warnings;
-	
-	bool bHasSprites = HasValidSpriteConfiguration();
-	bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
-	
-	// Check for missing configurations
-	if (!bHasSprites && !bHasSkeletalMeshes)
-	{
-		Warnings.Add(TEXT("No sprites or skeletal meshes configured"));
-	}
-	
-	if (bEnableDualRendering && (!bHasSprites || !bHasSkeletalMeshes))
-	{
-		if (!bHasSprites)
-		{
-			Warnings.Add(TEXT("Dual rendering enabled but no sprites configured"));
-		}
-		if (!bHasSkeletalMeshes)
-		{
-			Warnings.Add(TEXT("Dual rendering enabled but no skeletal meshes configured"));
-		}
-	}
-	
-	// Check animation settings
-	if (bAutoBlink && !SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook)
-	{
-		Warnings.Add(TEXT("Auto blink enabled but no blink flipbook set"));
-	}
-	
-	if (bAutoTalk && !SpriteStructure.MouthTalkSettings.TalkFlipbook)
-	{
-		Warnings.Add(TEXT("Auto talk enabled but no talk flipbook set"));
-	}
-	
-	// Check visual novel settings
-	if (VisualNovelSettings.bAutoPlayEntranceTransition && 
-	    VisualNovelSettings.DefaultEntranceTransition == ECharacter2DTransitionType::None)
-	{
-		Warnings.Add(TEXT("Auto entrance transition enabled but transition type is None"));
-	}
-	
-	return Warnings;
-}
-
-bool UCharacter2DAsset::IsValidForRuntime() const
-{
-	bool bHasSprites = HasValidSpriteConfiguration();
-	bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
-	
-	// At least one rendering method must be available
-	return (bHasSprites || bHasSkeletalMeshes);
+                if (PropertyName == TEXT("bEnableDualRendering"))
+                {
+                        const bool bHasSprites = HasValidSpriteConfiguration();
+                        const bool bHasSkeletal = HasValidSkeletalConfiguration();
+                        if (bEnableDualRendering && (!bHasSprites || !bHasSkeletal))
+                        {
+                                UE_LOG(LogTemp, Warning, TEXT("Dual rendering enabled but missing sprites or skeletal meshes in %s"), *GetName());
+                        }
+                }
+        }
 }
 
 void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const
 {
         Super::GetAssetRegistryTags(Context);
+        auto GetRenderingModeDescription = [this]()
+        {
+                const bool bHasSprites = HasValidSpriteConfiguration();
+                const bool bHasSkeletal = HasValidSkeletalConfiguration();
+                if (bEnableDualRendering && bHasSprites && bHasSkeletal)
+                {
+                        return TEXT("Dual Rendering (Sprites + Skeletal)");
+                }
+                if (bHasSprites && !bHasSkeletal)
+                {
+                        return TEXT("Sprite Only");
+                }
+                if (!bHasSprites && bHasSkeletal)
+                {
+                        return TEXT("Skeletal Mesh Only");
+                }
+                if (bEnableDualRendering)
+                {
+                        return TEXT("Dual Rendering (Incomplete Configuration)");
+                }
+                return TEXT("No Valid Configuration");
+        };
 
-        // Add custom tags for asset browser filtering using the new context API
-        Context.AddTag(TEXT("RenderingMode"), GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical);
-
-        Context.AddTag(TEXT("HasSprites"),
-                HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"),
-                FAssetRegistryTag::TT_Alphabetical);
-
-        Context.AddTag(TEXT("HasSkeletalMeshes"),
-                HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"),
-                FAssetRegistryTag::TT_Alphabetical);
-
-        Context.AddTag(TEXT("SupportsBlinking"),
-                (bAutoBlink && SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"),
-                FAssetRegistryTag::TT_Alphabetical);
-
-        Context.AddTag(TEXT("SupportsTalking"),
-                (bAutoTalk && SpriteStructure.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"),
-                FAssetRegistryTag::TT_Alphabetical);
+        Context.AddTag(FAssetRegistryTag(TEXT("RenderingMode"), GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical));
+        Context.AddTag(FAssetRegistryTag(TEXT("HasSprites"), HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+        Context.AddTag(FAssetRegistryTag(TEXT("HasSkeletalMeshes"), HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+        Context.AddTag(FAssetRegistryTag(TEXT("SupportsBlinking"), (bAutoBlink && SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+        Context.AddTag(FAssetRegistryTag(TEXT("SupportsTalking"), (bAutoTalk && SpriteStructure.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
 }
 #endif // WITH_EDITOR
