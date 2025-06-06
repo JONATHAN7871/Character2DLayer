@@ -7,6 +7,7 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SOverlay.h"
 
 void SCharacter2DAssetViewport::OnFloatingButtonClicked()
 {
@@ -29,10 +30,6 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 
     SEditorViewport::Construct(SEditorViewport::FArguments());
 
-    if (EditorViewportClient.IsValid())
-    {
-        AddViewportWidgetContent(BuildCameraToolbar());
-    }
 
 	if (Asset && PreviewScene->GetWorld())
 	{
@@ -73,6 +70,22 @@ TSharedRef<FEditorViewportClient> SCharacter2DAssetViewport::MakeEditorViewportC
         EditorViewportClient->SetViewModes(VMI_Lit, VMI_Lit);
         EditorViewportClient->SetRealtime(true);
         return EditorViewportClient.ToSharedRef();
+}
+
+TSharedRef<SWidget> SCharacter2DAssetViewport::MakeViewportToolbar()
+{
+    return BuildCameraToolbar();
+}
+
+void SCharacter2DAssetViewport::PopulateViewportOverlays(TSharedRef<SOverlay> Overlay)
+{
+    Overlay->AddSlot()
+        .HAlign(HAlign_Left)
+        .VAlign(VAlign_Top)
+        .Padding(FMargin(2))
+    [
+        BuildCameraToolbar()
+    ];
 }
 
 TSharedRef<SWidget> SCharacter2DAssetViewport::BuildCameraToolbar()
