@@ -31,7 +31,7 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 
     if (EditorViewportClient.IsValid())
     {
-        EditorViewportClient->AddViewportWidgetContent(BuildCameraToolbar());
+        AddViewportWidgetContent(BuildCameraToolbar());
     }
 
 	if (Asset && PreviewScene->GetWorld())
