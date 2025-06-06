@@ -29,7 +29,10 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 
     SEditorViewport::Construct(SEditorViewport::FArguments());
 
-    AddOverlayWidget(BuildCameraToolbar());
+    if (EditorViewportClient.IsValid())
+    {
+        EditorViewportClient->AddViewportWidgetContent(BuildCameraToolbar());
+    }
 
 	if (Asset && PreviewScene->GetWorld())
 	{
