@@ -7,7 +7,7 @@
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
-class FAssetRegistryTagsContext;
+struct FAssetRegistryTagsContext;
 
 /* ───────────────────────────── Visual Novel Effects Enums ───────────────────────────── */
 UENUM(BlueprintType)

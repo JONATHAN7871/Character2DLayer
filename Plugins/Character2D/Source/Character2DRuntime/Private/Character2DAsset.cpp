@@ -1,7 +1,7 @@
 #include "Character2DAsset.h"
 #include "Engine/World.h"
 #if WITH_EDITOR
-#include "AssetRegistry/AssetRegistryTagsContext.h"
+#include "UObject/AssetRegistryTagsContext.h"
 #endif
 
 void UCharacter2DAsset::PostLoad()
