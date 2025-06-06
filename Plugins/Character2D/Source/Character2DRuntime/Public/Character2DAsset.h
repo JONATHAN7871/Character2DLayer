@@ -7,7 +7,7 @@
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
-struct FAssetRegistryTagsContext;
+class FAssetRegistryTagsContext;
 
 /* ───────────────────────────── Visual Novel Effects Enums ───────────────────────────── */
 UENUM(BlueprintType)
@@ -319,7 +319,7 @@ public:
 #if WITH_EDITOR
     // Editor-only hooks
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const override;
+    virtual void GetAssetRegistryTags(FAssetRegistryTagsContext Context) const override;
 #endif
 
     /** Runtime validation methods */

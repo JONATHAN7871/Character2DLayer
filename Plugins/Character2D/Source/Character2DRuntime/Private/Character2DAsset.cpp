@@ -105,7 +105,7 @@ void UCharacter2DAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
         }
 }
 
-void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext& Context) const
+void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext Context) const
 {
         Super::GetAssetRegistryTags(Context);
         auto GetRenderingModeDescription = [this]()
