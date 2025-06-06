@@ -27,23 +27,9 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
 		new FAdvancedPreviewScene(FPreviewScene::ConstructionValues())
 	);
 
-        SEditorViewport::Construct(SEditorViewport::FArguments());
+    SEditorViewport::Construct(SEditorViewport::FArguments());
 
-        ChildSlot
-        [
-            SNew(SOverlay)
-            + SOverlay::Slot()
-            [
-                GetViewportWidget()
-            ]
-            + SOverlay::Slot()
-            .HAlign(HAlign_Left)
-            .VAlign(VAlign_Top)
-            .Padding(4)
-            [
-                BuildCameraToolbar()
-            ]
-        ];
+    AddOverlayWidget(BuildCameraToolbar());
 
 	if (Asset && PreviewScene->GetWorld())
 	{
