@@ -8,13 +8,9 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SOverlay.h"
-#include "SEditorViewportToolBarMenu.h"
-#include "SEditorViewportToolBarButton.h"
-#include "SViewportToolBar.h"
-#include "EditorViewportCommands.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "SEditorViewport.h"
-#include "EditorStyleSet.h"
+#include "Styling/AppStyle.h"
 #include "EngineUtils.h"
 
 #define LOCTEXT_NAMESPACE "SCharacter2DAssetViewport"
@@ -27,7 +23,7 @@ public:
         : FEditorViewportClient(nullptr, InPreviewScene)
         , ViewportPtr(InViewport)
     {
-        SetViewMode(VMI_Lit);
+        FEditorViewportClient::SetViewMode(VMI_Lit);
         SetRealtime(true);
         
         // Enable widget for transform
@@ -39,7 +35,7 @@ public:
         SetViewRotation(FRotator(0.f, -90.f, 0.f));
         
         // Enable widget
-        SetWidgetMode(UE::Widget::WM_Translate);
+        FEditorViewportClient::SetWidgetMode(UE::Widget::WM_Translate);
     }
 
     virtual void ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY) override
@@ -49,9 +45,9 @@ public:
             HActor* ActorProxy = static_cast<HActor*>(HitProxy);
             AActor* Actor = ActorProxy->Actor;
             
-            if (TSharedPtr<SCharacter2DAssetViewport> Viewport = ViewportPtr.Pin())
+            if (TSharedPtr<SCharacter2DAssetViewport> ViewportWidget = ViewportPtr.Pin())
             {
-                Viewport->OnActorSelected(Actor);
+                ViewportWidget->OnActorSelected(Actor);
             }
         }
         
@@ -89,7 +85,8 @@ public:
         SelectedActor = Actor;
         if (Actor && Widget)
         {
-            Widget->SetUsesEditorModeTools(false);
+            // Just set the widget target
+            Widget->SetDefaultVisibility(true);
         }
     }
 
@@ -215,7 +212,7 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildTransformToolBar()
             NAME_None,
             LOCTEXT("TranslateMode", "Translate"),
             LOCTEXT("TranslateModeTooltip", "Translate Mode"),
-            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.TranslateMode"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode"),
             EUserInterfaceActionType::ToggleButton
         );
         
@@ -237,7 +234,7 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildTransformToolBar()
             NAME_None,
             LOCTEXT("RotateMode", "Rotate"),
             LOCTEXT("RotateModeTooltip", "Rotate Mode"),
-            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.RotateMode"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.RotateMode"),
             EUserInterfaceActionType::ToggleButton
         );
         
@@ -259,7 +256,7 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildTransformToolBar()
             NAME_None,
             LOCTEXT("ScaleMode", "Scale"),
             LOCTEXT("ScaleModeTooltip", "Scale Mode"),
-            FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.ScaleMode"),
+            FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.ScaleMode"),
             EUserInterfaceActionType::ToggleButton
         );
     }
@@ -305,9 +302,9 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildCameraToolbar()
 
 void SCharacter2DAssetViewport::OnActorSelected(AActor* Actor)
 {
-    if (FCharacter2DViewportClient* Client = static_cast<FCharacter2DViewportClient*>(EditorViewportClient.Get()))
+    if (FCharacter2DViewportClient* ViewportClient = static_cast<FCharacter2DViewportClient*>(EditorViewportClient.Get()))
     {
-        Client->SetSelectedActor(Actor);
+        ViewportClient->SetSelectedActor(Actor);
     }
 }
 

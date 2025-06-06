@@ -269,7 +269,7 @@ void ACharacter2DActor::PlayFadeOut(float Duration)
     FadeTimeline->SetTimelineFinishedFunc(TimelineFinish);
 
     FadeTimeline->SetTimelineLength(Duration);
-    FadeTimeline->SetReverse(true);
+    FadeTimeline->Reverse();
     FadeTimeline->Play();
 }
 

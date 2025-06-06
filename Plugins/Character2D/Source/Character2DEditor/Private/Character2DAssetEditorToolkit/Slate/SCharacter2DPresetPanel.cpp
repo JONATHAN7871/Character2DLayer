@@ -1,9 +1,7 @@
 #include "Character2DAssetEditorToolkit/Slate/SCharacter2DPresetPanel.h"
-#include "Data/Character2DBasePreset.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "PaperSprite.h"
 #include "Widgets/Layout/SScrollBox.h"
-#include "EditorStyleSet.h"
 #include "Character2DAssetEditorToolkit/SCharacter2DSpriteTile.h"
 #include "Data/Character2DPosePreset.h"
 
