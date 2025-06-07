@@ -34,11 +34,20 @@ void ACharacter2DActor::SetupComponents()
     SpriteEyelids = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteEyelids"));
     SpriteMouth = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteMouth"));
 
-    // Initial attachment to root
+    // Default hierarchy: head is parent for facial sprites and animations
+    SpriteBody->SetupAttachment(RootComponent);
+    SpriteArms->SetupAttachment(RootComponent);
+    SpriteHead->SetupAttachment(RootComponent);
+
+    SpriteEyebrow->SetupAttachment(SpriteHead);
+    SpriteEyes->SetupAttachment(SpriteHead);
+    SpriteEyelids->SetupAttachment(SpriteHead);
+    SpriteMouth->SetupAttachment(SpriteHead);
+
+    // Common sprite component settings
     TArray<UPaperSpriteComponent*> SpriteComponents = GetAllSpriteComponents();
     for (UPaperSpriteComponent* Component : SpriteComponents)
     {
-        Component->SetupAttachment(RootComponent);
         Component->SetCastShadow(false);
         Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
@@ -46,8 +55,10 @@ void ACharacter2DActor::SetupComponents()
     /* ---------- Flipbook Components --------- */
     EyelidComponent = CreateDefaultSubobject<UPaperFlipbookComponent>(TEXT("EyelidFlipbook"));
     MouthComponent = CreateDefaultSubobject<UPaperFlipbookComponent>(TEXT("MouthFlipbook"));
-    EyelidComponent->SetupAttachment(RootComponent);
-    MouthComponent->SetupAttachment(RootComponent);
+
+    // Flipbook animations should follow the head hierarchy as well
+    EyelidComponent->SetupAttachment(SpriteHead);
+    MouthComponent->SetupAttachment(SpriteHead);
 
     /* ---------- Timeline Components --------- */
     MovementTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("MovementTimeline"));
@@ -100,15 +111,23 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     // Setup flipbook components
     const auto& BlinkSettings = SpriteStruct.EyelidsBlinkSettings;
     EyelidComponent->SetFlipbook(BlinkSettings.BlinkFlipbook);
-    EyelidComponent->SetRelativeLocation(BlinkSettings.Offset + SpriteStruct.GlobalOffset);
-    EyelidComponent->SetRelativeScale3D(FVector(BlinkSettings.Scale * SpriteStruct.GlobalScale));
     EyelidComponent->SetVisibility(false);
+    AttachFlipbookToSocket(EyelidComponent,
+        BlinkSettings.AttachmentTarget,
+        BlinkSettings.SocketName,
+        BlinkSettings.bUseSocketTransform,
+        BlinkSettings.Offset,
+        BlinkSettings.Scale);
 
     const auto& TalkSettings = SpriteStruct.MouthTalkSettings;
     MouthComponent->SetFlipbook(TalkSettings.TalkFlipbook);
-    MouthComponent->SetRelativeLocation(TalkSettings.Offset + SpriteStruct.GlobalOffset);
-    MouthComponent->SetRelativeScale3D(FVector(TalkSettings.Scale * SpriteStruct.GlobalScale));
     MouthComponent->SetVisibility(false);
+    AttachFlipbookToSocket(MouthComponent,
+        TalkSettings.AttachmentTarget,
+        TalkSettings.SocketName,
+        TalkSettings.bUseSocketTransform,
+        TalkSettings.Offset,
+        TalkSettings.Scale);
 
     // Set initial visibility based on dual rendering setting
     SetSpritesVisible(CharacterAsset->bEnableDualRendering || !HasValidSkeletalMeshes());
@@ -615,23 +634,78 @@ void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component
 
 void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteLayer& Layer)
 {
-   if (!SpriteComp || Layer.AttachmentTarget == ECharacter2DAttachmentTarget::None) return;
+    if (!SpriteComp || !CharacterAsset) return;
+
+    ECharacter2DAttachmentTarget Target = Layer.AttachmentTarget;
+    FName Socket = Layer.SocketName;
+    bool bUseSocketTransform = Layer.bUseSocketTransform;
+    FVector LocalOffset = Layer.Offset;
+    float LocalScale = Layer.Scale;
+
+    const FCharacter2DSpriteStructure& SpriteStruct = CharacterAsset->SpriteStructure;
+
+    // If no target specified for facial sprites, inherit head settings
+    const bool bIsFaceSprite = (SpriteComp == SpriteEyebrow || SpriteComp == SpriteEyes || SpriteComp == SpriteEyelids || SpriteComp == SpriteMouth);
+    if (Target == ECharacter2DAttachmentTarget::None && bIsFaceSprite)
+    {
+        Target = SpriteStruct.Head.AttachmentTarget;
+        Socket = SpriteStruct.Head.SocketName;
+        bUseSocketTransform = SpriteStruct.Head.bUseSocketTransform;
+    }
+
+    if (Target == ECharacter2DAttachmentTarget::None) return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None) return;
    
-   USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Layer.AttachmentTarget);
-   if (!TargetComponent || Layer.SocketName == NAME_None) return;
-   
-   // Detach from root and attach to socket
-   SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-   SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Layer.SocketName);
+    // Detach from current parent and attach to socket
+    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
    
    // Apply socket-specific offset if needed
-   if (!Layer.bUseSocketTransform)
-   {
-       const FVector GlobalOffset = CharacterAsset->SpriteStructure.GlobalOffset;
-       const float GlobalScale = CharacterAsset->SpriteStructure.GlobalScale;
-       SpriteComp->SetRelativeLocation(Layer.Offset + GlobalOffset);
-       SpriteComp->SetRelativeScale3D(FVector(Layer.Scale * GlobalScale));
-   }
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = SpriteStruct.GlobalOffset;
+        const float GlobalScale = SpriteStruct.GlobalScale;
+        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+    }
+}
+
+void ACharacter2DActor::AttachFlipbookToSocket(UPaperFlipbookComponent* FlipbookComp,
+    ECharacter2DAttachmentTarget Target, FName Socket, bool bUseSocketTransform,
+    const FVector& LocalOffset, float LocalScale)
+{
+    if (!FlipbookComp || !CharacterAsset)
+        return;
+
+    const FCharacter2DSpriteStructure& SpriteStruct = CharacterAsset->SpriteStructure;
+
+    // Fallback to head settings if no explicit target
+    if (Target == ECharacter2DAttachmentTarget::None)
+    {
+        Target = SpriteStruct.Head.AttachmentTarget;
+        Socket = SpriteStruct.Head.SocketName;
+        bUseSocketTransform = SpriteStruct.Head.bUseSocketTransform;
+    }
+
+    if (Target == ECharacter2DAttachmentTarget::None)
+        return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None)
+        return;
+
+    FlipbookComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    FlipbookComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
+
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = SpriteStruct.GlobalOffset;
+        const float GlobalScale = SpriteStruct.GlobalScale;
+        FlipbookComp->SetRelativeLocation(LocalOffset + GlobalOffset);
+        FlipbookComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+    }
 }
 
 /* ====================================================================== */

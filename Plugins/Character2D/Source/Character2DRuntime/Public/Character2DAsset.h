@@ -89,6 +89,18 @@ struct FCharacter2DBlinkSettings
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blink")
     float Scale = 1.0f;
 
+    /** Target skeletal mesh for attachment */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment")
+    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
+
+    /** Socket name on target skeletal mesh */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    FName SocketName;
+
+    /** Use socket transform or apply custom offset/scale */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    bool bUseSocketTransform = true;
+
     /** Мин/Макс интервал до моргания (сек) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(ClampMin="0.1"))
     float BlinkIntervalMin = 2.f;
@@ -121,6 +133,18 @@ struct FCharacter2DTalkSettings
     /** Локальный Scale */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Talk")
     float Scale = 1.0f;
+
+    /** Target skeletal mesh for attachment */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment")
+    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
+
+    /** Socket name on target skeletal mesh */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    FName SocketName;
+
+    /** Use socket transform or apply custom offset/scale */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    bool bUseSocketTransform = true;
 
     /** Скорость зацикленного воспроизведения разговора */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk", meta=(ClampMin="0.1"))
