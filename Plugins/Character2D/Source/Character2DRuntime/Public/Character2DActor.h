@@ -201,6 +201,9 @@ private:
     void SetupSpriteComponent(UPaperSpriteComponent* Component, const FCharacter2DSpriteLayer& Layer);
     void SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part);
     void AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteLayer& Layer);
+    void AttachFlipbookToSocket(UPaperFlipbookComponent* FlipbookComp,
+        ECharacter2DAttachmentTarget Target, FName Socket, bool bUseSocketTransform,
+        const FVector& Offset, float Scale);
 
     bool HasValidSprites() const;
     bool HasValidSkeletalMeshes() const;
