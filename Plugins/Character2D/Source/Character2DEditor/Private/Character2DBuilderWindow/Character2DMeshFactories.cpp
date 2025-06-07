@@ -8,7 +8,7 @@
 UCharacter2D_MaterialFactory::UCharacter2D_MaterialFactory()
 {
     SupportedClass = UMaterial::StaticClass();
-    bCreateNew = true;
+    bCreateNew = false;
     bEditAfterNew = true;
 }
 
@@ -37,7 +37,7 @@ UObject* UCharacter2D_MaterialFactory::FactoryCreateNew(UClass* Class, UObject* 
 UCharacter2D_SkeletonFactory::UCharacter2D_SkeletonFactory()
 {
     SupportedClass = USkeleton::StaticClass();
-    bCreateNew = true;
+    bCreateNew = false;
     bEditAfterNew = false;
 }
 
@@ -62,7 +62,7 @@ UObject* UCharacter2D_SkeletonFactory::FactoryCreateNew(UClass* InClass, UObject
 UCharacter2D_SkeletalMeshFactory::UCharacter2D_SkeletalMeshFactory()
 {
     SupportedClass = USkeletalMesh::StaticClass();
-    bCreateNew = true;
+    bCreateNew = false;
     bEditAfterNew = true;
 }
 
