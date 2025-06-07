@@ -21,6 +21,16 @@ enum class ECharacter2DEmotionEffect : uint8
     Flash       UMETA(DisplayName = "Flash")
 };
 
+/* ───────────────────────────── Sprite Attachment ───────────────────────────── */
+UENUM(BlueprintType)
+enum class ECharacter2DAttachmentTarget : uint8
+{
+    None    UMETA(DisplayName = "None"),
+    Body    UMETA(DisplayName = "Body Mesh"),
+    Arms    UMETA(DisplayName = "Arms Mesh"),
+    Head    UMETA(DisplayName = "Head Mesh")
+};
+
 /* ───────────────────────────── Movement Settings ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DMovementSettings
@@ -149,16 +159,6 @@ struct FCharacter2DTalkSettings
     /** Скорость зацикленного воспроизведения разговора */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk", meta=(ClampMin="0.1"))
     float TalkPlayRate = 1.f;
-};
-
-/* ───────────────────────────── Sprite Attachment ───────────────────────────── */
-UENUM(BlueprintType)
-enum class ECharacter2DAttachmentTarget : uint8
-{
-    None    UMETA(DisplayName = "None"),
-    Body    UMETA(DisplayName = "Body Mesh"),
-    Arms    UMETA(DisplayName = "Arms Mesh"),
-    Head    UMETA(DisplayName = "Head Mesh")
 };
 
 /* ───────────────────────────── Sprite Layer ───────────────────────────── */
