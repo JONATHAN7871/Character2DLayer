@@ -9,6 +9,7 @@
 #include "Data/Character2DPosePreset.h"
 #include "IDetailsView.h"
 #include "PropertyCustomizationHelpers.h"
+#include "DetailLayoutBuilder.h"
 
 #define LOCTEXT_NAMESPACE "Character2DAssetEditor"
 
@@ -17,6 +18,51 @@ const FName FCharacter2DAssetEditorToolkit::SkeletalDetailsTabID(TEXT("Character
 const FName FCharacter2DAssetEditorToolkit::SpriteDetailsTabID(TEXT("Character2DAssetEditor_SpriteDetails"));
 const FName FCharacter2DAssetEditorToolkit::ActionsTabID(TEXT("Character2DAssetEditor_Actions"));
 const FName FCharacter2DAssetEditorToolkit::PresetsTabID(TEXT("Character2DAssetEditor_Presets"));
+
+/* ====================================================================== */
+/*                         Sprite Details Customization                   */
+/* ====================================================================== */
+
+TSharedRef<IDetailCustomization> FCharacter2DSpriteCustomization::MakeInstance()
+{
+    return MakeShared<FCharacter2DSpriteCustomization>();
+}
+
+void FCharacter2DSpriteCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
+{
+    TArray<TWeakObjectPtr<UObject>> Objects;
+    DetailBuilder.GetObjectsBeingCustomized(Objects);
+
+    UCharacter2DAsset* Asset = nullptr;
+    if (Objects.Num() == 1)
+    {
+        Asset = Cast<UCharacter2DAsset>(Objects[0]);
+    }
+
+    IDetailCategoryBuilder& CatBody  = DetailBuilder.EditCategory(TEXT("Sprite Body"));
+    IDetailCategoryBuilder& CatArms  = DetailBuilder.EditCategory(TEXT("Sprite Arms"));
+    IDetailCategoryBuilder& CatHead  = DetailBuilder.EditCategory(TEXT("Sprite Head"));
+    IDetailCategoryBuilder& CatTrans = DetailBuilder.EditCategory(TEXT("Sprite Transform"));
+
+    CatBody.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Body)));
+
+    CatArms.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Arms)));
+
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Head)));
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Eyebrow)));
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Eyes)));
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Eyelids)));
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.Mouth)));
+
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.EyelidsBlinkSettings)));
+    CatHead.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.MouthTalkSettings)));
+
+    CatTrans.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.GlobalOffset)));
+    CatTrans.AddProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure.GlobalScale)));
+
+    // Hide any other sprite-related properties
+    DetailBuilder.HideProperty(DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UCharacter2DAsset, SpriteStructure)));
+}
 
 void FCharacter2DAssetEditorToolkit::InitEditor(EToolkitMode::Type Mode,
                                                 const TSharedPtr<IToolkitHost>& Host,
@@ -175,7 +221,11 @@ void FCharacter2DAssetEditorToolkit::InitEditor(EToolkitMode::Type Mode,
 				FSlateIcon());
 		}));
 
-	AddToolbarExtender(ToolbarExtender);
+        AddToolbarExtender(ToolbarExtender);
+
+        FPropertyEditorModule& PEM = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+        PEM.RegisterCustomClassLayout("Character2DAsset",
+            FOnGetDetailCustomizationInstance::CreateStatic(&FCharacter2DSpriteCustomization::MakeInstance));
 }
 
 void FCharacter2DAssetEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -434,27 +484,7 @@ TSharedRef<IDetailsView> FCharacter2DAssetEditorToolkit::CreateSpriteDetailsView
 	// Создаём само представление
 	TSharedRef<IDetailsView> DetailsView = PropertyEditorModule.CreateDetailView(DetailsViewArgs);
 
-	// Устанавливаем делегат видимости свойств:
-	// показываем теперь строго только свойства из категорий Sprite, Blink и Talk
-	DetailsView->SetIsPropertyVisibleDelegate(
-		FIsPropertyVisible::CreateLambda([](const FPropertyAndParent& PropertyAndParent) -> bool
-		{
-			const FProperty* Property = &PropertyAndParent.Property;
-			const FString PropertyName = Property->GetName();
-			const FString CategoryName = Property->GetMetaData(TEXT("Category"));
 
-			// Показываем свойства, относящиеся к Sprite (слои, Blink, Talk)
-			if (CategoryName.Contains(TEXT("Sprite")) ||
-				CategoryName.Contains(TEXT("Blink")) ||
-				CategoryName.Contains(TEXT("Talk")))
-			{
-				return true;
-			}
-
-			// Всё остальное скрываем
-			return false;
-		})
-	);
 
 	// Привязываем представление к текущему Asset’у и подписываемся на событие изменения
 	DetailsView->SetObject(AssetBeingEdited);
@@ -507,7 +537,16 @@ FLinearColor FCharacter2DAssetEditorToolkit::GetWorldCentricTabColorScale() cons
 
 void FCharacter2DAssetEditorToolkit::AddReferencedObjects(FReferenceCollector& Collector)
 {
-	// TObjectPtr automatically handles reference collection
+        // TObjectPtr automatically handles reference collection
+}
+
+FCharacter2DAssetEditorToolkit::~FCharacter2DAssetEditorToolkit()
+{
+    if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
+    {
+        FPropertyEditorModule& PEM = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+        PEM.UnregisterCustomClassLayout("Character2DAsset");
+    }
 }
 
 #undef LOCTEXT_NAMESPACE
