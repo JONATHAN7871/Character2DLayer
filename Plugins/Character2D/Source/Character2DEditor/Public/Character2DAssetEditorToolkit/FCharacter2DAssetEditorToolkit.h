@@ -8,14 +8,24 @@
 #include "Character2DEnums.h"
 #include "Slate/SCharacter2DPresetPanel.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "IDetailCustomization.h"
 
 class SCharacter2DAssetViewport;
 class SCharacter2DActionPanel;
 
+class FCharacter2DSpriteCustomization : public IDetailCustomization
+{
+public:
+    static TSharedRef<IDetailCustomization> MakeInstance();
+
+    virtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override;
+};
+
 class FCharacter2DAssetEditorToolkit : public FAssetEditorToolkit, public FGCObject
 {
 public:
-	void InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UCharacter2DAsset* InAsset);
+        void InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UCharacter2DAsset* InAsset);
+        virtual ~FCharacter2DAssetEditorToolkit();
 
 	virtual FName GetToolkitFName() const override;
 	virtual FText GetBaseToolkitName() const override;
