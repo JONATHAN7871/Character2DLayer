@@ -1,6 +1,6 @@
 // SCharacter2DPreviewViewport.cpp
 
-#include "Character2DBuilderWindow/SCharacter2DPreviewViewport.h"
+#include "Character2DBuilderWindow/Slate/SCharacter2DPreviewViewport.h"
 #include "Character2DBuilderWindow/AssetData/Character2DLayerData.h"
 
 #include "EditorViewportClient.h"

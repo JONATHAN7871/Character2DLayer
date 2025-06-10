@@ -1,4 +1,4 @@
-#include "Character2DAssetEditorToolkit/SCharacter2DSpriteTile.h"
+#include "Character2DAssetEditorToolkit/Slate/SCharacter2DSpriteTile.h"
 
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"

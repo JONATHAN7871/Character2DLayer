@@ -1,6 +1,6 @@
 // SCharacter2DBuilderWindow.cpp
 
-#include "Character2DBuilderWindow/SCharacter2DBuilderWindow.h"
+#include "Character2DBuilderWindow/Slate/SCharacter2DBuilderWindow.h"
 #include "Character2DBuilderWindow/Character2DMeshGenerator.h"
 #include "Character2DBuilderWindow/AssetData/Character2DAssetData.h"
 #include "Widgets/Input/SButton.h"
@@ -9,7 +9,7 @@
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
 #include "PropertyCustomizationHelpers.h"
-#include "Character2DBuilderWindow/SCharacter2DPreviewViewport.h"
+#include "Character2DBuilderWindow/Slate/SCharacter2DPreviewViewport.h"
 #include "Engine/AssetManager.h"
 #include "Misc/MessageDialog.h"
 #include "UObject/SavePackage.h"

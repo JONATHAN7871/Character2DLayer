@@ -6,7 +6,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Templates/SharedPointer.h"
 #include "Character2DBuilderWindow/AssetData/Character2DLayerData.h"
-#include "Character2DMeshGeneratorOptions.h"
+#include "Character2DBuilderWindow/Character2DMeshGeneratorOptions.h"
 
 class SCharacter2DPreviewViewport;
 

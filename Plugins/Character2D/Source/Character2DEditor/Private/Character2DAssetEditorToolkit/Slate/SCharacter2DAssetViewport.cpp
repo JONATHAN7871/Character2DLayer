@@ -1,4 +1,4 @@
-#include "Character2DAssetEditorToolkit/SCharacter2DAssetViewport.h"
+#include "Character2DAssetEditorToolkit/Slate/SCharacter2DAssetViewport.h"
 #include "Character2DActor.h"
 #include "AdvancedPreviewScene.h"
 #include "EditorViewportClient.h"

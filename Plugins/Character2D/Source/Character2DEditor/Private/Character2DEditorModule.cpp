@@ -1,7 +1,7 @@
 #include "Character2DEditorModule.h"
 #include "AssetToolsModule.h"
 #include "ToolMenus.h"
-#include "Character2DBuilderWindow/SCharacter2DBuilderWindow.h"
+#include "Character2DBuilderWindow/Slate/SCharacter2DBuilderWindow.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
