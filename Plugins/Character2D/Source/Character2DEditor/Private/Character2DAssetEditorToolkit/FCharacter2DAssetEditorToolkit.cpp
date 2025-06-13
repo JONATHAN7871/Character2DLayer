@@ -434,8 +434,7 @@ TSharedRef<IDetailsView> FCharacter2DAssetEditorToolkit::CreateSpriteDetailsView
 	// Создаём само представление
 	TSharedRef<IDetailsView> DetailsView = PropertyEditorModule.CreateDetailView(DetailsViewArgs);
 
-	// Устанавливаем делегат видимости свойств:
-	// показываем теперь строго только свойства из категорий Sprite, Blink и Talk
+	// Устанавливаем делегат видимости свойств для показа только Sprite-свойств
 	DetailsView->SetIsPropertyVisibleDelegate(
 		FIsPropertyVisible::CreateLambda([](const FPropertyAndParent& PropertyAndParent) -> bool
 		{
@@ -443,20 +442,32 @@ TSharedRef<IDetailsView> FCharacter2DAssetEditorToolkit::CreateSpriteDetailsView
 			const FString PropertyName = Property->GetName();
 			const FString CategoryName = Property->GetMetaData(TEXT("Category"));
 
-			// Показываем свойства, относящиеся к Sprite (слои, Blink, Talk)
-			if (CategoryName.Contains(TEXT("Sprite")) ||
-				CategoryName.Contains(TEXT("Blink")) ||
-				CategoryName.Contains(TEXT("Talk")))
+			// Скрываем нежелательные категории
+			if (CategoryName.Contains(TEXT("Skeletal")) ||
+				CategoryName.Contains(TEXT("Visual Novel")) ||
+				CategoryName.Contains(TEXT("General")))
+			{
+				return false;
+			}
+
+			// Показываем категории связанные со спрайтами
+			if (CategoryName.StartsWith(TEXT("Sprite")) ||
+				CategoryName == TEXT("Blink") ||
+				CategoryName == TEXT("Talk") ||
+				CategoryName.Contains(TEXT("Blink|")) ||
+				CategoryName.Contains(TEXT("Talk|")) ||
+				CategoryName.Contains(TEXT("Sprite|")) ||
+				CategoryName == TEXT("Vector")) // Для компонентов FVector (X, Y, Z)
 			{
 				return true;
 			}
 
-			// Всё остальное скрываем
+			// Скрываем все остальное
 			return false;
 		})
 	);
 
-	// Привязываем представление к текущему Asset’у и подписываемся на событие изменения
+	// Привязываем представление к текущему Asset'у и подписываемся на событие изменения
 	DetailsView->SetObject(AssetBeingEdited);
 	DetailsView->OnFinishedChangingProperties().AddRaw(this, &FCharacter2DAssetEditorToolkit::OnAssetPropertyChanged);
 

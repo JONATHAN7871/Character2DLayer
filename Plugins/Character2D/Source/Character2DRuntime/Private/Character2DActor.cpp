@@ -89,27 +89,26 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     SetupSkeletalComponent(ArmsComponent, CharacterAsset->Arms);
     SetupSkeletalComponent(HeadComponent, CharacterAsset->Head);
 
-    // Setup sprite parts with attachment
-    const FCharacter2DSpriteStructure& SpriteStruct = CharacterAsset->SpriteStructure;
-    SetupSpriteComponent(SpriteBody, SpriteStruct.Body);
-    SetupSpriteComponent(SpriteArms, SpriteStruct.Arms);
-    SetupSpriteComponent(SpriteHead, SpriteStruct.Head);
-    SetupSpriteComponent(SpriteEyebrow, SpriteStruct.Eyebrow);
-    SetupSpriteComponent(SpriteEyes, SpriteStruct.Eyes);
-    SetupSpriteComponent(SpriteEyelids, SpriteStruct.Eyelids);
-    SetupSpriteComponent(SpriteMouth, SpriteStruct.Mouth);
+    // Setup sprite parts using new structure directly
+    SetupSpriteComponentFromStruct(SpriteBody, CharacterAsset->SpriteStructure.Body);
+    SetupSpriteComponentFromStruct(SpriteArms, CharacterAsset->SpriteStructure.Arms);
+    SetupSpriteComponent(SpriteHead, CharacterAsset->GetHeadSprite());
+    SetupSpriteComponent(SpriteEyebrow, CharacterAsset->GetEyebrowSprite());
+    SetupSpriteComponent(SpriteEyes, CharacterAsset->GetEyesSprite());
+    SetupSpriteComponent(SpriteEyelids, CharacterAsset->GetEyelidsSprite());
+    SetupSpriteComponent(SpriteMouth, CharacterAsset->GetMouthSprite());
 
     // Attach sprites to sockets if specified
-    AttachSpriteToSocket(SpriteBody, SpriteStruct.Body);
-    AttachSpriteToSocket(SpriteArms, SpriteStruct.Arms);
-    AttachSpriteToSocket(SpriteHead, SpriteStruct.Head);
-    AttachSpriteToSocket(SpriteEyebrow, SpriteStruct.Eyebrow);
-    AttachSpriteToSocket(SpriteEyes, SpriteStruct.Eyes);
-    AttachSpriteToSocket(SpriteEyelids, SpriteStruct.Eyelids);
-    AttachSpriteToSocket(SpriteMouth, SpriteStruct.Mouth);
+    AttachSpriteToSocketFromStruct(SpriteBody, CharacterAsset->SpriteStructure.Body);
+    AttachSpriteToSocketFromStruct(SpriteArms, CharacterAsset->SpriteStructure.Arms);
+    AttachSpriteToSocket(SpriteHead, CharacterAsset->GetHeadSprite());
+    AttachSpriteToSocket(SpriteEyebrow, CharacterAsset->GetEyebrowSprite());
+    AttachSpriteToSocket(SpriteEyes, CharacterAsset->GetEyesSprite());
+    AttachSpriteToSocket(SpriteEyelids, CharacterAsset->GetEyelidsSprite());
+    AttachSpriteToSocket(SpriteMouth, CharacterAsset->GetMouthSprite());
 
     // Setup flipbook components
-    const auto& BlinkSettings = SpriteStruct.EyelidsBlinkSettings;
+    const auto& BlinkSettings = CharacterAsset->GetBlinkSettings();
     EyelidComponent->SetFlipbook(BlinkSettings.BlinkFlipbook);
     EyelidComponent->SetVisibility(false);
     AttachFlipbookToSocket(EyelidComponent,
@@ -119,7 +118,7 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
         BlinkSettings.Offset,
         BlinkSettings.Scale);
 
-    const auto& TalkSettings = SpriteStruct.MouthTalkSettings;
+    const auto& TalkSettings = CharacterAsset->GetTalkSettings();
     MouthComponent->SetFlipbook(TalkSettings.TalkFlipbook);
     MouthComponent->SetVisibility(false);
     AttachFlipbookToSocket(MouthComponent,
@@ -138,6 +137,92 @@ void ACharacter2DActor::RefreshFromAsset()
 {
     OnConstruction(GetActorTransform());
 }
+
+void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteBodyStructure& BodyStruct)
+{
+    if (!Component || !CharacterAsset) return;
+
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    Component->SetSprite(BodyStruct.Sprite);
+    Component->SetRelativeLocation(BodyStruct.Offset + GlobalOffset);
+    Component->SetRelativeScale3D(FVector(BodyStruct.Scale * GlobalScale));
+    Component->SetVisibility(BodyStruct.bVisible && bSpritesVisible);
+}
+
+
+void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct)
+{
+    if (!Component || !CharacterAsset) return;
+
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    Component->SetSprite(ArmsStruct.Sprite);
+    Component->SetRelativeLocation(ArmsStruct.Offset + GlobalOffset);
+    Component->SetRelativeScale3D(FVector(ArmsStruct.Scale * GlobalScale));
+    Component->SetVisibility(ArmsStruct.bVisible && bSpritesVisible);
+}
+
+void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct)
+{
+    if (!SpriteComp || !CharacterAsset) return;
+
+    ECharacter2DAttachmentTarget Target = BodyStruct.AttachmentTarget;
+    FName Socket = BodyStruct.SocketName;
+    bool bUseSocketTransform = BodyStruct.bUseSocketTransform;
+    FVector LocalOffset = BodyStruct.Offset;
+    float LocalScale = BodyStruct.Scale;
+
+    if (Target == ECharacter2DAttachmentTarget::None) return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None) return;
+   
+    // Detach from current parent and attach to socket
+    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
+   
+    // Apply socket-specific offset if needed
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+    }
+}
+
+void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct)
+{
+    if (!SpriteComp || !CharacterAsset) return;
+
+    ECharacter2DAttachmentTarget Target = ArmsStruct.AttachmentTarget;
+    FName Socket = ArmsStruct.SocketName;
+    bool bUseSocketTransform = ArmsStruct.bUseSocketTransform;
+    FVector LocalOffset = ArmsStruct.Offset;
+    float LocalScale = ArmsStruct.Scale;
+
+    if (Target == ECharacter2DAttachmentTarget::None) return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None) return;
+   
+    // Detach from current parent and attach to socket
+    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
+   
+    // Apply socket-specific offset if needed
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+    }
+}
+
 
 /* ====================================================================== */
 /*                            Movement System                             */
@@ -586,10 +671,16 @@ USkeletalMeshComponent* ACharacter2DActor::GetSkeletalComponentByTarget(ECharact
 
 bool ACharacter2DActor::HasValidSprites() const
 {
-   if (!CharacterAsset) return false;
-   
-   const auto& SpriteStruct = CharacterAsset->SpriteStructure;
-   return SpriteStruct.Body.Sprite || SpriteStruct.Arms.Sprite || SpriteStruct.Head.Sprite;
+    if (!CharacterAsset) return false;
+    
+    const auto& SpriteStruct = CharacterAsset->SpriteStructure;
+    return (SpriteStruct.Body.Sprite != nullptr ||
+            SpriteStruct.Arms.Sprite != nullptr ||
+            SpriteStruct.Head.Head.Sprite != nullptr ||
+            SpriteStruct.Head.Eyes.Sprite != nullptr ||
+            SpriteStruct.Head.Eyebrow.Sprite != nullptr ||
+            SpriteStruct.Head.Eyelids.Sprite != nullptr ||
+            SpriteStruct.Head.Mouth.Sprite != nullptr);
 }
 
 bool ACharacter2DActor::HasValidSkeletalMeshes() const
@@ -601,15 +692,15 @@ bool ACharacter2DActor::HasValidSkeletalMeshes() const
 
 void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, const FCharacter2DSpriteLayer& Layer)
 {
-   if (!Component || !CharacterAsset) return;
+    if (!Component || !CharacterAsset) return;
 
-   const FVector GlobalOffset = CharacterAsset->SpriteStructure.GlobalOffset;
-   const float GlobalScale = CharacterAsset->SpriteStructure.GlobalScale;
-   
-   Component->SetSprite(Layer.Sprite);
-   Component->SetRelativeLocation(Layer.Offset + GlobalOffset);
-   Component->SetRelativeScale3D(FVector(Layer.Scale * GlobalScale));
-   Component->SetVisibility(Layer.bVisible && bSpritesVisible);
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    Component->SetSprite(Layer.Sprite);
+    Component->SetRelativeLocation(Layer.Offset + GlobalOffset);
+    Component->SetRelativeScale3D(FVector(Layer.Scale * GlobalScale));
+    Component->SetVisibility(Layer.bVisible && bSpritesVisible);
 }
 
 void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part)
@@ -642,15 +733,15 @@ void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, 
     FVector LocalOffset = Layer.Offset;
     float LocalScale = Layer.Scale;
 
-    const FCharacter2DSpriteStructure& SpriteStruct = CharacterAsset->SpriteStructure;
+    const auto& SpriteStruct = CharacterAsset->SpriteStructure;
 
     // If no target specified for facial sprites, inherit head settings
     const bool bIsFaceSprite = (SpriteComp == SpriteEyebrow || SpriteComp == SpriteEyes || SpriteComp == SpriteEyelids || SpriteComp == SpriteMouth);
     if (Target == ECharacter2DAttachmentTarget::None && bIsFaceSprite)
     {
-        Target = SpriteStruct.Head.AttachmentTarget;
-        Socket = SpriteStruct.Head.SocketName;
-        bUseSocketTransform = SpriteStruct.Head.bUseSocketTransform;
+        Target = SpriteStruct.Head.Head.AttachmentTarget;
+        Socket = SpriteStruct.Head.Head.SocketName;
+        bUseSocketTransform = SpriteStruct.Head.Head.bUseSocketTransform;
     }
 
     if (Target == ECharacter2DAttachmentTarget::None) return;
@@ -662,11 +753,11 @@ void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, 
     SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
     SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
    
-   // Apply socket-specific offset if needed
+    // Apply socket-specific offset if needed
     if (!bUseSocketTransform)
     {
-        const FVector GlobalOffset = SpriteStruct.GlobalOffset;
-        const float GlobalScale = SpriteStruct.GlobalScale;
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
         SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
         SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
     }
@@ -679,14 +770,14 @@ void ACharacter2DActor::AttachFlipbookToSocket(UPaperFlipbookComponent* Flipbook
     if (!FlipbookComp || !CharacterAsset)
         return;
 
-    const FCharacter2DSpriteStructure& SpriteStruct = CharacterAsset->SpriteStructure;
+    const auto& SpriteStruct = CharacterAsset->SpriteStructure;
 
     // Fallback to head settings if no explicit target
     if (Target == ECharacter2DAttachmentTarget::None)
     {
-        Target = SpriteStruct.Head.AttachmentTarget;
-        Socket = SpriteStruct.Head.SocketName;
-        bUseSocketTransform = SpriteStruct.Head.bUseSocketTransform;
+        Target = SpriteStruct.Head.Head.AttachmentTarget;
+        Socket = SpriteStruct.Head.Head.SocketName;
+        bUseSocketTransform = SpriteStruct.Head.Head.bUseSocketTransform;
     }
 
     if (Target == ECharacter2DAttachmentTarget::None)
@@ -701,12 +792,13 @@ void ACharacter2DActor::AttachFlipbookToSocket(UPaperFlipbookComponent* Flipbook
 
     if (!bUseSocketTransform)
     {
-        const FVector GlobalOffset = SpriteStruct.GlobalOffset;
-        const float GlobalScale = SpriteStruct.GlobalScale;
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
         FlipbookComp->SetRelativeLocation(LocalOffset + GlobalOffset);
         FlipbookComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
     }
 }
+
 
 /* ====================================================================== */
 /*                          Emotion Implementations                       */
@@ -871,124 +963,136 @@ void ACharacter2DActor::EnableTalking(bool bEnable)
 
 void ACharacter2DActor::StartBlinking()
 {
-   if (!IsValid(this) || !IsValid(EyelidComponent) || !CharacterAsset) return;
+    if (!IsValid(this) || !IsValid(EyelidComponent) || !CharacterAsset) return;
 
-   bIsBlinking = true;
-   const auto& Settings = CharacterAsset->SpriteStructure.EyelidsBlinkSettings;
-   const float Delay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
+    bIsBlinking = true;
+    const auto& Settings = CharacterAsset->GetBlinkSettings();
+    const float Delay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
 
-   GetWorldTimerManager().SetTimer(
-       BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, Delay, false);
+    GetWorldTimerManager().SetTimer(
+        BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, Delay, false);
 }
 
 void ACharacter2DActor::StopBlinking()
 {
-   bIsBlinking = false;
-   GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
-   GetWorldTimerManager().ClearTimer(BlinkRestoreHandle);
+    bIsBlinking = false;
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkRestoreHandle);
 
-   if (IsValid(SpriteEyelids))
-   {
-       const auto& Layer = CharacterAsset->SpriteStructure.Eyelids;
-       SpriteEyelids->SetSprite(Layer.Sprite);
-       SpriteEyelids->SetVisibility(Layer.bVisible && bSpritesVisible);
-   }
-   if (IsValid(EyelidComponent))
-   {
-       EyelidComponent->SetVisibility(false);
-       EyelidComponent->Stop();
-   }
+    if (IsValid(SpriteEyelids))
+    {
+        const auto& Layer = CharacterAsset->GetEyelidsSprite();
+        SpriteEyelids->SetSprite(Layer.Sprite);
+        SpriteEyelids->SetVisibility(Layer.bVisible && bSpritesVisible);
+    }
+    if (IsValid(EyelidComponent))
+    {
+        EyelidComponent->SetVisibility(false);
+        EyelidComponent->Stop();
+    }
 }
 
 void ACharacter2DActor::HandleBlink()
 {
-   if (!bIsBlinking || !CharacterAsset || !IsValid(EyelidComponent) || !IsValid(SpriteEyelids))
-   {
-       StopBlinking();
-       return;
-   }
+    if (!bIsBlinking || !CharacterAsset || !IsValid(EyelidComponent) || !IsValid(SpriteEyelids))
+    {
+        StopBlinking();
+        return;
+    }
 
-   const auto& Settings = CharacterAsset->SpriteStructure.EyelidsBlinkSettings;
-   if (!Settings.BlinkFlipbook)
-   {
-       StopBlinking();
-       return;
-   }
+    const auto& Settings = CharacterAsset->GetBlinkSettings();
+    if (!Settings.BlinkFlipbook)
+    {
+        StopBlinking();
+        return;
+    }
 
-   // Show animated blink
-   SpriteEyelids->SetVisibility(false);
-   EyelidComponent->SetFlipbook(Settings.BlinkFlipbook);
-   const float Rate = FMath::FRandRange(Settings.BlinkPlayRateMin, Settings.BlinkPlayRateMax);
-   EyelidComponent->SetPlayRate(Rate);
-   EyelidComponent->SetVisibility(bSpritesVisible);
-   EyelidComponent->PlayFromStart();
+    // Скрываем статичный спрайт век
+    SpriteEyelids->SetVisibility(false);
+    
+    // Показываем и запускаем анимацию моргания
+    EyelidComponent->SetFlipbook(Settings.BlinkFlipbook);
+    const float Rate = FMath::FRandRange(Settings.BlinkPlayRateMin, Settings.BlinkPlayRateMax);
+    EyelidComponent->SetPlayRate(Rate);
+    EyelidComponent->SetVisibility(bSpritesVisible);
+    EyelidComponent->PlayFromStart();
 
-   const float Duration = Settings.BlinkFlipbook->GetTotalDuration() / Rate;
+    const float Duration = Settings.BlinkFlipbook->GetTotalDuration() / Rate;
 
-   // Restore static eyelids after animation
-   FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]()
-   {
-       if (!IsValid(this) || !IsValid(EyelidComponent) || !IsValid(SpriteEyelids) || !CharacterAsset)
-           return;
+    // Restore static eyelids after animation
+    FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]()
+    {
+        if (!IsValid(this) || !IsValid(EyelidComponent) || !IsValid(SpriteEyelids) || !CharacterAsset)
+            return;
 
-       const auto& Layer = CharacterAsset->SpriteStructure.Eyelids;
-       EyelidComponent->Stop();
-       EyelidComponent->SetVisibility(false);
-       SpriteEyelids->SetSprite(Layer.Sprite);
-       SpriteEyelids->SetVisibility(Layer.bVisible && bSpritesVisible);
+        // Останавливаем и скрываем анимацию моргания
+        EyelidComponent->Stop();
+        EyelidComponent->SetVisibility(false);
+        
+        // Восстанавливаем статичный спрайт век
+        const auto& Layer = CharacterAsset->GetEyelidsSprite();
+        SpriteEyelids->SetSprite(Layer.Sprite);
+        SpriteEyelids->SetVisibility(Layer.bVisible && bSpritesVisible);
 
-       // Chance for double blink
-       if (bIsBlinking && FMath::FRand() < 0.25f)
-       {
-           HandleBlink();
-           return;
-       }
+        // Chance for double blink
+        if (bIsBlinking && FMath::FRand() < 0.25f)
+        {
+            HandleBlink();
+            return;
+        }
 
-       // Schedule next blink
-       if (bIsBlinking)
-       {
-           const auto& S = CharacterAsset->SpriteStructure.EyelidsBlinkSettings;
-           const float NextDelay = FMath::FRandRange(S.BlinkIntervalMin, S.BlinkIntervalMax);
-           GetWorldTimerManager().SetTimer(
-               BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, NextDelay, false);
-       }
-   });
+        // Schedule next blink
+        if (bIsBlinking)
+        {
+            const auto& S = CharacterAsset->GetBlinkSettings();
+            const float NextDelay = FMath::FRandRange(S.BlinkIntervalMin, S.BlinkIntervalMax);
+            GetWorldTimerManager().SetTimer(
+                BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, NextDelay, false);
+        }
+    });
 
-   GetWorldTimerManager().SetTimer(BlinkRestoreHandle, RestoreDelegate, Duration, false);
+    GetWorldTimerManager().SetTimer(BlinkRestoreHandle, RestoreDelegate, Duration, false);
 }
 
 void ACharacter2DActor::StartTalking()
 {
-   if (!IsValid(MouthComponent) || !IsValid(SpriteMouth) || !CharacterAsset) return;
+    if (!IsValid(MouthComponent) || !IsValid(SpriteMouth) || !CharacterAsset) return;
 
-   bIsTalking = true;
-   const auto& Settings = CharacterAsset->SpriteStructure.MouthTalkSettings;
-   if (!Settings.TalkFlipbook)
-   {
-       bIsTalking = false;
-       return;
-   }
+    bIsTalking = true;
+    const auto& Settings = CharacterAsset->GetTalkSettings();
+    if (!Settings.TalkFlipbook)
+    {
+        bIsTalking = false;
+        return;
+    }
 
-   SpriteMouth->SetVisibility(false);
-   MouthComponent->SetFlipbook(Settings.TalkFlipbook);
-   MouthComponent->SetPlayRate(Settings.TalkPlayRate);
-   MouthComponent->SetLooping(true);
-   MouthComponent->SetVisibility(bSpritesVisible);
-   MouthComponent->Play();
+    // Скрываем статичный спрайт рта
+    SpriteMouth->SetVisibility(false);
+    
+    // Показываем и запускаем анимацию рта
+    MouthComponent->SetFlipbook(Settings.TalkFlipbook);
+    MouthComponent->SetPlayRate(Settings.TalkPlayRate);
+    MouthComponent->SetLooping(true);
+    MouthComponent->SetVisibility(bSpritesVisible);
+    MouthComponent->Play();
 }
 
 void ACharacter2DActor::StopTalking()
 {
-   bIsTalking = false;
-   if (IsValid(MouthComponent))
-   {
-       MouthComponent->Stop();
-       MouthComponent->SetVisibility(false);
-   }
-   if (IsValid(SpriteMouth) && CharacterAsset)
-   {
-       const auto& Layer = CharacterAsset->SpriteStructure.Mouth;
-       SpriteMouth->SetSprite(Layer.Sprite);
-       SpriteMouth->SetVisibility(Layer.bVisible && bSpritesVisible);
-   }
+    bIsTalking = false;
+    
+    // Останавливаем и скрываем анимацию рта
+    if (IsValid(MouthComponent))
+    {
+        MouthComponent->Stop();
+        MouthComponent->SetVisibility(false);
+    }
+    
+    // Восстанавливаем статичный спрайт рта
+    if (IsValid(SpriteMouth) && CharacterAsset)
+    {
+        const auto& Layer = CharacterAsset->GetMouthSprite();
+        SpriteMouth->SetSprite(Layer.Sprite);
+        SpriteMouth->SetVisibility(Layer.bVisible && bSpritesVisible);
+    }
 }

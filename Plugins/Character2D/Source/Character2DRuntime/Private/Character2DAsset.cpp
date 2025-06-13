@@ -24,8 +24,10 @@ void UCharacter2DAsset::MigrateLegacyData()
         VisualNovelSettings.DefaultMovementSettings.Duration = 1.0f;
     }
     
+    // Migrate sprite structure to new format
+    SpriteStructure.MigrateFromLegacyStructure();
+    
     // Ensure backwards compatibility for existing sprite configurations
-    // If sprites are configured but skeletal meshes are not, disable dual rendering
     bool bHasSprites = HasValidSpriteConfiguration();
     bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
     
@@ -42,15 +44,16 @@ void UCharacter2DAsset::MigrateLegacyData()
 
 bool UCharacter2DAsset::HasValidSpriteConfiguration() const
 {
-    const FCharacter2DSpriteStructure& Sprites = SpriteStructure;
+    // Check new structure first
+    const auto& SpriteStruct = SpriteStructure;
     
-    return (Sprites.Body.Sprite != nullptr ||
-            Sprites.Arms.Sprite != nullptr ||
-            Sprites.Head.Sprite != nullptr ||
-            Sprites.Eyes.Sprite != nullptr ||
-            Sprites.Eyebrow.Sprite != nullptr ||
-            Sprites.Eyelids.Sprite != nullptr ||
-            Sprites.Mouth.Sprite != nullptr);
+    return (SpriteStruct.Body.Sprite != nullptr ||
+            SpriteStruct.Arms.Sprite != nullptr ||
+            SpriteStruct.Head.Head.Sprite != nullptr ||
+            SpriteStruct.Head.Eyes.Sprite != nullptr ||
+            SpriteStruct.Head.Eyebrow.Sprite != nullptr ||
+            SpriteStruct.Head.Eyelids.Sprite != nullptr ||
+            SpriteStruct.Head.Mouth.Sprite != nullptr);
 }
 
 bool UCharacter2DAsset::HasValidSkeletalConfiguration() const
@@ -120,7 +123,7 @@ void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext Context) 
     Context.AddTag(FAssetRegistryTag(TEXT("RenderingMode"), GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical));
     Context.AddTag(FAssetRegistryTag(TEXT("HasSprites"), HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
     Context.AddTag(FAssetRegistryTag(TEXT("HasSkeletalMeshes"), HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
-    Context.AddTag(FAssetRegistryTag(TEXT("SupportsBlinking"), (bAutoBlink && SpriteStructure.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
-    Context.AddTag(FAssetRegistryTag(TEXT("SupportsTalking"), (bAutoTalk && SpriteStructure.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+    Context.AddTag(FAssetRegistryTag(TEXT("SupportsBlinking"), (bAutoBlink && SpriteStructure.Head.EyelidsBlinkSettings.BlinkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+    Context.AddTag(FAssetRegistryTag(TEXT("SupportsTalking"), (bAutoTalk && SpriteStructure.Head.MouthTalkSettings.TalkFlipbook) ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
 }
 #endif // WITH_EDITOR

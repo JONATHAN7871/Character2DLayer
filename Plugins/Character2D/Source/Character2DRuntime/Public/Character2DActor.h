@@ -205,6 +205,12 @@ private:
         ECharacter2DAttachmentTarget Target, FName Socket, bool bUseSocketTransform,
         const FVector& Offset, float Scale);
 
+    // New methods for Body/Arms structures
+    void SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteBodyStructure& BodyStruct);
+    void SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct);
+    void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct);
+    void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct);
+
     bool HasValidSprites() const;
     bool HasValidSkeletalMeshes() const;
     
