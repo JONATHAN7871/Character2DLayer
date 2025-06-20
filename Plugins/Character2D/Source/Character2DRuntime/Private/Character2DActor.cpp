@@ -85,6 +85,9 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     if (!CharacterAsset) return;
 
+    // ИСПРАВЛЕНИЕ: Сброс всех трансформаций перед применением новых
+    ResetAllComponentTransforms();
+
     // Setup skeletal parts
     SetupSkeletalComponent(BodyComponent, CharacterAsset->Body);
     SetupSkeletalComponent(ArmsComponent, CharacterAsset->Arms);
@@ -94,14 +97,14 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     SetupSpriteComponentFromStruct(SpriteBody, CharacterAsset->SpriteStructure.Body);
     SetupSpriteComponentFromStruct(SpriteArms, CharacterAsset->SpriteStructure.Arms);
     
-    // ═══ NEW HEAD HIERARCHY SETUP ═══
+    // ═══ НОВАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ НАСТРОЙКИ ГОЛОВЫ ═══
     SetupHeadHierarchy();
 
-    // Attach sprites to sockets if specified
+    // Attach sprites to sockets if specified (порядок важен!)
     AttachSpriteToSocketFromStruct(SpriteBody, CharacterAsset->SpriteStructure.Body);
     AttachSpriteToSocketFromStruct(SpriteArms, CharacterAsset->SpriteStructure.Arms);
     
-    // Head attachment (only head has attachment target)
+    // ИСПРАВЛЕНИЕ: Head attachment выполняется ПОСЛЕ настройки иерархии
     AttachHeadToSocket();
 
     // Setup flipbook components with new hierarchy
@@ -110,6 +113,45 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     // Set initial visibility based on dual rendering setting
     SetSpritesVisible(CharacterAsset->bEnableDualRendering || !HasValidSkeletalMeshes());
     SetSkeletalVisible(CharacterAsset->bEnableDualRendering || !HasValidSprites());
+}
+
+// НОВЫЙ МЕТОД: Сброс всех трансформаций компонентов
+void ACharacter2DActor::ResetAllComponentTransforms()
+{
+    // Отсоединяем все спрайты от их родителей
+    TArray<UPaperSpriteComponent*> AllSprites = GetAllSpriteComponents();
+    for (UPaperSpriteComponent* Sprite : AllSprites)
+    {
+        if (Sprite && Sprite->GetAttachParent() != RootComponent)
+        {
+            Sprite->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+            Sprite->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+        }
+        
+        // Сбрасываем трансформации
+        if (Sprite)
+        {
+            Sprite->SetRelativeLocation(FVector::ZeroVector);
+            Sprite->SetRelativeScale3D(FVector::OneVector);
+        }
+    }
+
+    // Сбрасываем анимационные компоненты
+    if (EyelidComponent)
+    {
+        EyelidComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        EyelidComponent->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+        EyelidComponent->SetRelativeLocation(FVector::ZeroVector);
+        EyelidComponent->SetRelativeScale3D(FVector::OneVector);
+    }
+    
+    if (MouthComponent)
+    {
+        MouthComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        MouthComponent->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+        MouthComponent->SetRelativeLocation(FVector::ZeroVector);
+        MouthComponent->SetRelativeScale3D(FVector::OneVector);
+    }
 }
 
 void ACharacter2DActor::SetupHeadHierarchy()
@@ -123,23 +165,31 @@ void ACharacter2DActor::SetupHeadHierarchy()
     // ═══ Setup Head Root ═══
     const auto& HeadRoot = HeadStructure.Head;
     
-    // Head root uses standard setup (Global + Local)
+    // ИСПРАВЛЕНИЕ: Прикрепляем голову к RootComponent с базовыми настройками
+    SpriteHead->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteHead->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+    
+    // Head root использует Global настройки (будут скорректированы в AttachHeadToSocket)
     SpriteHead->SetSprite(HeadRoot.Sprite);
     SpriteHead->SetRelativeLocation(GlobalOffset + HeadRoot.Offset);
     SpriteHead->SetRelativeScale3D(FVector(GlobalScale * HeadRoot.Scale));
     SpriteHead->SetVisibility(HeadRoot.bVisible && bSpritesVisible);
 
-    // ═══ Setup Head Children (inherit from Head) ═══
+    // ═══ Setup Head Children (всегда прикреплены к Head) ═══
     
     // Eyebrows
     const auto& Eyebrows = HeadStructure.Eyebrows;
+    SpriteEyebrow->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteEyebrow->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
     SpriteEyebrow->SetSprite(Eyebrows.Sprite);
-    SpriteEyebrow->SetRelativeLocation(Eyebrows.LocalOffset);  // Relative to head
-    SpriteEyebrow->SetRelativeScale3D(FVector(Eyebrows.LocalScale)); // Relative to head scale
+    SpriteEyebrow->SetRelativeLocation(Eyebrows.LocalOffset);
+    SpriteEyebrow->SetRelativeScale3D(FVector(Eyebrows.LocalScale));
     SpriteEyebrow->SetVisibility(HeadStructure.GetFinalChildVisibility(Eyebrows) && bSpritesVisible);
 
     // Eyes
     const auto& Eyes = HeadStructure.Eyes;
+    SpriteEyes->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteEyes->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
     SpriteEyes->SetSprite(Eyes.Sprite);
     SpriteEyes->SetRelativeLocation(Eyes.LocalOffset);
     SpriteEyes->SetRelativeScale3D(FVector(Eyes.LocalScale));
@@ -147,6 +197,8 @@ void ACharacter2DActor::SetupHeadHierarchy()
 
     // Eyelids
     const auto& Eyelids = HeadStructure.Eyelids;
+    SpriteEyelids->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteEyelids->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
     SpriteEyelids->SetSprite(Eyelids.Sprite);
     SpriteEyelids->SetRelativeLocation(Eyelids.LocalOffset);
     SpriteEyelids->SetRelativeScale3D(FVector(Eyelids.LocalScale));
@@ -154,6 +206,8 @@ void ACharacter2DActor::SetupHeadHierarchy()
 
     // Mouth
     const auto& Mouth = HeadStructure.Mouth;
+    SpriteMouth->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteMouth->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
     SpriteMouth->SetSprite(Mouth.Sprite);
     SpriteMouth->SetRelativeLocation(Mouth.LocalOffset);
     SpriteMouth->SetRelativeScale3D(FVector(Mouth.LocalScale));
@@ -166,34 +220,47 @@ void ACharacter2DActor::AttachHeadToSocket()
 
     const auto& HeadRoot = CharacterAsset->SpriteStructure.Head.Head;
 
+    // Если attachment не нужен, оставляем голову прикрепленной к RootComponent
     if (HeadRoot.AttachmentTarget == ECharacter2DAttachmentTarget::None)
+    {
+        UE_LOG(LogCharacter2DActor, Verbose, TEXT("AttachHeadToSocket: No attachment target, keeping head on RootComponent"));
         return;
+    }
 
     USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(HeadRoot.AttachmentTarget);
-    if (!TargetComponent || HeadRoot.SocketName == NAME_None)
-        return;
-
-    // === Расчёт смещения до привязки ===
-    const FVector WorldBeforeAttach = SpriteHead->GetComponentLocation();
-    const FTransform SocketTransformWS = TargetComponent->GetSocketTransform(HeadRoot.SocketName, RTS_World);
-    const FVector WorldOffset = WorldBeforeAttach - SocketTransformWS.GetLocation();
-
-    // === Привязка с сохранением относительной трансформации ===
-    SpriteHead->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-    SpriteHead->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, HeadRoot.SocketName);
-
-    // === Компенсируем смещение ===
-    // Переводим мировое смещение в локальные координаты относительно сокета
-    const FTransform SocketTransformLS = TargetComponent->GetSocketTransform(HeadRoot.SocketName, RTS_ParentBoneSpace);
-    const FVector RelativeOffset = SocketTransformLS.InverseTransformVectorNoScale(WorldOffset);
-
-    SpriteHead->SetRelativeLocation(RelativeOffset);
-
-    // Обновляем масштаб (если не используется сокет-трансформ)
-    if (!HeadRoot.bUseSocketTransform)
+    if (!TargetComponent)
     {
-        const float FinalScale = CharacterAsset->GetGlobalSpriteScale() * HeadRoot.Scale;
-        SpriteHead->SetRelativeScale3D(FVector(FinalScale));
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachHeadToSocket: Target skeletal component not found for %s"), 
+               *UEnum::GetValueAsString(HeadRoot.AttachmentTarget));
+        return;
+    }
+
+    // ИСПРАВЛЕНИЕ: Используем новый универсальный метод для прикрепления
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    bool bSuccess = AttachComponentToSocket(
+        SpriteHead,
+        TargetComponent,
+        HeadRoot.SocketName,
+        HeadRoot.bUseSocketTransform,
+        HeadRoot.Offset,
+        HeadRoot.Scale,
+        GlobalOffset,
+        GlobalScale
+    );
+    
+    if (bSuccess)
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("AttachHeadToSocket: Successfully attached head to socket '%s' on %s"),
+               *HeadRoot.SocketName.ToString(), *UEnum::GetValueAsString(HeadRoot.AttachmentTarget));
+        
+        // Логируем финальную трансформацию для отладки
+        LogComponentTransform(SpriteHead, TEXT("SpriteHead"));
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("AttachHeadToSocket: Failed to attach head to socket"));
     }
 }
 
@@ -205,15 +272,25 @@ void ACharacter2DActor::SetupHeadAnimations()
 
     // ═══ Setup Blink Animation ═══
     const auto& BlinkSettings = HeadStructure.BlinkSettings;
+    
+    // ИСПРАВЛЕНИЕ: Отсоединяем и прикрепляем к голове заново
+    EyelidComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    EyelidComponent->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
+    
     EyelidComponent->SetFlipbook(BlinkSettings.BlinkFlipbook);
     EyelidComponent->SetVisibility(false);
     
-    // Animation components are attached to head, use local offsets
+    // Используем локальные координаты относительно головы
     EyelidComponent->SetRelativeLocation(BlinkSettings.LocalOffset);
     EyelidComponent->SetRelativeScale3D(FVector(BlinkSettings.LocalScale));
 
     // ═══ Setup Talk Animation ═══
     const auto& TalkSettings = HeadStructure.TalkSettings;
+    
+    // ИСПРАВЛЕНИЕ: Отсоединяем и прикрепляем к голове заново
+    MouthComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    MouthComponent->AttachToComponent(SpriteHead, FAttachmentTransformRules::KeepRelativeTransform);
+    
     MouthComponent->SetFlipbook(TalkSettings.TalkFlipbook);
     MouthComponent->SetVisibility(false);
     
@@ -223,19 +300,188 @@ void ACharacter2DActor::SetupHeadAnimations()
 
 void ACharacter2DActor::RefreshFromAsset()
 {
+    if (!CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("RefreshFromAsset: CharacterAsset is null"));
+        return;
+    }
+
     // Сохраняем runtime состояние перед обновлением
     bool bOldSpritesVisible = bSpritesVisible;
     bool bOldSkeletalVisible = bSkeletalVisible;
     bool bOldBlinkingActive = bBlinkingActive;
     bool bOldTalkingActive = bTalkingActive;
+    bool bOldActorHidden = IsHidden();
     
-    // Стандартное обновление
+    // Сохраняем позицию, поворот и масштаб актера
+    FVector SavedLocation = GetActorLocation();
+    FRotator SavedRotation = GetActorRotation();
+    FVector SavedScale = GetActorScale3D();
+    
+    // ИСПРАВЛЕНИЕ: Останавливаем все анимации перед обновлением
+    StopAllAnimationsForRefresh();
+    
+    // Обновляем конфигурацию (пересоздаем все компоненты)
     OnConstruction(GetActorTransform());
     
+    // ИСПРАВЛЕНИЕ: Восстанавливаем трансформацию актера
+    SetActorLocation(SavedLocation);
+    SetActorRotation(SavedRotation);
+    SetActorScale3D(SavedScale);
+    
     // Восстанавливаем runtime состояние
+    SetActorHiddenInGame(bOldActorHidden);
     SetBothVisible(bOldSpritesVisible, bOldSkeletalVisible);
-    EnableBlinking(bOldBlinkingActive);
-    EnableTalking(bOldTalkingActive);
+    
+    // Восстанавливаем анимации в конце
+    if (bOldBlinkingActive)
+    {
+        EnableBlinking(true);
+    }
+    if (bOldTalkingActive)
+    {
+        EnableTalking(true);
+    }
+    
+    UE_LOG(LogCharacter2DActor, Log, TEXT("RefreshFromAsset: Asset refreshed, runtime state restored"));
+}
+
+void ACharacter2DActor::StopAllAnimationsForRefresh()
+{
+    // Останавливаем таймеры анимаций
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkRestoreHandle);
+    
+    // Останавливаем Timeline компоненты
+    if (MovementTimeline)
+    {
+        MovementTimeline->Stop();
+    }
+    if (EmotionTimeline)
+    {
+        EmotionTimeline->Stop();
+    }
+    if (FadeTimeline)
+    {
+        FadeTimeline->Stop();
+    }
+    
+    // Сбрасываем флаги анимаций
+    bIsBlinking = false;
+    bIsTalking = false;
+    bIsMoving = false;
+    bIsPlayingEmotion = false;
+    bIsFading = false;
+}
+
+// ========== НОВЫЕ ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ Character2DActor.cpp ==========
+
+void ACharacter2DActor::ApplyComponentTransform(
+    USceneComponent* Component,
+    const FVector& LocalOffset,
+    float LocalScale,
+    const FVector& GlobalOffset,
+    float GlobalScale
+)
+{
+    if (!Component)
+    {
+        return;
+    }
+    
+    // Вычисляем финальные трансформации
+    const FVector FinalOffset = GlobalOffset + LocalOffset;
+    const float FinalScale = GlobalScale * LocalScale;
+    
+    // Применяем трансформации
+    Component->SetRelativeLocation(FinalOffset);
+    Component->SetRelativeScale3D(FVector(FinalScale));
+    
+    UE_LOG(LogCharacter2DActor, Verbose, TEXT("ApplyComponentTransform: %s - Offset: %s, Scale: %f"),
+           *Component->GetName(), *FinalOffset.ToString(), FinalScale);
+}
+
+bool ACharacter2DActor::AttachComponentToSocket(
+    USceneComponent* Component,
+    USkeletalMeshComponent* TargetMesh,
+    FName SocketName,
+    bool bUseSocketTransform,
+    const FVector& LocalOffset,
+    float LocalScale,
+    const FVector& GlobalOffset,
+    float GlobalScale
+)
+{
+    if (!Component || !TargetMesh)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachComponentToSocket: Invalid component or target mesh"));
+        return false;
+    }
+    
+    if (SocketName == NAME_None)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachComponentToSocket: Socket name is None"));
+        return false;
+    }
+    
+    if (!IsSocketValid(TargetMesh, SocketName))
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachComponentToSocket: Socket '%s' not found on mesh"), *SocketName.ToString());
+        return false;
+    }
+    
+    // Отсоединяем от текущего родителя
+    Component->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    
+    // Прикрепляем к сокету
+    Component->AttachToComponent(TargetMesh, FAttachmentTransformRules::KeepRelativeTransform, SocketName);
+    
+    // Применяем трансформации в зависимости от UseSocketTransform
+    if (bUseSocketTransform)
+    {
+        // Используем только локальное смещение от сокета
+        Component->SetRelativeLocation(LocalOffset);
+        Component->SetRelativeScale3D(FVector(LocalScale));
+    }
+    else
+    {
+        // Применяем полные глобальные + локальные трансформации
+        ApplyComponentTransform(Component, LocalOffset, LocalScale, GlobalOffset, GlobalScale);
+    }
+    
+    UE_LOG(LogCharacter2DActor, Log, TEXT("AttachComponentToSocket: %s attached to socket '%s', UseSocketTransform=%s"),
+           *Component->GetName(), *SocketName.ToString(), bUseSocketTransform ? TEXT("true") : TEXT("false"));
+    
+    return true;
+}
+
+bool ACharacter2DActor::IsSocketValid(USkeletalMeshComponent* Component, FName SocketName) const
+{
+    if (!Component || SocketName == NAME_None)
+    {
+        return false;
+    }
+    
+    return Component->DoesSocketExist(SocketName);
+}
+
+void ACharacter2DActor::LogComponentTransform(USceneComponent* Component, const FString& ComponentName) const
+{
+    if (!Component)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("LogComponentTransform: %s is null"), *ComponentName);
+        return;
+    }
+    
+    const FVector Location = Component->GetRelativeLocation();
+    const FVector Scale = Component->GetRelativeScale3D();
+    const FRotator Rotation = Component->GetRelativeRotation();
+    
+    USceneComponent* Parent = Component->GetAttachParent();
+    FString ParentName = Parent ? Parent->GetName() : TEXT("None");
+    
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Transform %s: Loc=%s, Rot=%s, Scale=%s, Parent=%s"),
+           *ComponentName, *Location.ToString(), *Rotation.ToString(), *Scale.ToString(), *ParentName);
 }
 
 /* ====================================================================== */
@@ -832,66 +1078,66 @@ void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* Sp
 {
     if (!SpriteComp || !CharacterAsset) return;
 
-    ECharacter2DAttachmentTarget Target = BodyStruct.AttachmentTarget;
-    FName Socket = BodyStruct.SocketName;
-    bool bUseSocketTransform = BodyStruct.bUseSocketTransform;
-    FVector LocalOffset = BodyStruct.Offset;
-    float LocalScale = BodyStruct.Scale;
-
-    if (Target == ECharacter2DAttachmentTarget::None) return;
-
-    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
-    if (!TargetComponent || Socket == NAME_None) return;
-   
-    // Detach from current parent and attach to socket
-    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
-   
-    // Apply socket-specific offset if needed
-    if (!bUseSocketTransform)
+    // Если attachment не требуется, оставляем компонент прикрепленным к RootComponent
+    if (BodyStruct.AttachmentTarget == ECharacter2DAttachmentTarget::None)
     {
-        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        
-        const float FinalScale = GlobalScale * LocalScale;
-        const FVector FinalOffset = GlobalOffset + LocalOffset;
-        
-        SpriteComp->SetRelativeLocation(FinalOffset);
-        SpriteComp->SetRelativeScale3D(FVector(FinalScale));
+        return;
     }
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(BodyStruct.AttachmentTarget);
+    if (!TargetComponent)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachSpriteToSocketFromStruct (Body): Target component not found"));
+        return;
+    }
+
+    // ИСПРАВЛЕНИЕ: Используем новый универсальный метод
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    AttachComponentToSocket(
+        SpriteComp,
+        TargetComponent,
+        BodyStruct.SocketName,
+        BodyStruct.bUseSocketTransform,
+        BodyStruct.Offset,
+        BodyStruct.Scale,
+        GlobalOffset,
+        GlobalScale
+    );
 }
 
 void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct)
 {
     if (!SpriteComp || !CharacterAsset) return;
 
-    ECharacter2DAttachmentTarget Target = ArmsStruct.AttachmentTarget;
-    FName Socket = ArmsStruct.SocketName;
-    bool bUseSocketTransform = ArmsStruct.bUseSocketTransform;
-    FVector LocalOffset = ArmsStruct.Offset;
-    float LocalScale = ArmsStruct.Scale;
-
-    if (Target == ECharacter2DAttachmentTarget::None) return;
-
-    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
-    if (!TargetComponent || Socket == NAME_None) return;
-   
-    // Detach from current parent and attach to socket
-    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
-   
-    // Apply socket-specific offset if needed
-    if (!bUseSocketTransform)
+    // Если attachment не требуется, оставляем компонент прикрепленным к RootComponent
+    if (ArmsStruct.AttachmentTarget == ECharacter2DAttachmentTarget::None)
     {
-        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        
-        const float FinalScale = GlobalScale * LocalScale;
-        const FVector FinalOffset = GlobalOffset + LocalOffset;
-        
-        SpriteComp->SetRelativeLocation(FinalOffset);
-        SpriteComp->SetRelativeScale3D(FVector(FinalScale));
+        return;
     }
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(ArmsStruct.AttachmentTarget);
+    if (!TargetComponent)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("AttachSpriteToSocketFromStruct (Arms): Target component not found"));
+        return;
+    }
+
+    // ИСПРАВЛЕНИЕ: Используем новый универсальный метод
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    AttachComponentToSocket(
+        SpriteComp,
+        TargetComponent,
+        ArmsStruct.SocketName,
+        ArmsStruct.bUseSocketTransform,
+        ArmsStruct.Offset,
+        ArmsStruct.Scale,
+        GlobalOffset,
+        GlobalScale
+    );
 }
 
 /* ====================================================================== */
@@ -1203,3 +1449,430 @@ void ACharacter2DActor::StopTalking()
         SpriteMouth->SetVisibility(HeadStructure.GetFinalChildVisibility(Mouth) && bSpritesVisible);
     }
 }
+
+// ================ ТЕСТОВЫЙ КОД ДЛЯ ПРОВЕРКИ ИСПРАВЛЕНИЙ ================
+// Добавить в Character2DActor.cpp для тестирования
+
+#if WITH_EDITOR
+// НОВЫЙ МЕТОД: Тестирование трансформаций головы
+void ACharacter2DActor::TestHeadTransforms()
+{
+    if (!CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("TestHeadTransforms: No CharacterAsset"));
+        return;
+    }
+
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== TESTING HEAD TRANSFORMS ==="));
+    
+    const auto& HeadRoot = CharacterAsset->SpriteStructure.Head.Head;
+    
+    // Тест 1: Проверка базовых настроек
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Test 1: Basic Head Settings"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  AttachmentTarget: %s"), *UEnum::GetValueAsString(HeadRoot.AttachmentTarget));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  SocketName: %s"), *HeadRoot.SocketName.ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  UseSocketTransform: %s"), HeadRoot.bUseSocketTransform ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Offset: %s"), *HeadRoot.Offset.ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Scale: %f"), HeadRoot.Scale);
+
+    // Тест 2: Проверка attachment
+    if (HeadRoot.AttachmentTarget != ECharacter2DAttachmentTarget::None)
+    {
+        USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(HeadRoot.AttachmentTarget);
+        UE_LOG(LogCharacter2DActor, Log, TEXT("Test 2: Attachment Validation"));
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  TargetComponent: %s"), TargetComponent ? *TargetComponent->GetName() : TEXT("NULL"));
+        
+        if (TargetComponent)
+        {
+            bool bSocketExists = TargetComponent->DoesSocketExist(HeadRoot.SocketName);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  SocketExists: %s"), bSocketExists ? TEXT("true") : TEXT("false"));
+            
+            if (bSocketExists)
+            {
+                FTransform SocketTransform = TargetComponent->GetSocketTransform(HeadRoot.SocketName, RTS_World);
+                UE_LOG(LogCharacter2DActor, Log, TEXT("  SocketWorldLocation: %s"), *SocketTransform.GetLocation().ToString());
+                UE_LOG(LogCharacter2DActor, Log, TEXT("  SocketWorldRotation: %s"), *SocketTransform.GetRotation().Rotator().ToString());
+                UE_LOG(LogCharacter2DActor, Log, TEXT("  SocketWorldScale: %s"), *SocketTransform.GetScale3D().ToString());
+            }
+        }
+    }
+
+    // Тест 3: Проверка текущего состояния компонента головы
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Test 3: Current Head Component State"));
+    if (SpriteHead)
+    {
+        USceneComponent* Parent = SpriteHead->GetAttachParent();
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head Parent: %s"), Parent ? *Parent->GetName() : TEXT("None"));
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head AttachSocketName: %s"), *SpriteHead->GetAttachSocketName().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head RelativeLocation: %s"), *SpriteHead->GetRelativeLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head RelativeScale: %s"), *SpriteHead->GetRelativeScale3D().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head WorldLocation: %s"), *SpriteHead->GetComponentLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head Visible: %s"), SpriteHead->IsVisible() ? TEXT("true") : TEXT("false"));
+    }
+
+    // Тест 4: Проверка дочерних элементов
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Test 4: Child Elements State"));
+    
+    auto LogChildComponent = [this](UPaperSpriteComponent* Component, const FString& Name, const FCharacter2DHeadChildSprite& Data)
+    {
+        if (Component)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s:"), *Name);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Parent: %s"), Component->GetAttachParent() ? *Component->GetAttachParent()->GetName() : TEXT("None"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeLocation: %s"), *Component->GetRelativeLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    ExpectedLocalOffset: %s"), *Data.LocalOffset.ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeScale: %s"), *Component->GetRelativeScale3D().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    ExpectedLocalScale: %f"), Data.LocalScale);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    WorldLocation: %s"), *Component->GetComponentLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Visible: %s"), Component->IsVisible() ? TEXT("true") : TEXT("false"));
+        }
+    };
+    
+    const auto& HeadStruct = CharacterAsset->SpriteStructure.Head;
+    LogChildComponent(SpriteEyebrow, TEXT("Eyebrows"), HeadStruct.Eyebrows);
+    LogChildComponent(SpriteEyes, TEXT("Eyes"), HeadStruct.Eyes);
+    LogChildComponent(SpriteEyelids, TEXT("Eyelids"), HeadStruct.Eyelids);
+    LogChildComponent(SpriteMouth, TEXT("Mouth"), HeadStruct.Mouth);
+
+    // Тест 5: Проверка глобальных настроек
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Test 5: Global Settings"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  GlobalSpriteOffset: %s"), *CharacterAsset->GetGlobalSpriteOffset().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  GlobalSpriteScale: %f"), CharacterAsset->GetGlobalSpriteScale());
+
+    // Тест 6: Расчеты финальных позиций
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Test 6: Calculated Final Positions"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Final Eyebrow Offset: %s"), *CharacterAsset->GetFinalEyebrowOffset().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Final Eyes Offset: %s"), *CharacterAsset->GetFinalEyesOffset().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Final Eyelids Offset: %s"), *CharacterAsset->GetFinalEyelidsOffset().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Final Mouth Offset: %s"), *CharacterAsset->GetFinalMouthOffset().ToString());
+
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== END HEAD TRANSFORMS TEST ==="));
+}
+
+// НОВЫЙ МЕТОД: Тестирование повторного применения трансформаций
+void ACharacter2DActor::TestRepeatedRefresh()
+{
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== TESTING REPEATED REFRESH ==="));
+    
+    if (!CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("No CharacterAsset for test"));
+        return;
+    }
+
+    // Сохраняем начальное положение головы
+    FVector InitialHeadLocation = SpriteHead ? SpriteHead->GetComponentLocation() : FVector::ZeroVector;
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Initial Head World Location: %s"), *InitialHeadLocation.ToString());
+
+    // Выполняем 5 последовательных обновлений
+    for (int32 i = 1; i <= 5; i++)
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("--- Refresh Iteration %d ---"), i);
+        
+        // Сохраняем позицию до обновления
+        FVector BeforeLocation = SpriteHead ? SpriteHead->GetComponentLocation() : FVector::ZeroVector;
+        
+        // Выполняем обновление
+        RefreshFromAsset();
+        
+        // Проверяем позицию после обновления
+        FVector AfterLocation = SpriteHead ? SpriteHead->GetComponentLocation() : FVector::ZeroVector;
+        FVector Delta = AfterLocation - BeforeLocation;
+        
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Before: %s"), *BeforeLocation.ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  After: %s"), *AfterLocation.ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Delta: %s (Length: %f)"), *Delta.ToString(), Delta.Size());
+        
+        // Предупреждение о дрейфе позиции
+        if (Delta.Size() > 1.0f)
+        {
+            UE_LOG(LogCharacter2DActor, Warning, TEXT("  POSITION DRIFT DETECTED! Delta too large"));
+        }
+        
+        // Логируем attachment информацию
+        if (SpriteHead)
+        {
+            USceneComponent* Parent = SpriteHead->GetAttachParent();
+            FVector RelLoc = SpriteHead->GetRelativeLocation();
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  RelativeLocation: %s, Parent: %s"), 
+                   *RelLoc.ToString(), Parent ? *Parent->GetName() : TEXT("None"));
+        }
+    }
+
+    // Сравниваем финальную позицию с начальной
+    FVector FinalHeadLocation = SpriteHead ? SpriteHead->GetComponentLocation() : FVector::ZeroVector;
+    FVector TotalDrift = FinalHeadLocation - InitialHeadLocation;
+    
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("FINAL RESULT:"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Initial: %s"), *InitialHeadLocation.ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Final: %s"), *FinalHeadLocation.ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Total Drift: %s (Length: %f)"), *TotalDrift.ToString(), TotalDrift.Size());
+    
+    if (TotalDrift.Size() < 1.0f)
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  SUCCESS: No significant drift detected"));
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("  FAILURE: Significant drift detected!"));
+    }
+    
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== END REPEATED REFRESH TEST ==="));
+}
+
+// НОВЫЙ МЕТОД: Тестирование UseSocketTransform
+void ACharacter2DActor::TestSocketTransformModes()
+{
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== TESTING SOCKET TRANSFORM MODES ==="));
+    
+    if (!CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("No CharacterAsset for test"));
+        return;
+    }
+
+    auto& HeadRoot = CharacterAsset->SpriteStructure.Head.Head;
+    
+    if (HeadRoot.AttachmentTarget == ECharacter2DAttachmentTarget::None)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("No attachment target set, cannot test socket modes"));
+        return;
+    }
+
+    // Сохраняем начальные настройки
+    bool OriginalUseSocketTransform = HeadRoot.bUseSocketTransform;
+    FVector OriginalOffset = HeadRoot.Offset;
+
+    // Тест с UseSocketTransform = true
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Testing UseSocketTransform = TRUE"));
+    HeadRoot.bUseSocketTransform = true;
+    HeadRoot.Offset = FVector(10, 0, 0); // Тестовое смещение
+    
+    RefreshFromAsset();
+    
+    if (SpriteHead)
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head RelativeLocation: %s"), *SpriteHead->GetRelativeLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head WorldLocation: %s"), *SpriteHead->GetComponentLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Expected RelativeLocation: %s"), *HeadRoot.Offset.ToString());
+    }
+
+    // Тест с UseSocketTransform = false
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Testing UseSocketTransform = FALSE"));
+    HeadRoot.bUseSocketTransform = false;
+    
+    RefreshFromAsset();
+    
+    if (SpriteHead)
+    {
+        FVector ExpectedRelativeLocation = CharacterAsset->GetGlobalSpriteOffset() + HeadRoot.Offset;
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head RelativeLocation: %s"), *SpriteHead->GetRelativeLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Head WorldLocation: %s"), *SpriteHead->GetComponentLocation().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Expected RelativeLocation: %s"), *ExpectedRelativeLocation.ToString());
+    }
+
+    // Восстанавливаем оригинальные настройки
+    HeadRoot.bUseSocketTransform = OriginalUseSocketTransform;
+    HeadRoot.Offset = OriginalOffset;
+    RefreshFromAsset();
+    
+    UE_LOG(LogCharacter2DActor, Log, TEXT("Original settings restored"));
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== END SOCKET TRANSFORM MODES TEST ==="));
+}
+
+#endif // WITH_EDITOR
+
+// ============= ДОПОЛНИТЕЛЬНЫЕ ТЕСТОВЫЕ МЕТОДЫ ДЛЯ Character2DActor.cpp =============
+
+#if WITH_EDITOR
+
+void ACharacter2DActor::ForceRecreateHeadAttachments()
+{
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== FORCE RECREATE HEAD ATTACHMENTS ==="));
+    
+    if (!CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Error, TEXT("No CharacterAsset"));
+        return;
+    }
+
+    // Сохраняем текущие состояния
+    bool bWasVisible = bSpritesVisible;
+    
+    // Принудительно отсоединяем все спрайты головы
+    TArray<UPaperSpriteComponent*> HeadSprites = {
+        SpriteHead, SpriteEyebrow, SpriteEyes, SpriteEyelids, SpriteMouth
+    };
+    
+    for (UPaperSpriteComponent* Sprite : HeadSprites)
+    {
+        if (Sprite)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("Detaching %s from %s"), 
+                   *Sprite->GetName(), 
+                   Sprite->GetAttachParent() ? *Sprite->GetAttachParent()->GetName() : TEXT("None"));
+            
+            Sprite->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+            Sprite->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+            Sprite->SetRelativeLocation(FVector::ZeroVector);
+            Sprite->SetRelativeScale3D(FVector::OneVector);
+        }
+    }
+    
+    // Принудительно отсоединяем анимационные компоненты
+    if (EyelidComponent)
+    {
+        EyelidComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        EyelidComponent->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+        EyelidComponent->SetRelativeLocation(FVector::ZeroVector);
+        EyelidComponent->SetRelativeScale3D(FVector::OneVector);
+    }
+    
+    if (MouthComponent)
+    {
+        MouthComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        MouthComponent->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+        MouthComponent->SetRelativeLocation(FVector::ZeroVector);
+        MouthComponent->SetRelativeScale3D(FVector::OneVector);
+    }
+
+    UE_LOG(LogCharacter2DActor, Log, TEXT("All head components detached and reset"));
+
+    // Пересоздаем иерархию с нуля
+    SetupHeadHierarchy();
+    AttachHeadToSocket();
+    SetupHeadAnimations();
+    
+    // Восстанавливаем видимость
+    SetSpritesVisible(bWasVisible);
+    
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== HEAD ATTACHMENTS RECREATED ==="));
+}
+
+void ACharacter2DActor::LogAllComponentsInfo()
+{
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== ALL COMPONENTS INFO ==="));
+    
+    // Информация о Skeletal компонентах
+    UE_LOG(LogCharacter2DActor, Log, TEXT("SKELETAL COMPONENTS:"));
+    
+    auto LogSkeletalComponent = [this](USkeletalMeshComponent* Component, const FString& Name)
+    {
+        if (Component)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s:"), *Name);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Mesh: %s"), Component->GetSkeletalMeshAsset() ? *Component->GetSkeletalMeshAsset()->GetName() : TEXT("None"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Location: %s"), *Component->GetRelativeLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Scale: %s"), *Component->GetRelativeScale3D().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Visible: %s"), Component->IsVisible() ? TEXT("true") : TEXT("false"));
+            
+            // Информация о сокетах
+            if (Component->GetSkeletalMeshAsset())
+            {
+                TArray<FName> SocketNames = Component->GetAllSocketNames();
+                UE_LOG(LogCharacter2DActor, Log, TEXT("    Sockets: %d"), SocketNames.Num());
+                for (const FName& SocketName : SocketNames)
+                {
+                    UE_LOG(LogCharacter2DActor, Log, TEXT("      - %s"), *SocketName.ToString());
+                }
+            }
+        }
+        else
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s: NULL"), *Name);
+        }
+    };
+    
+    LogSkeletalComponent(BodyComponent, TEXT("BodyComponent"));
+    LogSkeletalComponent(ArmsComponent, TEXT("ArmsComponent"));
+    LogSkeletalComponent(HeadComponent, TEXT("HeadComponent"));
+
+    // Информация о Sprite компонентах
+    UE_LOG(LogCharacter2DActor, Log, TEXT("SPRITE COMPONENTS:"));
+    
+    auto LogSpriteComponent = [this](UPaperSpriteComponent* Component, const FString& Name)
+    {
+        if (Component)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s:"), *Name);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Sprite: %s"), Component->GetSprite() ? *Component->GetSprite()->GetName() : TEXT("None"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Parent: %s"), Component->GetAttachParent() ? *Component->GetAttachParent()->GetName() : TEXT("RootComponent"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Socket: %s"), *Component->GetAttachSocketName().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeLocation: %s"), *Component->GetRelativeLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeScale: %s"), *Component->GetRelativeScale3D().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    WorldLocation: %s"), *Component->GetComponentLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Visible: %s"), Component->IsVisible() ? TEXT("true") : TEXT("false"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Color: %s"), *Component->GetSpriteColor().ToString());
+        }
+        else
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s: NULL"), *Name);
+        }
+    };
+    
+    LogSpriteComponent(SpriteBody, TEXT("SpriteBody"));
+    LogSpriteComponent(SpriteArms, TEXT("SpriteArms"));
+    LogSpriteComponent(SpriteHead, TEXT("SpriteHead"));
+    LogSpriteComponent(SpriteEyebrow, TEXT("SpriteEyebrow"));
+    LogSpriteComponent(SpriteEyes, TEXT("SpriteEyes"));
+    LogSpriteComponent(SpriteEyelids, TEXT("SpriteEyelids"));
+    LogSpriteComponent(SpriteMouth, TEXT("SpriteMouth"));
+
+    // Информация о Flipbook компонентах
+    UE_LOG(LogCharacter2DActor, Log, TEXT("FLIPBOOK COMPONENTS:"));
+    
+    auto LogFlipbookComponent = [this](UPaperFlipbookComponent* Component, const FString& Name)
+    {
+        if (Component)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s:"), *Name);
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Flipbook: %s"), Component->GetFlipbook() ? *Component->GetFlipbook()->GetName() : TEXT("None"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Parent: %s"), Component->GetAttachParent() ? *Component->GetAttachParent()->GetName() : TEXT("RootComponent"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeLocation: %s"), *Component->GetRelativeLocation().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    RelativeScale: %s"), *Component->GetRelativeScale3D().ToString());
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Visible: %s"), Component->IsVisible() ? TEXT("true") : TEXT("false"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    Playing: %s"), Component->IsPlaying() ? TEXT("true") : TEXT("false"));
+            UE_LOG(LogCharacter2DActor, Log, TEXT("    PlayRate: %f"), Component->GetPlayRate());
+        }
+        else
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("  %s: NULL"), *Name);
+        }
+    };
+    
+    LogFlipbookComponent(EyelidComponent, TEXT("EyelidComponent"));
+    LogFlipbookComponent(MouthComponent, TEXT("MouthComponent"));
+
+    // Информация об актере
+    UE_LOG(LogCharacter2DActor, Log, TEXT("ACTOR INFO:"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Location: %s"), *GetActorLocation().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Rotation: %s"), *GetActorRotation().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Scale: %s"), *GetActorScale3D().ToString());
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  Hidden: %s"), IsHidden() ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  SpritesVisible: %s"), bSpritesVisible ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  SkeletalVisible: %s"), bSkeletalVisible ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  BlinkingActive: %s"), bBlinkingActive ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogCharacter2DActor, Log, TEXT("  TalkingActive: %s"), bTalkingActive ? TEXT("true") : TEXT("false"));
+
+    // Информация о CharacterAsset
+    if (CharacterAsset)
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("CHARACTER ASSET INFO:"));
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  Asset: %s"), *CharacterAsset->GetName());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  GlobalSpriteOffset: %s"), *CharacterAsset->GetGlobalSpriteOffset().ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  GlobalSpriteScale: %f"), CharacterAsset->GetGlobalSpriteScale());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  SkeletalGlobalOffset: %s"), *CharacterAsset->SkeletalGlobalOffset.ToString());
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  GlobalScale: %f"), CharacterAsset->GlobalScale);
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  DualRendering: %s"), CharacterAsset->bEnableDualRendering ? TEXT("true") : TEXT("false"));
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  AutoBlink: %s"), CharacterAsset->bAutoBlink ? TEXT("true") : TEXT("false"));
+        UE_LOG(LogCharacter2DActor, Log, TEXT("  AutoTalk: %s"), CharacterAsset->bAutoTalk ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("CHARACTER ASSET: NULL"));
+    }
+    
+    UE_LOG(LogCharacter2DActor, Warning, TEXT("=== END ALL COMPONENTS INFO ==="));
+}
+
+#endif // WITH_EDITOR

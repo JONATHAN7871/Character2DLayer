@@ -137,10 +137,18 @@ void SCharacter2DAssetViewport::Tick(const FGeometry& AllottedGeometry, double I
 
 void SCharacter2DAssetViewport::RefreshPreview()
 {
-    // Сохраняем текущее состояние
+    if (!Asset || !PreviewScene.IsValid() || !PreviewScene->GetWorld())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("RefreshPreview: Missing Asset or PreviewScene"));
+        return;
+    }
+
+    // Сохраняем текущее состояние перед обновлением
     bool bOldSpritesVisible = true;
     bool bOldSkeletalVisible = true;
     bool bOldActorHidden = false;
+    bool bOldBlinkingActive = false;
+    bool bOldTalkingActive = false;
     FVector OldLocation = FVector::ZeroVector;
     FRotator OldRotation = FRotator::ZeroRotator;
     FVector OldScale = FVector::OneVector;
@@ -150,23 +158,138 @@ void SCharacter2DAssetViewport::RefreshPreview()
         bOldSpritesVisible = PreviewActor->bSpritesVisible;
         bOldSkeletalVisible = PreviewActor->bSkeletalVisible;
         bOldActorHidden = PreviewActor->IsHidden();
+        bOldBlinkingActive = PreviewActor->bBlinkingActive;
+        bOldTalkingActive = PreviewActor->bTalkingActive;
         OldLocation = PreviewActor->GetActorLocation();
         OldRotation = PreviewActor->GetActorRotation();
         OldScale = PreviewActor->GetActorScale3D();
+        
+        UE_LOG(LogTemp, Log, TEXT("RefreshPreview: Saving state - Sprites:%s, Skeletal:%s, Hidden:%s, Pos:%s"),
+               bOldSpritesVisible ? TEXT("T") : TEXT("F"),
+               bOldSkeletalVisible ? TEXT("T") : TEXT("F"),
+               bOldActorHidden ? TEXT("T") : TEXT("F"),
+               *OldLocation.ToString());
     }
 
-    // Обновляем Actor
-    if (PreviewActor)
+    // ИСПРАВЛЕНИЕ: Проверяем, нужно ли пересоздать актер
+    bool bNeedNewActor = false;
+    
+    if (!PreviewActor || !IsValid(PreviewActor))
     {
+        bNeedNewActor = true;
+        UE_LOG(LogTemp, Log, TEXT("RefreshPreview: Preview actor is invalid, creating new one"));
+    }
+    else if (PreviewActor->CharacterAsset != Asset)
+    {
+        bNeedNewActor = true;
+        UE_LOG(LogTemp, Log, TEXT("RefreshPreview: Asset mismatch, creating new actor"));
+    }
+
+    if (bNeedNewActor)
+    {
+        // Уничтожаем старый актер
+        if (PreviewActor && IsValid(PreviewActor))
+        {
+            PreviewActor->Destroy();
+            PreviewActor = nullptr;
+        }
+
+        // Создаем новый актер
+        PreviewActor = PreviewScene->GetWorld()->SpawnActor<ACharacter2DActor>();
+        if (!PreviewActor)
+        {
+            UE_LOG(LogTemp, Error, TEXT("RefreshPreview: Failed to spawn preview actor"));
+            return;
+        }
+
+        PreviewActor->CharacterAsset = Asset;
+        UE_LOG(LogTemp, Log, TEXT("RefreshPreview: Created new preview actor"));
+    }
+
+    // ИСПРАВЛЕНИЕ: Используем RefreshFromAsset вместо прямого вызова OnConstruction
+    if (PreviewActor && IsValid(PreviewActor))
+    {
+        // Устанавливаем CharacterAsset если он отличается
+        if (PreviewActor->CharacterAsset != Asset)
+        {
+            PreviewActor->CharacterAsset = Asset;
+        }
+
+        // Вызываем обновление
         PreviewActor->RefreshFromAsset();
         
-        // ← ИСПРАВЛЕНИЕ: Восстанавливаем состояние
-        PreviewActor->SetBothVisible(bOldSpritesVisible, bOldSkeletalVisible);
-        PreviewActor->SetActorHiddenInGame(bOldActorHidden);
-        PreviewActor->SetActorLocation(OldLocation);
-        PreviewActor->SetActorRotation(OldRotation);
-        PreviewActor->SetActorScale3D(OldScale);
+        UE_LOG(LogTemp, Log, TEXT("RefreshPreview: Called RefreshFromAsset"));
+
+        // ИСПРАВЛЕНИЕ: Восстанавливаем состояние с небольшой задержкой
+        // Это гарантирует, что все компоненты обновились
+        FTimerHandle RestoreStateTimer;
+        PreviewScene->GetWorld()->GetTimerManager().SetTimer(
+            RestoreStateTimer,
+            [this, bOldSpritesVisible, bOldSkeletalVisible, bOldActorHidden, bOldBlinkingActive, bOldTalkingActive, OldLocation, OldRotation, OldScale]()
+            {
+                if (PreviewActor && IsValid(PreviewActor))
+                {
+                    // Восстанавливаем трансформацию
+                    PreviewActor->SetActorLocation(OldLocation);
+                    PreviewActor->SetActorRotation(OldRotation);
+                    PreviewActor->SetActorScale3D(OldScale);
+                    
+                    // Восстанавливаем видимость
+                    PreviewActor->SetBothVisible(bOldSpritesVisible, bOldSkeletalVisible);
+                    PreviewActor->SetActorHiddenInGame(bOldActorHidden);
+                    
+                    // Восстанавливаем анимации
+                    if (bOldBlinkingActive && !PreviewActor->bBlinkingActive)
+                    {
+                        PreviewActor->EnableBlinking(true);
+                    }
+                    if (bOldTalkingActive && !PreviewActor->bTalkingActive)
+                    {
+                        PreviewActor->EnableTalking(true);
+                    }
+                    
+                    UE_LOG(LogTemp, Log, TEXT("RefreshPreview: State restored - Pos:%s, Sprites:%s, Skeletal:%s"),
+                           *PreviewActor->GetActorLocation().ToString(),
+                           PreviewActor->bSpritesVisible ? TEXT("T") : TEXT("F"),
+                           PreviewActor->bSkeletalVisible ? TEXT("T") : TEXT("F"));
+                }
+            },
+            0.1f,  // Задержка 100ms
+            false
+        );
     }
+}
+
+FString SCharacter2DAssetViewport::GetDebugInfo() const
+{
+    if (!PreviewActor || !IsValid(PreviewActor))
+    {
+        return TEXT("No Preview Actor");
+    }
+
+    FString Info;
+    Info += FString::Printf(TEXT("Actor: %s\n"), *PreviewActor->GetName());
+    Info += FString::Printf(TEXT("Asset: %s\n"), PreviewActor->CharacterAsset ? *PreviewActor->CharacterAsset->GetName() : TEXT("None"));
+    Info += FString::Printf(TEXT("Location: %s\n"), *PreviewActor->GetActorLocation().ToString());
+    Info += FString::Printf(TEXT("Sprites Visible: %s\n"), PreviewActor->bSpritesVisible ? TEXT("Yes") : TEXT("No"));
+    Info += FString::Printf(TEXT("Skeletal Visible: %s\n"), PreviewActor->bSkeletalVisible ? TEXT("Yes") : TEXT("No"));
+    Info += FString::Printf(TEXT("Hidden: %s\n"), PreviewActor->IsHidden() ? TEXT("Yes") : TEXT("No"));
+    Info += FString::Printf(TEXT("Blinking: %s\n"), PreviewActor->bBlinkingActive ? TEXT("Yes") : TEXT("No"));
+    Info += FString::Printf(TEXT("Talking: %s\n"), PreviewActor->bTalkingActive ? TEXT("Yes") : TEXT("No"));
+
+    // Информация о компонентах головы
+    if (PreviewActor->SpriteHead)
+    {
+        Info += FString::Printf(TEXT("Head Attached To: %s\n"), 
+                               PreviewActor->SpriteHead->GetAttachParent() ? 
+                               *PreviewActor->SpriteHead->GetAttachParent()->GetName() : TEXT("None"));
+        Info += FString::Printf(TEXT("Head Location: %s\n"), 
+                               *PreviewActor->SpriteHead->GetRelativeLocation().ToString());
+        Info += FString::Printf(TEXT("Head Scale: %s\n"), 
+                               *PreviewActor->SpriteHead->GetRelativeScale3D().ToString());
+    }
+
+    return Info;
 }
 
 TSharedRef<FEditorViewportClient> SCharacter2DAssetViewport::MakeEditorViewportClient()
@@ -328,9 +451,39 @@ TSharedRef<SWidget> SCharacter2DAssetViewport::BuildCameraToolbar()
 
 void SCharacter2DAssetViewport::OnActorSelected(AActor* Actor)
 {
+    if (Actor == PreviewActor)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Preview actor selected: %s"), Actor ? *Actor->GetName() : TEXT("None"));
+        UE_LOG(LogTemp, Log, TEXT("Debug Info:\n%s"), *GetDebugInfo());
+    }
+
     if (FCharacter2DViewportClient* ViewportClient = static_cast<FCharacter2DViewportClient*>(EditorViewportClient.Get()))
     {
         ViewportClient->SetSelectedActor(Actor);
+    }
+}
+
+void SCharacter2DAssetViewport::ForceRefreshPreview()
+{
+    UE_LOG(LogTemp, Warning, TEXT("ForceRefreshPreview: Performing complete refresh"));
+    
+    // Уничтожаем текущий актер
+    if (PreviewActor && IsValid(PreviewActor))
+    {
+        PreviewActor->Destroy();
+        PreviewActor = nullptr;
+    }
+
+    // Принудительно пересоздаем актер
+    if (Asset && PreviewScene->GetWorld())
+    {
+        PreviewActor = PreviewScene->GetWorld()->SpawnActor<ACharacter2DActor>();
+        if (PreviewActor)
+        {
+            PreviewActor->CharacterAsset = Asset;
+            PreviewActor->RefreshFromAsset();
+            UE_LOG(LogTemp, Log, TEXT("ForceRefreshPreview: New actor created and configured"));
+        }
     }
 }
 

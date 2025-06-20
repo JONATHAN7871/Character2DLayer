@@ -150,12 +150,57 @@ public:
     UFUNCTION(BlueprintCallable, Category="Character|Runtime")
     void RefreshFromAsset();
 
+    UFUNCTION(CallInEditor, Category = "Debug|Head Transforms")
+    void TestHeadTransforms();
+
+    UFUNCTION(CallInEditor, Category = "Debug|Head Transforms")
+    void TestRepeatedRefresh();
+
+    UFUNCTION(CallInEditor, Category = "Debug|Head Transforms")
+    void TestSocketTransformModes();
+
+    UFUNCTION(CallInEditor, Category = "Debug|Head Transforms")
+    void ForceRecreateHeadAttachments();
+
+    UFUNCTION(CallInEditor, Category = "Debug|Components")
+    void LogAllComponentsInfo();
+    
 protected:
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+
+    void ResetAllComponentTransforms();
+    void StopAllAnimationsForRefresh();
+
+    void ApplyComponentTransform(
+        USceneComponent* Component,
+        const FVector& LocalOffset,
+        float LocalScale,
+        const FVector& GlobalOffset = FVector::ZeroVector,
+        float GlobalScale = 1.0f
+    );
+
+    bool AttachComponentToSocket(
+        USceneComponent* Component,
+        USkeletalMeshComponent* TargetMesh,
+        FName SocketName,
+        bool bUseSocketTransform,
+        const FVector& LocalOffset,
+        float LocalScale,
+        const FVector& GlobalOffset = FVector::ZeroVector,
+        float GlobalScale = 1.0f
+    );
+
+    bool IsSocketValid(USkeletalMeshComponent* Component, FName SocketName) const;
+    void LogComponentTransform(USceneComponent* Component, const FString& ComponentName) const;
+
+    void SetupHeadHierarchy();
+    void AttachHeadToSocket();
+    void SetupHeadAnimations();
+    
     /* --- Animation State --- */
     FTimerHandle BlinkTimerHandle;
     FTimerHandle BlinkRestoreHandle;
@@ -211,11 +256,6 @@ private:
     void SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct);
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct);
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct);
-    
-    /* ═══ NEW: Head Hierarchy Methods ═══ */
-    void SetupHeadHierarchy();
-    void AttachHeadToSocket();
-    void SetupHeadAnimations();
 
     bool HasValidSprites() const;
     bool HasValidSkeletalMeshes() const;

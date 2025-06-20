@@ -207,35 +207,69 @@ void FCharacter2DAssetEditorToolkit::LogHeadHierarchyInfo()
     const auto& HeadStruct = AssetBeingEdited->SpriteStructure.Head;
     
     UE_LOG(LogCharacter2DEditor, Log, TEXT("=== HEAD HIERARCHY DEBUG INFO ==="));
-    UE_LOG(LogCharacter2DEditor, Log, TEXT("Head Root: Sprite=%s, Offset=%s, Scale=%f, Visible=%s"), 
-           HeadStruct.Head.Sprite ? *HeadStruct.Head.Sprite->GetName() : TEXT("None"),
-           *HeadStruct.Head.Offset.ToString(), 
-           HeadStruct.Head.Scale,
-           HeadStruct.Head.bVisible ? TEXT("Yes") : TEXT("No"));
     
-    UE_LOG(LogCharacter2DEditor, Log, TEXT("Head Attachment: Target=%s, Socket=%s"),
+    // Информация о корне головы
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("Head Root:"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  Sprite: %s"), 
+           HeadStruct.Head.Sprite ? *HeadStruct.Head.Sprite->GetName() : TEXT("None"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  Offset: %s"), *HeadStruct.Head.Offset.ToString());
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  Scale: %f"), HeadStruct.Head.Scale);
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  Visible: %s"), HeadStruct.Head.bVisible ? TEXT("Yes") : TEXT("No"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  Attachment: %s -> %s"), 
            *UEnum::GetValueAsString(HeadStruct.Head.AttachmentTarget),
            *HeadStruct.Head.SocketName.ToString());
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  UseSocketTransform: %s"), 
+           HeadStruct.Head.bUseSocketTransform ? TEXT("Yes") : TEXT("No"));
 
-    UE_LOG(LogCharacter2DEditor, Log, TEXT("Eyebrows: Sprite=%s, LocalOffset=%s, LocalScale=%f, Visible=%s"),
-           HeadStruct.Eyebrows.Sprite ? *HeadStruct.Eyebrows.Sprite->GetName() : TEXT("None"),
-           *HeadStruct.Eyebrows.LocalOffset.ToString(),
-           HeadStruct.Eyebrows.LocalScale,
-           HeadStruct.GetFinalChildVisibility(HeadStruct.Eyebrows) ? TEXT("Yes") : TEXT("No"));
+    // Информация о дочерних элементах
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("Facial Elements:"));
+    
+    auto LogChildElement = [this](const FCharacter2DHeadChildSprite& Child, const FString& Name)
+    {
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("  %s:"), *Name);
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    Sprite: %s"), 
+               Child.Sprite ? *Child.Sprite->GetName() : TEXT("None"));
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    LocalOffset: %s"), *Child.LocalOffset.ToString());
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    LocalScale: %f"), Child.LocalScale);
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    Visible: %s"), Child.bVisible ? TEXT("Yes") : TEXT("No"));
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    OverrideHeadVisibility: %s"), 
+               Child.bOverrideHeadVisibility ? TEXT("Yes") : TEXT("No"));
+        
+        // Вычисляем финальную видимость
+        bool bFinalVisibility = AssetBeingEdited->SpriteStructure.Head.GetFinalChildVisibility(Child);
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("    FinalVisibility: %s"), bFinalVisibility ? TEXT("Yes") : TEXT("No"));
+    };
+    
+    LogChildElement(HeadStruct.Eyebrows, TEXT("Eyebrows"));
+    LogChildElement(HeadStruct.Eyes, TEXT("Eyes"));
+    LogChildElement(HeadStruct.Eyelids, TEXT("Eyelids"));
+    LogChildElement(HeadStruct.Mouth, TEXT("Mouth"));
 
-    UE_LOG(LogCharacter2DEditor, Log, TEXT("Eyes: Sprite=%s, LocalOffset=%s, LocalScale=%f, Visible=%s"),
-           HeadStruct.Eyes.Sprite ? *HeadStruct.Eyes.Sprite->GetName() : TEXT("None"),
-           *HeadStruct.Eyes.LocalOffset.ToString(),
-           HeadStruct.Eyes.LocalScale,
-           HeadStruct.GetFinalChildVisibility(HeadStruct.Eyes) ? TEXT("Yes") : TEXT("No"));
+    // Информация о глобальных настройках
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("Global Settings:"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  GlobalSpriteOffset: %s"), 
+           *AssetBeingEdited->GetGlobalSpriteOffset().ToString());
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  GlobalSpriteScale: %f"), 
+           AssetBeingEdited->GetGlobalSpriteScale());
 
-    UE_LOG(LogCharacter2DEditor, Log, TEXT("Final Calculated Offsets:"));
+    // Вычисленные финальные позиции
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("Calculated Final Offsets:"));
     UE_LOG(LogCharacter2DEditor, Log, TEXT("  Eyebrows: %s"), *AssetBeingEdited->GetFinalEyebrowOffset().ToString());
     UE_LOG(LogCharacter2DEditor, Log, TEXT("  Eyes: %s"), *AssetBeingEdited->GetFinalEyesOffset().ToString());
     UE_LOG(LogCharacter2DEditor, Log, TEXT("  Eyelids: %s"), *AssetBeingEdited->GetFinalEyelidsOffset().ToString());
     UE_LOG(LogCharacter2DEditor, Log, TEXT("  Mouth: %s"), *AssetBeingEdited->GetFinalMouthOffset().ToString());
     
+    // Информация о анимациях
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("Animations:"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  BlinkFlipbook: %s"), 
+           HeadStruct.BlinkSettings.BlinkFlipbook ? *HeadStruct.BlinkSettings.BlinkFlipbook->GetName() : TEXT("None"));
+    UE_LOG(LogCharacter2DEditor, Log, TEXT("  TalkFlipbook: %s"), 
+           HeadStruct.TalkSettings.TalkFlipbook ? *HeadStruct.TalkSettings.TalkFlipbook->GetName() : TEXT("None"));
+    
     UE_LOG(LogCharacter2DEditor, Log, TEXT("=== END HEAD HIERARCHY DEBUG INFO ==="));
+    
+    // Выполняем валидацию
+    ValidateHeadConfiguration();
 }
 
 void FCharacter2DAssetEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -549,49 +583,115 @@ TSharedRef<IDetailsView> FCharacter2DAssetEditorToolkit::CreateSpriteDetailsView
 
 void FCharacter2DAssetEditorToolkit::OnAssetPropertyChanged(const FPropertyChangedEvent& PropertyChangedEvent)
 {
-    if (ViewportWidget.IsValid())
+    if (!ViewportWidget.IsValid() || !AssetBeingEdited)
     {
-        // Сохраняем состояние видимости ДО обновления
-        bool bWasSpritesVisible = true;
-        bool bWasSkeletalVisible = true;
-        bool bWasActorHidden = false;
-        
-        if (ACharacter2DActor* ExistingActor = ViewportWidget->GetPreviewActor().Get())
-        {
-            bWasSpritesVisible = ExistingActor->bSpritesVisible;
-            bWasSkeletalVisible = ExistingActor->bSkeletalVisible;
-            bWasActorHidden = ExistingActor->IsHidden();
-        }
+        return;
+    }
 
-        // ═══ NEW: Handle head hierarchy changes ═══
-        if (PropertyChangedEvent.Property)
+    // Сохраняем состояние видимости ДО обновления
+    bool bWasSpritesVisible = true;
+    bool bWasSkeletalVisible = true;
+    bool bWasActorHidden = false;
+    FVector SavedLocation = FVector::ZeroVector;
+    FRotator SavedRotation = FRotator::ZeroRotator;
+    FVector SavedScale = FVector::OneVector;
+    
+    if (ACharacter2DActor* ExistingActor = ViewportWidget->GetPreviewActor().Get())
+    {
+        bWasSpritesVisible = ExistingActor->bSpritesVisible;
+        bWasSkeletalVisible = ExistingActor->bSkeletalVisible;
+        bWasActorHidden = ExistingActor->IsHidden();
+        SavedLocation = ExistingActor->GetActorLocation();
+        SavedRotation = ExistingActor->GetActorRotation();
+        SavedScale = ExistingActor->GetActorScale3D();
+    }
+
+    // ═══ НОВАЯ ЛОГИКА: Обработка изменений свойств головы ═══
+    bool bHeadPropertyChanged = false;
+    bool bRequiresFullRefresh = false;
+    
+    if (PropertyChangedEvent.Property)
+    {
+        const FString PropertyName = PropertyChangedEvent.Property->GetName();
+        const FString CategoryName = PropertyChangedEvent.Property->GetMetaData(TEXT("Category"));
+        
+        // Проверяем, изменились ли свойства головы
+        if (PropertyName.Contains(TEXT("Head")) || 
+            PropertyName.Contains(TEXT("Eyebrow")) || 
+            PropertyName.Contains(TEXT("Eyes")) || 
+            PropertyName.Contains(TEXT("Eyelids")) || 
+            PropertyName.Contains(TEXT("Mouth")) ||
+            CategoryName.Contains(TEXT("Head")))
         {
-            const FString PropertyName = PropertyChangedEvent.Property->GetName();
+            bHeadPropertyChanged = true;
             
-            // Log head hierarchy changes for debugging
-            if (PropertyName.Contains(TEXT("Head")) || PropertyName.Contains(TEXT("Eyebrow")) || 
-                PropertyName.Contains(TEXT("Eyes")) || PropertyName.Contains(TEXT("Eyelids")) || 
-                PropertyName.Contains(TEXT("Mouth")))
+            // Логируем изменение для отладки
+            UE_LOG(LogCharacter2DEditor, Log, TEXT("Head hierarchy property changed: %s (Category: %s)"), 
+                   *PropertyName, *CategoryName);
+            
+            // Специальная обработка трансформационных изменений
+            if (PropertyName.Contains(TEXT("Offset")) || 
+                PropertyName.Contains(TEXT("Scale")) || 
+                PropertyName.Contains(TEXT("AttachmentTarget")) ||
+                PropertyName.Contains(TEXT("SocketName")) ||
+                PropertyName.Contains(TEXT("bUseSocketTransform")))
             {
-                UE_LOG(LogCharacter2DEditor, Log, TEXT("Head hierarchy property changed: %s"), *PropertyName);
-                
-                // If head transform changed, log cascade info
-                if (PropertyName.Contains(TEXT("Offset")) || PropertyName.Contains(TEXT("Scale")))
-                {
-                    UE_LOG(LogCharacter2DEditor, Log, TEXT("Head transform change will cascade to child elements"));
-                }
+                bRequiresFullRefresh = true;
+                UE_LOG(LogCharacter2DEditor, Log, TEXT("Head transform/attachment change detected - full refresh required"));
             }
         }
-
-        // Обновляем preview
-        ViewportWidget->RefreshPreview();
-
-        // Восстанавливаем состояние видимости ПОСЛЕ обновления
-        if (ACharacter2DActor* NewActor = ViewportWidget->GetPreviewActor().Get())
+        
+        // Проверяем изменения скелетных мешей (тоже требуют полного обновления)
+        if (PropertyName.Contains(TEXT("Mesh")) || PropertyName.Contains(TEXT("Body")) || 
+            PropertyName.Contains(TEXT("Arms")) || CategoryName.Contains(TEXT("Skeletal")))
         {
-            NewActor->SetBothVisible(bWasSpritesVisible, bWasSkeletalVisible);
-            NewActor->SetActorHiddenInGame(bWasActorHidden);
+            bRequiresFullRefresh = true;
+            UE_LOG(LogCharacter2DEditor, Log, TEXT("Skeletal mesh property changed - full refresh required"));
         }
+    }
+
+    // ИСПРАВЛЕНИЕ: Используем правильный метод обновления
+    if (bRequiresFullRefresh)
+    {
+        // Для критических изменений используем RefreshFromAsset
+        ViewportWidget->RefreshPreview();
+    }
+    else if (bHeadPropertyChanged)
+    {
+        // Для менее критических изменений головы тоже обновляем
+        ViewportWidget->RefreshPreview();
+    }
+    else
+    {
+        // Для остальных изменений - легкое обновление
+        ViewportWidget->RefreshPreview();
+    }
+
+    // ИСПРАВЛЕНИЕ: Восстанавливаем состояние ПОСЛЕ обновления с задержкой
+    // Это гарантирует, что новый актер уже создан
+    if (ACharacter2DActor* NewActor = ViewportWidget->GetPreviewActor().Get())
+    {
+        // Используем тикер для отложенного восстановления состояния
+        FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this, bWasSpritesVisible, bWasSkeletalVisible, bWasActorHidden, SavedLocation, SavedRotation, SavedScale](float DeltaTime)
+        {
+            if (ViewportWidget.IsValid())
+            {
+                if (ACharacter2DActor* Actor = ViewportWidget->GetPreviewActor().Get())
+                {
+                    // Восстанавливаем трансформацию актера
+                    Actor->SetActorLocation(SavedLocation);
+                    Actor->SetActorRotation(SavedRotation);
+                    Actor->SetActorScale3D(SavedScale);
+                    
+                    // Восстанавливаем видимость
+                    Actor->SetBothVisible(bWasSpritesVisible, bWasSkeletalVisible);
+                    Actor->SetActorHiddenInGame(bWasActorHidden);
+                    
+                    UE_LOG(LogCharacter2DEditor, Verbose, TEXT("Preview actor state restored"));
+                }
+            }
+            return false; // Выполнить только один раз
+        }), 0.1f);
     }
 
     // Update action panel if preview actor changed
@@ -599,6 +699,60 @@ void FCharacter2DAssetEditorToolkit::OnAssetPropertyChanged(const FPropertyChang
     {
         // ActionPanel автоматически получит новый PreviewActor через GetPreviewActor()
         // Дополнительная синхронизация не требуется
+    }
+}
+
+// НОВЫЙ МЕТОД: Валидация конфигурации головы
+void FCharacter2DAssetEditorToolkit::ValidateHeadConfiguration()
+{
+    if (!AssetBeingEdited)
+    {
+        return;
+    }
+
+    const auto& HeadStruct = AssetBeingEdited->SpriteStructure.Head;
+    bool bHasWarnings = false;
+
+    // Проверяем, есть ли дочерние элементы без родительского спрайта головы
+    if (!HeadStruct.Head.Sprite)
+    {
+        bool bHasFacialSprites = (HeadStruct.Eyebrows.Sprite || 
+                                 HeadStruct.Eyes.Sprite || 
+                                 HeadStruct.Eyelids.Sprite || 
+                                 HeadStruct.Mouth.Sprite);
+        if (bHasFacialSprites)
+        {
+            UE_LOG(LogCharacter2DEditor, Warning, TEXT("Head hierarchy warning: Facial sprites present but Head root sprite is missing"));
+            bHasWarnings = true;
+        }
+    }
+
+    // Проверяем настройки attachment
+    if (HeadStruct.Head.AttachmentTarget != ECharacter2DAttachmentTarget::None)
+    {
+        if (HeadStruct.Head.SocketName == NAME_None)
+        {
+            UE_LOG(LogCharacter2DEditor, Warning, TEXT("Head attachment warning: Attachment target set but socket name is empty"));
+            bHasWarnings = true;
+        }
+    }
+
+    // Проверяем анимации
+    if (HeadStruct.BlinkSettings.BlinkFlipbook && !HeadStruct.Eyelids.Sprite)
+    {
+        UE_LOG(LogCharacter2DEditor, Warning, TEXT("Blink animation warning: Blink flipbook set but static eyelids sprite is missing"));
+        bHasWarnings = true;
+    }
+
+    if (HeadStruct.TalkSettings.TalkFlipbook && !HeadStruct.Mouth.Sprite)
+    {
+        UE_LOG(LogCharacter2DEditor, Warning, TEXT("Talk animation warning: Talk flipbook set but static mouth sprite is missing"));
+        bHasWarnings = true;
+    }
+
+    if (bHasWarnings)
+    {
+        UE_LOG(LogCharacter2DEditor, Log, TEXT("Head configuration validation completed with warnings"));
     }
 }
 

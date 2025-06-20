@@ -29,6 +29,9 @@ public:
     // Selection callback
     void OnActorSelected(AActor* Actor);
 
+    void ForceRefreshPreview();
+    FString GetDebugInfo() const;
+
 protected:
     // Tick for world updates
     virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
@@ -60,4 +63,6 @@ private:
     ACharacter2DActor* PreviewActor = nullptr;
     UCharacter2DAsset* Asset = nullptr;
     TSharedPtr<FEditorViewportClient> EditorViewportClient;
+
+    bool bIsRefreshing = false;
 };

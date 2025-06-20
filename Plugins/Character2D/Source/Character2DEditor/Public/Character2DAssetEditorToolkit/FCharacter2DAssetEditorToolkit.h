@@ -40,6 +40,11 @@ public:
     TSharedPtr<SCharacter2DPresetPanel> PresetPanel;
 
 private:
+
+    void ValidateHeadConfiguration();
+    bool ValidateAttachmentSettings(const FCharacter2DHeadRootSprite& HeadRoot) const;
+    FString GetPreviewActorDebugInfo() const;
+    
     /** Вызывается когда в DetailsView что-то отредактировали */
     void OnAssetPropertyChanged(const FPropertyChangedEvent&);
     
