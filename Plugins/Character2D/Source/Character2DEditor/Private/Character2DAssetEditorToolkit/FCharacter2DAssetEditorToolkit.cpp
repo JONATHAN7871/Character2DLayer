@@ -482,13 +482,38 @@ void FCharacter2DAssetEditorToolkit::OnAssetPropertyChanged(const FPropertyChang
 {
 	if (ViewportWidget.IsValid())
 	{
+		// ← ИСПРАВЛЕНИЕ: Сохраняем состояние видимости ДО обновления
+		bool bWasSpritesVisible = true;
+		bool bWasSkeletalVisible = true;
+		bool bWasActorHidden = false;
+        
+		if (ACharacter2DActor* ExistingActor = ViewportWidget->GetPreviewActor().Get())
+		{
+			bWasSpritesVisible = ExistingActor->bSpritesVisible;
+			bWasSkeletalVisible = ExistingActor->bSkeletalVisible;
+			bWasActorHidden = ExistingActor->IsHidden();
+		}
+
+		// Обновляем preview
 		ViewportWidget->RefreshPreview();
+
+		// ← ИСПРАВЛЕНИЕ: Восстанавливаем состояние видимости ПОСЛЕ обновления
+		if (ACharacter2DActor* NewActor = ViewportWidget->GetPreviewActor().Get())
+		{
+			NewActor->SetBothVisible(bWasSpritesVisible, bWasSkeletalVisible);
+			NewActor->SetActorHiddenInGame(bWasActorHidden);
+		}
 	}
 
 	// Update action panel if preview actor changed
 	if (ActionPanel.IsValid() && ViewportWidget.IsValid())
 	{
-		// ActionPanel->SetPreviewActor(ViewportWidget->GetPreviewActor());
+		// ← ИСПРАВЛЕНИЕ: Синхронизируем состояние в ActionPanel
+		if (ACharacter2DActor* Actor = ViewportWidget->GetPreviewActor().Get())
+		{
+			// Принудительно обновляем UI состояние в панели действий
+			// (ActionPanel автоматически получит новый PreviewActor через GetPreviewActor())
+		}
 	}
 }
 

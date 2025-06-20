@@ -135,92 +135,19 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
 
 void ACharacter2DActor::RefreshFromAsset()
 {
+    // ← ИСПРАВЛЕНИЕ: Сохраняем runtime состояние перед обновлением
+    bool bOldSpritesVisible = bSpritesVisible;
+    bool bOldSkeletalVisible = bSkeletalVisible;
+    bool bOldBlinkingActive = bBlinkingActive;
+    bool bOldTalkingActive = bTalkingActive;
+    
+    // Стандартное обновление
     OnConstruction(GetActorTransform());
-}
-
-void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteBodyStructure& BodyStruct)
-{
-    if (!Component || !CharacterAsset) return;
-
-    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
     
-    Component->SetSprite(BodyStruct.Sprite);
-    Component->SetRelativeLocation(BodyStruct.Offset + GlobalOffset);
-    Component->SetRelativeScale3D(FVector(BodyStruct.Scale * GlobalScale));
-    Component->SetVisibility(BodyStruct.bVisible && bSpritesVisible);
-}
-
-
-void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct)
-{
-    if (!Component || !CharacterAsset) return;
-
-    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-    
-    Component->SetSprite(ArmsStruct.Sprite);
-    Component->SetRelativeLocation(ArmsStruct.Offset + GlobalOffset);
-    Component->SetRelativeScale3D(FVector(ArmsStruct.Scale * GlobalScale));
-    Component->SetVisibility(ArmsStruct.bVisible && bSpritesVisible);
-}
-
-void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct)
-{
-    if (!SpriteComp || !CharacterAsset) return;
-
-    ECharacter2DAttachmentTarget Target = BodyStruct.AttachmentTarget;
-    FName Socket = BodyStruct.SocketName;
-    bool bUseSocketTransform = BodyStruct.bUseSocketTransform;
-    FVector LocalOffset = BodyStruct.Offset;
-    float LocalScale = BodyStruct.Scale;
-
-    if (Target == ECharacter2DAttachmentTarget::None) return;
-
-    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
-    if (!TargetComponent || Socket == NAME_None) return;
-   
-    // Detach from current parent and attach to socket
-    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
-   
-    // Apply socket-specific offset if needed
-    if (!bUseSocketTransform)
-    {
-        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
-        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
-    }
-}
-
-void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct)
-{
-    if (!SpriteComp || !CharacterAsset) return;
-
-    ECharacter2DAttachmentTarget Target = ArmsStruct.AttachmentTarget;
-    FName Socket = ArmsStruct.SocketName;
-    bool bUseSocketTransform = ArmsStruct.bUseSocketTransform;
-    FVector LocalOffset = ArmsStruct.Offset;
-    float LocalScale = ArmsStruct.Scale;
-
-    if (Target == ECharacter2DAttachmentTarget::None) return;
-
-    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
-    if (!TargetComponent || Socket == NAME_None) return;
-   
-    // Detach from current parent and attach to socket
-    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
-   
-    // Apply socket-specific offset if needed
-    if (!bUseSocketTransform)
-    {
-        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
-        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
-    }
+    // ← ИСПРАВЛЕНИЕ: Восстанавливаем runtime состояние
+    SetBothVisible(bOldSpritesVisible, bOldSkeletalVisible);
+    EnableBlinking(bOldBlinkingActive);
+    EnableTalking(bOldTalkingActive);
 }
 
 
@@ -690,19 +617,6 @@ bool ACharacter2DActor::HasValidSkeletalMeshes() const
    return CharacterAsset->Body.Mesh || CharacterAsset->Arms.Mesh || CharacterAsset->Head.Mesh;
 }
 
-void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, const FCharacter2DSpriteLayer& Layer)
-{
-    if (!Component || !CharacterAsset) return;
-
-    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-    
-    Component->SetSprite(Layer.Sprite);
-    Component->SetRelativeLocation(Layer.Offset + GlobalOffset);
-    Component->SetRelativeScale3D(FVector(Layer.Scale * GlobalScale));
-    Component->SetVisibility(Layer.bVisible && bSpritesVisible);
-}
-
 void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part)
 {
    if (!Component || !CharacterAsset) return;
@@ -723,6 +637,80 @@ void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component
    Component->SetVisibility(Part.Mesh != nullptr && bSkeletalVisible);
 }
 
+
+// ============================================================================
+// Character2DActor.cpp - Изменения для каскадного масштабирования
+// ============================================================================
+
+void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, const FCharacter2DSpriteLayer& Layer)
+{
+    if (!Component || !CharacterAsset) return;
+
+    // Определяем, является ли этот компонент лицевым элементом
+    const bool bIsFaceSprite = (Component == SpriteEyebrow || Component == SpriteEyes || 
+                               Component == SpriteEyelids || Component == SpriteMouth);
+
+    // Получаем глобальные настройки
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+
+    FVector FinalOffset;
+    
+    if (bIsFaceSprite)
+    {
+        // ← ИСПРАВЛЕНИЕ: Лицевые элементы наследуют позицию головы
+        const auto& HeadLayer = CharacterAsset->GetHeadSprite();
+        const FVector HeadFinalOffset = GlobalOffset + HeadLayer.Offset;
+        FinalOffset = HeadFinalOffset + Layer.Offset;  // Голова + локальный offset
+    }
+    else
+    {
+        // Основные элементы (Body, Arms, Head) используют стандартную логику
+        FinalOffset = GlobalOffset + Layer.Offset;
+    }
+
+    const float FinalScale = GlobalScale * Layer.Scale;
+    
+    Component->SetSprite(Layer.Sprite);
+    Component->SetRelativeLocation(FinalOffset);
+    Component->SetRelativeScale3D(FVector(FinalScale));
+    Component->SetVisibility(Layer.bVisible && bSpritesVisible);
+}
+
+void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteBodyStructure& BodyStruct)
+{
+    if (!Component || !CharacterAsset) return;
+
+    // Body всегда использует стандартную логику
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    const float FinalScale = GlobalScale * BodyStruct.Scale;
+    const FVector FinalOffset = GlobalOffset + BodyStruct.Offset;
+    
+    Component->SetSprite(BodyStruct.Sprite);
+    Component->SetRelativeLocation(FinalOffset);
+    Component->SetRelativeScale3D(FVector(FinalScale));
+    Component->SetVisibility(BodyStruct.bVisible && bSpritesVisible);
+}
+
+void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct)
+{
+    if (!Component || !CharacterAsset) return;
+
+    // Arms всегда используют стандартную логику
+    const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+    const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+    
+    const float FinalScale = GlobalScale * ArmsStruct.Scale;
+    const FVector FinalOffset = GlobalOffset + ArmsStruct.Offset;
+    
+    Component->SetSprite(ArmsStruct.Sprite);
+    Component->SetRelativeLocation(FinalOffset);
+    Component->SetRelativeScale3D(FVector(FinalScale));
+    Component->SetVisibility(ArmsStruct.bVisible && bSpritesVisible);
+}
+
 void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteLayer& Layer)
 {
     if (!SpriteComp || !CharacterAsset) return;
@@ -735,8 +723,9 @@ void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, 
 
     const auto& SpriteStruct = CharacterAsset->SpriteStructure;
 
-    // If no target specified for facial sprites, inherit head settings
-    const bool bIsFaceSprite = (SpriteComp == SpriteEyebrow || SpriteComp == SpriteEyes || SpriteComp == SpriteEyelids || SpriteComp == SpriteMouth);
+    // Inherit head settings for facial sprites if no explicit target
+    const bool bIsFaceSprite = (SpriteComp == SpriteEyebrow || SpriteComp == SpriteEyes || 
+                               SpriteComp == SpriteEyelids || SpriteComp == SpriteMouth);
     if (Target == ECharacter2DAttachmentTarget::None && bIsFaceSprite)
     {
         Target = SpriteStruct.Head.Head.AttachmentTarget;
@@ -758,8 +747,93 @@ void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, 
     {
         const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
         const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        SpriteComp->SetRelativeLocation(LocalOffset + GlobalOffset);
-        SpriteComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+        
+        FVector FinalOffset;
+        
+        if (bIsFaceSprite)
+        {
+            // ← ИСПРАВЛЕНИЕ: Лицевые элементы наследуют позицию головы
+            const auto& HeadLayer = CharacterAsset->GetHeadSprite();
+            const FVector HeadFinalOffset = GlobalOffset + HeadLayer.Offset;
+            FinalOffset = HeadFinalOffset + LocalOffset;
+        }
+        else
+        {
+            FinalOffset = GlobalOffset + LocalOffset;
+        }
+        
+        const float FinalScale = GlobalScale * LocalScale;
+        
+        SpriteComp->SetRelativeLocation(FinalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(FinalScale));
+    }
+}
+
+void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct)
+{
+    if (!SpriteComp || !CharacterAsset) return;
+
+    ECharacter2DAttachmentTarget Target = BodyStruct.AttachmentTarget;
+    FName Socket = BodyStruct.SocketName;
+    bool bUseSocketTransform = BodyStruct.bUseSocketTransform;
+    FVector LocalOffset = BodyStruct.Offset;
+    float LocalScale = BodyStruct.Scale;
+
+    if (Target == ECharacter2DAttachmentTarget::None) return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None) return;
+   
+    // Detach from current parent and attach to socket
+    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
+   
+    // Apply socket-specific offset if needed
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+        
+        // Каскадное применение
+        const float FinalScale = GlobalScale * LocalScale;        // Базовый * Локальный
+        const FVector FinalOffset = GlobalOffset + LocalOffset;   // Базовый + Локальный
+        
+        SpriteComp->SetRelativeLocation(FinalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(FinalScale));
+    }
+}
+
+void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct)
+{
+    if (!SpriteComp || !CharacterAsset) return;
+
+    ECharacter2DAttachmentTarget Target = ArmsStruct.AttachmentTarget;
+    FName Socket = ArmsStruct.SocketName;
+    bool bUseSocketTransform = ArmsStruct.bUseSocketTransform;
+    FVector LocalOffset = ArmsStruct.Offset;
+    float LocalScale = ArmsStruct.Scale;
+
+    if (Target == ECharacter2DAttachmentTarget::None) return;
+
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(Target);
+    if (!TargetComponent || Socket == NAME_None) return;
+   
+    // Detach from current parent and attach to socket
+    SpriteComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+    SpriteComp->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, Socket);
+   
+    // Apply socket-specific offset if needed
+    if (!bUseSocketTransform)
+    {
+        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
+        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
+        
+        // Каскадное применение
+        const float FinalScale = GlobalScale * LocalScale;        // Базовый * Локальный
+        const FVector FinalOffset = GlobalOffset + LocalOffset;   // Базовый + Локальный
+        
+        SpriteComp->SetRelativeLocation(FinalOffset);
+        SpriteComp->SetRelativeScale3D(FVector(FinalScale));
     }
 }
 
@@ -794,8 +868,13 @@ void ACharacter2DActor::AttachFlipbookToSocket(UPaperFlipbookComponent* Flipbook
     {
         const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
         const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        FlipbookComp->SetRelativeLocation(LocalOffset + GlobalOffset);
-        FlipbookComp->SetRelativeScale3D(FVector(LocalScale * GlobalScale));
+        
+        // Каскадное применение
+        const float FinalScale = GlobalScale * LocalScale;        // Базовый * Локальный
+        const FVector FinalOffset = GlobalOffset + LocalOffset;   // Базовый + Локальный
+        
+        FlipbookComp->SetRelativeLocation(FinalOffset);
+        FlipbookComp->SetRelativeScale3D(FVector(FinalScale));
     }
 }
 

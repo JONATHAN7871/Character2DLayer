@@ -137,9 +137,35 @@ void SCharacter2DAssetViewport::Tick(const FGeometry& AllottedGeometry, double I
 
 void SCharacter2DAssetViewport::RefreshPreview()
 {
+    // Сохраняем текущее состояние
+    bool bOldSpritesVisible = true;
+    bool bOldSkeletalVisible = true;
+    bool bOldActorHidden = false;
+    FVector OldLocation = FVector::ZeroVector;
+    FRotator OldRotation = FRotator::ZeroRotator;
+    FVector OldScale = FVector::OneVector;
+    
+    if (PreviewActor && IsValid(PreviewActor))
+    {
+        bOldSpritesVisible = PreviewActor->bSpritesVisible;
+        bOldSkeletalVisible = PreviewActor->bSkeletalVisible;
+        bOldActorHidden = PreviewActor->IsHidden();
+        OldLocation = PreviewActor->GetActorLocation();
+        OldRotation = PreviewActor->GetActorRotation();
+        OldScale = PreviewActor->GetActorScale3D();
+    }
+
+    // Обновляем Actor
     if (PreviewActor)
     {
         PreviewActor->RefreshFromAsset();
+        
+        // ← ИСПРАВЛЕНИЕ: Восстанавливаем состояние
+        PreviewActor->SetBothVisible(bOldSpritesVisible, bOldSkeletalVisible);
+        PreviewActor->SetActorHiddenInGame(bOldActorHidden);
+        PreviewActor->SetActorLocation(OldLocation);
+        PreviewActor->SetActorRotation(OldRotation);
+        PreviewActor->SetActorScale3D(OldScale);
     }
 }
 
