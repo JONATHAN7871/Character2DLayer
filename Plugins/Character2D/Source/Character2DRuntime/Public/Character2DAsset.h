@@ -4,6 +4,9 @@
 #include "Engine/DataAsset.h"
 #include "PaperSprite.h"
 #include "PaperFlipbook.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Materials/MaterialInterface.h"
 #include "Curves/CurveFloat.h"
 #include "Character2DAsset.generated.h"
 
@@ -81,6 +84,52 @@ struct FCharacter2DEmotionSettings
     TObjectPtr<UCurveFloat> AnimationCurve = nullptr;
 };
 
+/* ───────────────────────────── Head Child Sprite Layer ───────────────────────────── */
+USTRUCT(BlueprintType)
+struct FCharacter2DHeadChildSprite
+{
+    GENERATED_BODY()
+
+    /** Имя элемента */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Sprite")
+    FName Name;
+
+    /** Статичный спрайт */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite")
+    TObjectPtr<UPaperSprite> Sprite = nullptr;
+
+    /** Локальный оффсет относительно головы (X вправо, Y вверх) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Transform")
+    FVector LocalOffset = FVector::ZeroVector;
+
+    /** Локальный Scale относительно головы */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Transform")
+    float LocalScale = 1.0f;
+
+    /** Видимость (наследуется от головы если голова невидима) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Visibility")
+    bool bVisible = true;
+
+    /** Переопределить наследование видимости головы */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Visibility", meta=(DisplayName="Override Head Visibility"))
+    bool bOverrideHeadVisibility = false;
+
+    FCharacter2DHeadChildSprite()
+    {
+        Name = TEXT("HeadChild");
+    }
+
+    // Utility function to get final visibility considering head inheritance
+    bool GetFinalVisibility(bool bHeadVisible) const
+    {
+        if (bOverrideHeadVisibility)
+        {
+            return bVisible;
+        }
+        return bHeadVisible && bVisible;
+    }
+};
+
 /* ───────────────────────────── Blink Settings ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DBlinkSettings
@@ -88,41 +137,29 @@ struct FCharacter2DBlinkSettings
     GENERATED_BODY()
 
     /** Flipbook с кадрами моргания (открыто → полу-закрыто → закрыто) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Animation")
     TObjectPtr<UPaperFlipbook> BlinkFlipbook = nullptr;
 
-    /** Сдвиг от корня (X вправо, Y вверх) для Flipbook */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink")
-    FVector Offset = FVector::ZeroVector;
+    /** Локальный сдвиг относительно головы для Flipbook */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Animation|Transform")
+    FVector LocalOffset = FVector::ZeroVector;
 
-    /** Локальный Scale */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blink")
-    float Scale = 1.0f;
-
-    /** Target skeletal mesh for attachment */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment")
-    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
-
-    /** Socket name on target skeletal mesh */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
-    FName SocketName;
-
-    /** Use socket transform or apply custom offset/scale */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
-    bool bUseSocketTransform = true;
+    /** Локальный Scale относительно головы */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Animation|Transform")
+    float LocalScale = 1.0f;
 
     /** Мин/Макс интервал до моргания (сек) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(ClampMin="0.1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))
     float BlinkIntervalMin = 2.f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(ClampMin="0.1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))
     float BlinkIntervalMax = 5.f;
 
     /** Мин/Макс скорость воспроизведения */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(ClampMin="0.1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))
     float BlinkPlayRateMin = 1.f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(ClampMin="0.1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))
     float BlinkPlayRateMax = 2.f;
 };
 
@@ -133,35 +170,147 @@ struct FCharacter2DTalkSettings
     GENERATED_BODY()
 
     /** Flipbook с кадрами говорения (движение губ) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation")
     TObjectPtr<UPaperFlipbook> TalkFlipbook = nullptr;
 
-    /** Сдвиг от корня (X вправо, Y вверх) для Flipbook */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk")
-    FVector Offset = FVector::ZeroVector;
+    /** Локальный сдвиг относительно головы для Flipbook */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation|Transform")
+    FVector LocalOffset = FVector::ZeroVector;
 
-    /** Локальный Scale */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Talk")
-    float Scale = 1.0f;
-
-    /** Target skeletal mesh for attachment */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment")
-    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
-
-    /** Socket name on target skeletal mesh */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
-    FName SocketName;
-
-    /** Use socket transform or apply custom offset/scale */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
-    bool bUseSocketTransform = true;
+    /** Локальный Scale относительно головы */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation|Transform")
+    float LocalScale = 1.0f;
 
     /** Скорость зацикленного воспроизведения разговора */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk", meta=(ClampMin="0.1"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation|Timing", meta=(ClampMin="0.1"))
     float TalkPlayRate = 1.f;
 };
 
-/* ───────────────────────────── Sprite Layer ───────────────────────────── */
+/* ───────────────────────────── Head Root Sprite Layer ───────────────────────────── */
+USTRUCT(BlueprintType)
+struct FCharacter2DHeadRootSprite
+{
+    GENERATED_BODY()
+
+    /** Имя головы */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Head Root")
+    FName Name;
+
+    /** Статичный спрайт головы */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Sprite")
+    TObjectPtr<UPaperSprite> Sprite = nullptr;
+
+    /** Attachment target - только для головы как root элемента */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Attachment")
+    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
+
+    /** Socket name for attachment (if AttachmentTarget is set) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    FName SocketName;
+
+    /** Whether to use socket transform (true) or apply custom offset/scale (false) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    bool bUseSocketTransform = true;
+
+    /** Локальный оффсет головы (влияет на все дочерние элементы) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Transform")
+    FVector Offset = FVector::ZeroVector;
+
+    /** Локальный Scale головы (влияет на все дочерние элементы) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Transform")
+    float Scale = 1.0f;
+
+    /** Видимость головы (влияет на все дочерние элементы) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Visibility")
+    bool bVisible = true;
+
+    FCharacter2DHeadRootSprite()
+    {
+        Name = TEXT("Head");
+    }
+};
+
+/* ───────────────────────────── New Head Structure (Hierarchical) ───────────────────────────── */
+USTRUCT(BlueprintType)
+struct FCharacter2DHeadStructure
+{
+    GENERATED_BODY()
+
+    /** Корневой элемент головы - управляет общими настройками */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root", meta=(DisplayName="Head (Root)"))
+    FCharacter2DHeadRootSprite Head;
+
+    /** === Лицевые элементы (наследуют от Head) === */
+    
+    /** Брови */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Elements", meta=(DisplayName="Eyebrows"))
+    FCharacter2DHeadChildSprite Eyebrows;
+
+    /** Глаза */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Elements", meta=(DisplayName="Eyes"))
+    FCharacter2DHeadChildSprite Eyes;
+
+    /** Статичные веки */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Elements", meta=(DisplayName="Eyelids (Static)"))
+    FCharacter2DHeadChildSprite Eyelids;
+
+    /** Статичный рот */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Elements", meta=(DisplayName="Mouth (Static)"))
+    FCharacter2DHeadChildSprite Mouth;
+
+    /** === Анимации === */
+    
+    /** Настройки моргания (наследует трансформации от Head) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Animations", meta=(DisplayName="Blink Animation"))
+    FCharacter2DBlinkSettings BlinkSettings;
+
+    /** Настройки разговора (наследует трансформации от Head) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Animations", meta=(DisplayName="Talk Animation"))
+    FCharacter2DTalkSettings TalkSettings;
+
+    FCharacter2DHeadStructure()
+    {
+        Head.Name = TEXT("Head");
+        Eyebrows.Name = TEXT("Eyebrows");
+        Eyes.Name = TEXT("Eyes");
+        Eyelids.Name = TEXT("Eyelids");
+        Mouth.Name = TEXT("Mouth");
+    }
+
+    /** Helper functions для вычисления финальных трансформаций */
+    
+    /** Получить финальный offset для дочернего элемента (Head.Offset + LocalOffset) */
+    FVector GetFinalChildOffset(const FCharacter2DHeadChildSprite& ChildSprite, const FVector& GlobalSpriteOffset) const
+    {
+        return GlobalSpriteOffset + Head.Offset + ChildSprite.LocalOffset;
+    }
+
+    /** Получить финальный scale для дочернего элемента (Head.Scale * LocalScale) */
+    float GetFinalChildScale(const FCharacter2DHeadChildSprite& ChildSprite, float GlobalSpriteScale) const
+    {
+        return GlobalSpriteScale * Head.Scale * ChildSprite.LocalScale;
+    }
+
+    /** Получить финальную видимость для дочернего элемента */
+    bool GetFinalChildVisibility(const FCharacter2DHeadChildSprite& ChildSprite) const
+    {
+        return ChildSprite.GetFinalVisibility(Head.bVisible);
+    }
+
+    /** Получить финальный offset для анимации (Head.Offset + Animation.LocalOffset) */
+    FVector GetFinalAnimationOffset(const FVector& AnimationLocalOffset, const FVector& GlobalSpriteOffset) const
+    {
+        return GlobalSpriteOffset + Head.Offset + AnimationLocalOffset;
+    }
+
+    /** Получить финальный scale для анимации (Head.Scale * Animation.LocalScale) */
+    float GetFinalAnimationScale(float AnimationLocalScale, float GlobalSpriteScale) const
+    {
+        return GlobalSpriteScale * Head.Scale * AnimationLocalScale;
+    }
+};
+
+/* ───────────────────────────── Basic Sprite Layer (для Body/Arms) ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DSpriteLayer
 {
@@ -200,13 +349,13 @@ struct FCharacter2DSpriteLayer
     bool bVisible = true;
 };
 
-/* ───────────────────────────── Sprite Body Structure ───────────────────────────── */
+/* ───────────────────────────── Body/Arms Sprite Structures ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DSpriteBodyStructure
 {
     GENERATED_BODY()
 
-    /** Имя слоя (автозаполняется из категории) */
+    /** Имя слоя */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Sprite")
     FName Name;
 
@@ -214,19 +363,19 @@ struct FCharacter2DSpriteBodyStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite")
     TObjectPtr<UPaperSprite> Sprite = nullptr;
 
-    /** Attachment target (which skeletal mesh to attach to) */
+    /** Attachment target */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment")
     ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
 
-    /** Socket name for attachment (if AttachmentTarget is set) */
+    /** Socket name for attachment */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
     FName SocketName;
 
-    /** Whether to use socket transform (true) or apply custom offset/scale (false) */
+    /** Whether to use socket transform */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
     bool bUseSocketTransform = true;
 
-    /** Локальный оффсет (X вправо, Y вверх) */
+    /** Локальный оффсет */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite")
     FVector Offset = FVector::ZeroVector;
 
@@ -244,13 +393,12 @@ struct FCharacter2DSpriteBodyStructure
     }
 };
 
-/* ───────────────────────────── Sprite Arms Structure ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DSpriteArmsStructure
 {
     GENERATED_BODY()
 
-    /** Имя слоя (автозаполняется из категории) */
+    /** Имя слоя */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Sprite")
     FName Name;
 
@@ -258,19 +406,19 @@ struct FCharacter2DSpriteArmsStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite")
     TObjectPtr<UPaperSprite> Sprite = nullptr;
 
-    /** Attachment target (which skeletal mesh to attach to) */
+    /** Attachment target */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment")
     ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
 
-    /** Socket name for attachment (if AttachmentTarget is set) */
+    /** Socket name for attachment */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
     FName SocketName;
 
-    /** Whether to use socket transform (true) or apply custom offset/scale (false) */
+    /** Whether to use socket transform */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
     bool bUseSocketTransform = true;
 
-    /** Локальный оффсет (X вправо, Y вверх) */
+    /** Локальный оффсет */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite")
     FVector Offset = FVector::ZeroVector;
 
@@ -285,47 +433,6 @@ struct FCharacter2DSpriteArmsStructure
     FCharacter2DSpriteArmsStructure()
     {
         Name = TEXT("Arms");
-    }
-};
-
-/* ───────────────────────────── Sprite Head Structure ───────────────────────────── */
-USTRUCT(BlueprintType)
-struct FCharacter2DSpriteHeadStructure
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite", meta=(DisplayName="Head"))
-    FCharacter2DSpriteLayer Head;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite", meta=(DisplayName="Eyebrow"))
-    FCharacter2DSpriteLayer Eyebrow;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite", meta=(DisplayName="Eyes"))
-    FCharacter2DSpriteLayer Eyes;
-
-    /** Статичный слой век */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite", meta=(DisplayName="Eyelids"))
-    FCharacter2DSpriteLayer Eyelids;
-
-    /** Настройки случайного моргания */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink", meta=(DisplayName="Eyelids Blink Settings"))
-    FCharacter2DBlinkSettings EyelidsBlinkSettings;
-
-    /** Статичный слой рта */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite", meta=(DisplayName="Mouth"))
-    FCharacter2DSpriteLayer Mouth;
-
-    /** Настройки разговора */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk", meta=(DisplayName="Mouth Talk Settings"))
-    FCharacter2DTalkSettings MouthTalkSettings;
-
-    FCharacter2DSpriteHeadStructure()
-    {
-        Head.Name = TEXT("Head");
-        Eyebrow.Name = TEXT("Eyebrow");
-        Eyes.Name = TEXT("Eyes");
-        Eyelids.Name = TEXT("Eyelids");
-        Mouth.Name = TEXT("Mouth");
     }
 };
 
@@ -344,7 +451,7 @@ struct FCharacter2DSpriteTransformStructure
     float GlobalScale = 1.0f;
 };
 
-/* ───────────────────────────── Sprite Structure ───────────────────────────── */
+/* ───────────────────────────── Updated Sprite Structure ───────────────────────────── */
 USTRUCT(BlueprintType)
 struct FCharacter2DSpriteStructure
 {
@@ -356,8 +463,9 @@ struct FCharacter2DSpriteStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Arms")
     FCharacter2DSpriteArmsStructure Arms;
 
+    /** Новая иерархическая структура головы */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Head")
-    FCharacter2DSpriteHeadStructure Head;
+    FCharacter2DHeadStructure Head;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Transform")
     FCharacter2DSpriteTransformStructure Transform;
@@ -401,7 +509,7 @@ struct FCharacter2DSpriteStructure
         // Initialize new structure
         Body = FCharacter2DSpriteBodyStructure();
         Arms = FCharacter2DSpriteArmsStructure();
-        Head = FCharacter2DSpriteHeadStructure();
+        Head = FCharacter2DHeadStructure();
         Transform = FCharacter2DSpriteTransformStructure();
     }
 
@@ -432,36 +540,60 @@ struct FCharacter2DSpriteStructure
             Arms.bVisible = LegacyArms.bVisible;
         }
 
-        // Migrate head structure
+        // Migrate head structure to new hierarchical format
         if (LegacyHead.Sprite != nullptr || !LegacyHead.Offset.IsZero() || LegacyHead.Scale != 1.0f)
         {
-            Head.Head = LegacyHead;
+            // Migrate head root
+            Head.Head.Sprite = LegacyHead.Sprite;
+            Head.Head.AttachmentTarget = LegacyHead.AttachmentTarget;
+            Head.Head.SocketName = LegacyHead.SocketName;
+            Head.Head.bUseSocketTransform = LegacyHead.bUseSocketTransform;
+            Head.Head.Offset = LegacyHead.Offset;
+            Head.Head.Scale = LegacyHead.Scale;
+            Head.Head.bVisible = LegacyHead.bVisible;
         }
+
+        // Migrate facial elements as children
         if (LegacyEyebrow.Sprite != nullptr || !LegacyEyebrow.Offset.IsZero() || LegacyEyebrow.Scale != 1.0f)
         {
-            Head.Eyebrow = LegacyEyebrow;
+            Head.Eyebrows.Sprite = LegacyEyebrow.Sprite;
+            Head.Eyebrows.LocalOffset = LegacyEyebrow.Offset;
+            Head.Eyebrows.LocalScale = LegacyEyebrow.Scale;
+            Head.Eyebrows.bVisible = LegacyEyebrow.bVisible;
         }
+
         if (LegacyEyes.Sprite != nullptr || !LegacyEyes.Offset.IsZero() || LegacyEyes.Scale != 1.0f)
         {
-            Head.Eyes = LegacyEyes;
+            Head.Eyes.Sprite = LegacyEyes.Sprite;
+            Head.Eyes.LocalOffset = LegacyEyes.Offset;
+            Head.Eyes.LocalScale = LegacyEyes.Scale;
+            Head.Eyes.bVisible = LegacyEyes.bVisible;
         }
+
         if (LegacyEyelids.Sprite != nullptr || !LegacyEyelids.Offset.IsZero() || LegacyEyelids.Scale != 1.0f)
         {
-            Head.Eyelids = LegacyEyelids;
+            Head.Eyelids.Sprite = LegacyEyelids.Sprite;
+            Head.Eyelids.LocalOffset = LegacyEyelids.Offset;
+            Head.Eyelids.LocalScale = LegacyEyelids.Scale;
+            Head.Eyelids.bVisible = LegacyEyelids.bVisible;
         }
+
         if (LegacyMouth.Sprite != nullptr || !LegacyMouth.Offset.IsZero() || LegacyMouth.Scale != 1.0f)
         {
-            Head.Mouth = LegacyMouth;
+            Head.Mouth.Sprite = LegacyMouth.Sprite;
+            Head.Mouth.LocalOffset = LegacyMouth.Offset;
+            Head.Mouth.LocalScale = LegacyMouth.Scale;
+            Head.Mouth.bVisible = LegacyMouth.bVisible;
         }
 
         // Migrate animation settings
         if (LegacyEyelidsBlinkSettings.BlinkFlipbook != nullptr)
         {
-            Head.EyelidsBlinkSettings = LegacyEyelidsBlinkSettings;
+            Head.BlinkSettings = LegacyEyelidsBlinkSettings;
         }
         if (LegacyMouthTalkSettings.TalkFlipbook != nullptr)
         {
-            Head.MouthTalkSettings = LegacyMouthTalkSettings;
+            Head.TalkSettings = LegacyMouthTalkSettings;
         }
 
         // Migrate transform
@@ -582,7 +714,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General")
     bool bEnableDualRendering = false;
 
-    // Helper functions to access sprite data with backward compatibility
+    // Helper functions to access sprite data with new hierarchical structure
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
     const FCharacter2DSpriteBodyStructure& GetBodySprite() const
     {
@@ -596,31 +728,31 @@ public:
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
-    const FCharacter2DSpriteLayer& GetHeadSprite() const
+    const FCharacter2DHeadRootSprite& GetHeadSprite() const
     {
         return SpriteStructure.Head.Head;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
-    const FCharacter2DSpriteLayer& GetEyebrowSprite() const
+    const FCharacter2DHeadChildSprite& GetEyebrowSprite() const
     {
-        return SpriteStructure.Head.Eyebrow;
+        return SpriteStructure.Head.Eyebrows;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
-    const FCharacter2DSpriteLayer& GetEyesSprite() const
+    const FCharacter2DHeadChildSprite& GetEyesSprite() const
     {
         return SpriteStructure.Head.Eyes;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
-    const FCharacter2DSpriteLayer& GetEyelidsSprite() const
+    const FCharacter2DHeadChildSprite& GetEyelidsSprite() const
     {
         return SpriteStructure.Head.Eyelids;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
-    const FCharacter2DSpriteLayer& GetMouthSprite() const
+    const FCharacter2DHeadChildSprite& GetMouthSprite() const
     {
         return SpriteStructure.Head.Mouth;
     }
@@ -628,13 +760,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
     const FCharacter2DBlinkSettings& GetBlinkSettings() const
     {
-        return SpriteStructure.Head.EyelidsBlinkSettings;
+        return SpriteStructure.Head.BlinkSettings;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
     const FCharacter2DTalkSettings& GetTalkSettings() const
     {
-        return SpriteStructure.Head.MouthTalkSettings;
+        return SpriteStructure.Head.TalkSettings;
     }
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites")
@@ -649,10 +781,111 @@ public:
         return SpriteStructure.Transform.GlobalScale;
     }
 
+    /** New helper functions for hierarchical head structure */
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalEyebrowOffset() const
+    {
+        return SpriteStructure.Head.GetFinalChildOffset(SpriteStructure.Head.Eyebrows, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalEyesOffset() const
+    {
+        return SpriteStructure.Head.GetFinalChildOffset(SpriteStructure.Head.Eyes, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalEyelidsOffset() const
+    {
+        return SpriteStructure.Head.GetFinalChildOffset(SpriteStructure.Head.Eyelids, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalMouthOffset() const
+    {
+        return SpriteStructure.Head.GetFinalChildOffset(SpriteStructure.Head.Mouth, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalEyebrowScale() const
+    {
+        return SpriteStructure.Head.GetFinalChildScale(SpriteStructure.Head.Eyebrows, GetGlobalSpriteScale());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalEyesScale() const
+    {
+        return SpriteStructure.Head.GetFinalChildScale(SpriteStructure.Head.Eyes, GetGlobalSpriteScale());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalEyelidsScale() const
+    {
+        return SpriteStructure.Head.GetFinalChildScale(SpriteStructure.Head.Eyelids, GetGlobalSpriteScale());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalMouthScale() const
+    {
+        return SpriteStructure.Head.GetFinalChildScale(SpriteStructure.Head.Mouth, GetGlobalSpriteScale());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    bool GetFinalEyebrowVisibility() const
+    {
+        return SpriteStructure.Head.GetFinalChildVisibility(SpriteStructure.Head.Eyebrows);
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    bool GetFinalEyesVisibility() const
+    {
+        return SpriteStructure.Head.GetFinalChildVisibility(SpriteStructure.Head.Eyes);
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    bool GetFinalEyelidsVisibility() const
+    {
+        return SpriteStructure.Head.GetFinalChildVisibility(SpriteStructure.Head.Eyelids);
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    bool GetFinalMouthVisibility() const
+    {
+        return SpriteStructure.Head.GetFinalChildVisibility(SpriteStructure.Head.Mouth);
+    }
+
+    /** Animation offset/scale helpers */
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalBlinkOffset() const
+    {
+        return SpriteStructure.Head.GetFinalAnimationOffset(SpriteStructure.Head.BlinkSettings.LocalOffset, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalBlinkScale() const
+    {
+        return SpriteStructure.Head.GetFinalAnimationScale(SpriteStructure.Head.BlinkSettings.LocalScale, GetGlobalSpriteScale());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    FVector GetFinalTalkOffset() const
+    {
+        return SpriteStructure.Head.GetFinalAnimationOffset(SpriteStructure.Head.TalkSettings.LocalOffset, GetGlobalSpriteOffset());
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites|Head")
+    float GetFinalTalkScale() const
+    {
+        return SpriteStructure.Head.GetFinalAnimationScale(SpriteStructure.Head.TalkSettings.LocalScale, GetGlobalSpriteScale());
+    }
+
 #if WITH_EDITOR
     // Editor-only hooks
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
     virtual void GetAssetRegistryTags(FAssetRegistryTagsContext Context) const override;
+    
+    /** Validate head hierarchy settings */
+    void ValidateHeadHierarchy();
 #endif
 
     /** Runtime validation methods */

@@ -211,6 +211,11 @@ private:
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct);
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct);
 
+    /* ═══ NEW: Head Hierarchy Methods ═══ */
+    void SetupHeadHierarchy();
+    void AttachHeadToSocket();
+    void SetupHeadAnimations();
+
     bool HasValidSprites() const;
     bool HasValidSkeletalMeshes() const;
     
