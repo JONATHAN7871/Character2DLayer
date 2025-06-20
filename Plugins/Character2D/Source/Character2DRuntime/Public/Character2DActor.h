@@ -204,13 +204,14 @@ private:
     void AttachFlipbookToSocket(UPaperFlipbookComponent* FlipbookComp,
         ECharacter2DAttachmentTarget Target, FName Socket, bool bUseSocketTransform,
         const FVector& Offset, float Scale);
-
+    void ApplyAttachmentTransform(UPaperSpriteComponent* SpriteComponent,USceneComponent* TargetComponent,const FName& SocketName,bool bUseSocketTransform,const FVector& LocalOffset,float LocalScale);
+    
     // New methods for Body/Arms structures
     void SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteBodyStructure& BodyStruct);
     void SetupSpriteComponentFromStruct(UPaperSpriteComponent* Component, const FCharacter2DSpriteArmsStructure& ArmsStruct);
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct);
     void AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteArmsStructure& ArmsStruct);
-
+    
     /* ═══ NEW: Head Hierarchy Methods ═══ */
     void SetupHeadHierarchy();
     void AttachHeadToSocket();

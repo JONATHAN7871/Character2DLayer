@@ -3,8 +3,6 @@
 #include "Components/TimelineComponent.h"
 #include "Engine/World.h"
 #include "Curves/CurveFloat.h"
-#include "Materials/MaterialParameterCollection.h"
-#include "Materials/MaterialParameterCollectionInstance.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCharacter2DActor, Log, All);
 
@@ -167,31 +165,36 @@ void ACharacter2DActor::AttachHeadToSocket()
     if (!CharacterAsset) return;
 
     const auto& HeadRoot = CharacterAsset->SpriteStructure.Head.Head;
-    
-    // Only head root has attachment settings
-    if (HeadRoot.AttachmentTarget == ECharacter2DAttachmentTarget::None) return;
+
+    if (HeadRoot.AttachmentTarget == ECharacter2DAttachmentTarget::None)
+        return;
 
     USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByTarget(HeadRoot.AttachmentTarget);
-    if (!TargetComponent || HeadRoot.SocketName == NAME_None) return;
-   
-    // Detach from current parent and attach to socket
+    if (!TargetComponent || HeadRoot.SocketName == NAME_None)
+        return;
+
+    // === Расчёт смещения до привязки ===
+    const FVector WorldBeforeAttach = SpriteHead->GetComponentLocation();
+    const FTransform SocketTransformWS = TargetComponent->GetSocketTransform(HeadRoot.SocketName, RTS_World);
+    const FVector WorldOffset = WorldBeforeAttach - SocketTransformWS.GetLocation();
+
+    // === Привязка с сохранением относительной трансформации ===
     SpriteHead->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
     SpriteHead->AttachToComponent(TargetComponent, FAttachmentTransformRules::KeepRelativeTransform, HeadRoot.SocketName);
-   
-    // Apply socket-specific offset if needed
+
+    // === Компенсируем смещение ===
+    // Переводим мировое смещение в локальные координаты относительно сокета
+    const FTransform SocketTransformLS = TargetComponent->GetSocketTransform(HeadRoot.SocketName, RTS_ParentBoneSpace);
+    const FVector RelativeOffset = SocketTransformLS.InverseTransformVectorNoScale(WorldOffset);
+
+    SpriteHead->SetRelativeLocation(RelativeOffset);
+
+    // Обновляем масштаб (если не используется сокет-трансформ)
     if (!HeadRoot.bUseSocketTransform)
     {
-        const FVector GlobalOffset = CharacterAsset->GetGlobalSpriteOffset();
-        const float GlobalScale = CharacterAsset->GetGlobalSpriteScale();
-        
-        const FVector FinalOffset = GlobalOffset + HeadRoot.Offset;
-        const float FinalScale = GlobalScale * HeadRoot.Scale;
-        
-        SpriteHead->SetRelativeLocation(FinalOffset);
+        const float FinalScale = CharacterAsset->GetGlobalSpriteScale() * HeadRoot.Scale;
         SpriteHead->SetRelativeScale3D(FVector(FinalScale));
     }
-    
-    // Note: Children automatically inherit this attachment since they're attached to SpriteHead
 }
 
 void ACharacter2DActor::SetupHeadAnimations()
@@ -514,7 +517,7 @@ void ACharacter2DActor::OnEmotionTimelineUpdate(float Value)
     if (!bIsPlayingEmotion) return;
 
     const float IntensityMultiplier = CurrentEmotionSettings.Intensity;
-    
+
     switch (CurrentEmotionType)
     {
     case ECharacter2DEmotionEffect::Shake:
@@ -528,18 +531,21 @@ void ACharacter2DActor::OnEmotionTimelineUpdate(float Value)
             SetActorLocation(OriginalActorLocation + ShakeOffset);
         }
         break;
+
     case ECharacter2DEmotionEffect::Pulse:
         {
             float ScaleFactor = 1.0f + (Value * IntensityMultiplier * 0.2f);
             SetActorScale3D(OriginalActorScale * ScaleFactor);
         }
         break;
+
     case ECharacter2DEmotionEffect::ColorShift:
         {
             FLinearColor CurrentColor = FMath::Lerp(FLinearColor::White, CurrentEmotionSettings.TargetColor, Value * IntensityMultiplier);
             SetAllSpritesColor(CurrentColor);
         }
         break;
+
     case ECharacter2DEmotionEffect::Bounce:
         {
             float BounceHeight = Value * IntensityMultiplier * 50.0f;
@@ -547,11 +553,16 @@ void ACharacter2DActor::OnEmotionTimelineUpdate(float Value)
             SetActorLocation(OriginalActorLocation + BounceOffset);
         }
         break;
+
     case ECharacter2DEmotionEffect::Flash:
         {
             float Opacity = Value > 0.5f ? 1.0f : (0.3f + 0.7f * IntensityMultiplier);
             SetAllSpritesOpacity(Opacity);
         }
+        break;
+
+    default:
+        // Нет действия — используется, например, для ECharacter2DEmotionEffect::None
         break;
     }
 }
@@ -771,6 +782,50 @@ void ACharacter2DActor::SetupSpriteComponentFromStruct(UPaperSpriteComponent* Co
     Component->SetRelativeLocation(FinalOffset);
     Component->SetRelativeScale3D(FVector(FinalScale));
     Component->SetVisibility(ArmsStruct.bVisible && bSpritesVisible);
+}
+
+void ACharacter2DActor::ApplyAttachmentTransform(
+    UPaperSpriteComponent* SpriteComponent,
+    USceneComponent* TargetComponent,
+    const FName& SocketName,
+    bool bUseSocketTransform,
+    const FVector& LocalOffset,
+    float LocalScale
+)
+{
+    if (!SpriteComponent || !TargetComponent)
+    {
+        return;
+    }
+
+    // Обязательно сначала отсоединяем
+    SpriteComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+
+    if (bUseSocketTransform && !SocketName.IsNone())
+    {
+        // Прикрепляем к сокету
+        SpriteComponent->AttachToComponent(
+            TargetComponent,
+            FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+            SocketName
+        );
+
+        // Offset = дополнительное смещение от сокета
+        SpriteComponent->SetRelativeLocation(LocalOffset);
+        SpriteComponent->SetRelativeScale3D(FVector(LocalScale));
+    }
+    else
+    {
+        // Прикрепляем без сокета
+        SpriteComponent->AttachToComponent(
+            TargetComponent,
+            FAttachmentTransformRules::KeepRelativeTransform
+        );
+
+        // Offset = вся позиция целиком
+        SpriteComponent->SetRelativeLocation(LocalOffset);
+        SpriteComponent->SetRelativeScale3D(FVector(LocalScale));
+    }
 }
 
 void ACharacter2DActor::AttachSpriteToSocketFromStruct(UPaperSpriteComponent* SpriteComp, const FCharacter2DSpriteBodyStructure& BodyStruct)
