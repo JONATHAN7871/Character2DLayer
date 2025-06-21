@@ -108,7 +108,7 @@ struct FCharacter2DBlinkSettings
 {
     GENERATED_BODY()
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Animation")
-    TObjectPtr<UPaperSprite> ClosedEyelidsSprite = nullptr;
+    TObjectPtr<UPaperFlipbook> ClosedEyelidsFlipbook = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))
     float BlinkIntervalMin = 2.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.1"))

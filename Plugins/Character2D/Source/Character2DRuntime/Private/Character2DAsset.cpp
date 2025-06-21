@@ -66,9 +66,9 @@ void UCharacter2DAsset::ValidateHeadHierarchy()
             UE_LOG(LogCharacter2D, Warning, TEXT("Character2D Asset '%s': Facial/Effect sprites configured but Head root sprite is missing. Elements may not position correctly."), *GetName());
         }
     }
-    if (HeadStruct.BlinkSettings.ClosedEyelidsSprite && !HeadStruct.Eyelids.Sprite)
+    if (HeadStruct.BlinkSettings.ClosedEyelidsFlipbook && !HeadStruct.Eyelids.Sprite)
     {
-        UE_LOG(LogCharacter2D, Warning, TEXT("Character2D Asset '%s': Closed eyelids sprite configured but static Eyelids sprite is missing."), *GetName());
+        UE_LOG(LogCharacter2D, Warning, TEXT("Character2D Asset '%s': Closed eyelids flipbook configured but static Eyelids sprite is missing."), *GetName());
     }
     if (HeadStruct.TalkSettings.TalkFlipbook && !HeadStruct.Mouth.Sprite)
     {

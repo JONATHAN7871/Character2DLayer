@@ -359,10 +359,44 @@ void ACharacter2DActor::BlinkOnce()
     if (!IsValid(this) || !IsValid(SpriteEyelids) || !CharacterAsset) return;
     const auto& Settings = CharacterAsset->GetBlinkSettings();
     OnBlinkStarted.Broadcast();
-    if (Settings.ClosedEyelidsSprite) SpriteEyelids->SetSprite(Settings.ClosedEyelidsSprite);
-    else SpriteEyelids->SetVisibility(false);
-    FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]() { if (!IsValid(this) || !IsValid(SpriteEyelids)) return; SpriteEyelids->SetSprite(OriginalEyelidsSprite); if(CharacterAsset) SpriteEyelids->SetVisibility(bSpritesVisible && CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids)); OnBlinkFinished.Broadcast(); });
-    GetWorldTimerManager().SetTimer(BlinkTimerHandle, RestoreDelegate, Settings.BlinkDuration, false);
+    bBlinkScheduleNext = false;
+    GetWorldTimerManager().ClearTimer(BlinkFrameTimerHandle);
+
+    if (Settings.ClosedEyelidsFlipbook && Settings.ClosedEyelidsFlipbook->GetNumFrames() >= 2)
+    {
+        CurrentBlinkFlipbook = Settings.ClosedEyelidsFlipbook;
+        BlinkTotalFrames = CurrentBlinkFlipbook->GetNumFrames();
+        BlinkFrameDuration = Settings.BlinkDuration / BlinkTotalFrames;
+        BlinkFrameIndex = 0;
+        if (UPaperSprite* FrameSprite = CurrentBlinkFlipbook->GetSpriteAtFrame(0))
+        {
+            SpriteEyelids->SetSprite(FrameSprite);
+        }
+        GetWorldTimerManager().SetTimer(BlinkFrameTimerHandle, this, &ACharacter2DActor::HandleBlinkFrame, BlinkFrameDuration, false);
+    }
+    else
+    {
+        if (Settings.ClosedEyelidsFlipbook && Settings.ClosedEyelidsFlipbook->GetNumFrames() > 0)
+        {
+            UPaperSprite* FrameSprite = Settings.ClosedEyelidsFlipbook->GetSpriteAtFrame(Settings.ClosedEyelidsFlipbook->GetNumFrames() - 1);
+            if (FrameSprite) SpriteEyelids->SetSprite(FrameSprite);
+        }
+        else
+        {
+            SpriteEyelids->SetVisibility(false);
+        }
+        FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]()
+        {
+            if (!IsValid(this) || !IsValid(SpriteEyelids)) return;
+            SpriteEyelids->SetSprite(OriginalEyelidsSprite);
+            if (CharacterAsset)
+            {
+                SpriteEyelids->SetVisibility(bSpritesVisible && CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids));
+            }
+            OnBlinkFinished.Broadcast();
+        });
+        GetWorldTimerManager().SetTimer(BlinkTimerHandle, RestoreDelegate, Settings.BlinkDuration, false);
+    }
 }
 
 void ACharacter2DActor::StartBlinking()
@@ -390,9 +424,78 @@ void ACharacter2DActor::HandleBlink()
     if (!bIsBlinking || !CharacterAsset || !IsValid(SpriteEyelids)) { StopBlinking(); return; }
     const auto& Settings = CharacterAsset->GetBlinkSettings();
     OnBlinkStarted.Broadcast();
-    if (Settings.ClosedEyelidsSprite) SpriteEyelids->SetSprite(Settings.ClosedEyelidsSprite); else SpriteEyelids->SetVisibility(false);
-    FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]() { if (!IsValid(this) || !IsValid(SpriteEyelids) || !CharacterAsset) return; SpriteEyelids->SetSprite(OriginalEyelidsSprite); SpriteEyelids->SetVisibility(CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids) && bSpritesVisible); OnBlinkFinished.Broadcast(); if (bIsBlinking) { const auto& S = CharacterAsset->GetBlinkSettings(); const float NextDelay = FMath::FRandRange(S.BlinkIntervalMin, S.BlinkIntervalMax); GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, NextDelay, false); } });
-    GetWorldTimerManager().SetTimer(BlinkTimerHandle, RestoreDelegate, Settings.BlinkDuration, false);
+    bBlinkScheduleNext = true;
+    GetWorldTimerManager().ClearTimer(BlinkFrameTimerHandle);
+
+    if (Settings.ClosedEyelidsFlipbook && Settings.ClosedEyelidsFlipbook->GetNumFrames() >= 2)
+    {
+        CurrentBlinkFlipbook = Settings.ClosedEyelidsFlipbook;
+        BlinkTotalFrames = CurrentBlinkFlipbook->GetNumFrames();
+        BlinkFrameDuration = Settings.BlinkDuration / BlinkTotalFrames;
+        BlinkFrameIndex = 0;
+        if (UPaperSprite* FrameSprite = CurrentBlinkFlipbook->GetSpriteAtFrame(0))
+        {
+            SpriteEyelids->SetSprite(FrameSprite);
+        }
+        GetWorldTimerManager().SetTimer(BlinkFrameTimerHandle, this, &ACharacter2DActor::HandleBlinkFrame, BlinkFrameDuration, false);
+    }
+    else
+    {
+        if (Settings.ClosedEyelidsFlipbook && Settings.ClosedEyelidsFlipbook->GetNumFrames() > 0)
+        {
+            UPaperSprite* FrameSprite = Settings.ClosedEyelidsFlipbook->GetSpriteAtFrame(Settings.ClosedEyelidsFlipbook->GetNumFrames() - 1);
+            if (FrameSprite) SpriteEyelids->SetSprite(FrameSprite);
+        }
+        else
+        {
+            SpriteEyelids->SetVisibility(false);
+        }
+        FTimerDelegate RestoreDelegate = FTimerDelegate::CreateLambda([this]()
+        {
+            if (!IsValid(this) || !IsValid(SpriteEyelids) || !CharacterAsset) return;
+            SpriteEyelids->SetSprite(OriginalEyelidsSprite);
+            SpriteEyelids->SetVisibility(CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids) && bSpritesVisible);
+            OnBlinkFinished.Broadcast();
+            if (bIsBlinking)
+            {
+                const auto& S = CharacterAsset->GetBlinkSettings();
+                const float NextDelay = FMath::FRandRange(S.BlinkIntervalMin, S.BlinkIntervalMax);
+                GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, NextDelay, false);
+            }
+        });
+        GetWorldTimerManager().SetTimer(BlinkTimerHandle, RestoreDelegate, Settings.BlinkDuration, false);
+    }
+}
+
+void ACharacter2DActor::HandleBlinkFrame()
+{
+    if (!IsValid(this) || !IsValid(SpriteEyelids) || !CurrentBlinkFlipbook) return;
+
+    ++BlinkFrameIndex;
+    if (BlinkFrameIndex < BlinkTotalFrames)
+    {
+        if (UPaperSprite* FrameSprite = CurrentBlinkFlipbook->GetSpriteAtFrame(BlinkFrameIndex))
+        {
+            SpriteEyelids->SetSprite(FrameSprite);
+        }
+        GetWorldTimerManager().SetTimer(BlinkFrameTimerHandle, this, &ACharacter2DActor::HandleBlinkFrame, BlinkFrameDuration, false);
+    }
+    else
+    {
+        GetWorldTimerManager().ClearTimer(BlinkFrameTimerHandle);
+        SpriteEyelids->SetSprite(OriginalEyelidsSprite);
+        if (CharacterAsset)
+        {
+            SpriteEyelids->SetVisibility(bSpritesVisible && CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids));
+        }
+        OnBlinkFinished.Broadcast();
+        if (bBlinkScheduleNext && bIsBlinking && CharacterAsset)
+        {
+            const auto& Settings = CharacterAsset->GetBlinkSettings();
+            const float NextDelay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
+            GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::HandleBlink, NextDelay, false);
+        }
+    }
 }
 
 void ACharacter2DActor::StartTalking()
