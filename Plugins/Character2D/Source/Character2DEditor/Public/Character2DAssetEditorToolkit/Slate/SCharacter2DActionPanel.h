@@ -2,15 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Character2DAsset.h"
-#include "Character2DActor.h"
-#include "Character2DEnums.h"
+#include "Character2DEnums.h" // Для ECharacter2DEmotionEffect
+#include "Character2DAsset.h" // Для FCharacter2DEmotionSettings
 #include "TimerManager.h"
 
+// Прямые объявления для уменьшения зависимостей в заголовке
+class UCharacter2DAsset;
 class ACharacter2DActor;
 
 /**
- * Action panel for testing Character2D features in the editor
+ * Панель действий для тестирования возможностей Character2D в редакторе
  */
 class SCharacter2DActionPanel : public SCompoundWidget
 {
@@ -23,56 +24,72 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
-    // References
-    UCharacter2DAsset* CharacterAsset = nullptr;
+    // === Ссылки ===
+    TWeakObjectPtr<UCharacter2DAsset> CharacterAsset;
     TWeakObjectPtr<ACharacter2DActor> PreviewActor;
 
-    // State flags
+    // === Флаги состояния ===
     bool bBlinkingEnabled = false;
     bool bTalkingEnabled = false;
     bool bSpritesVisible = true;
     bool bSkeletalVisible = true;
+    bool bEffect1Enabled = false;
+    bool bEffect2Enabled = false;
+    bool bEffect3Enabled = false;
 
-    // Movement settings
+    // === Настройки перемещения ===
     FVector TargetLocation = FVector::ZeroVector;
     FVector CurrentLocation = FVector::ZeroVector;
     float MovementDuration = 1.0f;
     bool bTeleportInstant = false;
 
-    // Emotion settings
+    // === Настройки эмоций ===
     TArray<TSharedPtr<ECharacter2DEmotionEffect>> EmotionOptions;
     TSharedPtr<ECharacter2DEmotionEffect> CurrentEmotion;
     float EmotionDuration = 2.0f;
     float EmotionIntensity = 0.5f;
 
-    // Timer handles
+    // === Хэндлы таймеров ===
     FTimerHandle BlinkTestHandle;
     FTimerHandle TalkTestHandle;
     FTimerHandle TransitionTestHandle;
     FTimerHandle LocationSyncHandle;
 
 private:
-    // === State Management ===
+    // === Управление состоянием ===
     void SyncStateFromActor();
     void UpdateLocationFromActor();
     void StopAllPreviewAnimations();
     void EnsurePreviewVisible();
 
-    // === UI Building ===
+    // === Построение UI ===
     TSharedRef<SWidget> BuildQuickActionsSection();
+    TSharedRef<SWidget> BuildSpriteManipulationSection();
+    TSharedRef<SWidget> BuildEffectLayersSection();
     TSharedRef<SWidget> BuildAnimationTestingSection();
     TSharedRef<SWidget> BuildMovementTestingSection();
     TSharedRef<SWidget> BuildEmotionTestSection();
     TSharedRef<SWidget> BuildVisibilityTestSection();
 
-    // === Quick Actions ===
+    // === Быстрые действия ===
     FReply OnShowCharacter();
     FReply OnHideCharacter();
     FReply OnFadeIn();
     FReply OnFadeOut();
     FReply OnResetCharacter();
 
-    // === Movement ===
+    // === Манипуляции со спрайтами ===
+    FReply OnTestChangeEyebrows();
+    FReply OnTestChangeMouth();
+    FReply OnRestoreFromAsset();
+
+    // === Слои эффектов ===
+    void OnEffect1Changed(ECheckBoxState NewState);
+    void OnEffect2Changed(ECheckBoxState NewState);
+    void OnEffect3Changed(ECheckBoxState NewState);
+    FReply OnClearAllEffects();
+
+    // === Перемещение ===
     FText GetCurrentPositionText() const;
     TOptional<float> GetTargetX() const;
     TOptional<float> GetTargetY() const;
@@ -85,19 +102,20 @@ private:
     FReply OnMoveToTarget();
     FReply OnSetTargetFromCurrent();
 
-    // === Animation ===
+    // === Анимация ===
     void OnBlinkChanged(ECheckBoxState NewState);
     void OnTalkChanged(ECheckBoxState NewState);
     FReply OnTestBlink();
     FReply OnTestTalk();
+    FReply OnBlinkOnce();
 
-    // === Visibility ===
+    // === Видимость ===
     void OnToggleSprites(ECheckBoxState NewState);
     void OnToggleSkeletal(ECheckBoxState NewState);
     ECheckBoxState GetSpritesVisibleState() const;
     ECheckBoxState GetSkeletalVisibleState() const;
 
-    // === Emotion ===
+    // === Эмоции ===
     void OnEmotionChanged(TSharedPtr<ECharacter2DEmotionEffect> NewSelection, ESelectInfo::Type SelectInfo);
     void OnEmotionDurationChanged(float NewValue);
     void OnEmotionIntensityChanged(float NewValue);
@@ -106,10 +124,10 @@ private:
     FReply OnTestEmotion();
     FReply OnStopEmotion();
 
-    // === Helpers ===
+    // === Вспомогательные функции ===
     bool IsPreviewActorValid() const
     {
-        return PreviewActor.IsValid() && IsValid(PreviewActor.Get());
+        return PreviewActor.IsValid();
     }
 
     static FText EmotionTypeToText(ECharacter2DEmotionEffect Type);
