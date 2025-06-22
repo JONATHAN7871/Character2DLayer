@@ -56,59 +56,64 @@ void ACharacter2DActor::SetupComponents()
 
 void ACharacter2DActor::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 	
-	StoreOriginalValues();
+    StoreOriginalValues();
 	
-	if (CharacterAsset)
-	{
-		if (SpriteEyelids)
-		{
-			OriginalEyelidsSprite = CharacterAsset->GetEyelidsSprite().Sprite;
-		}
-		if (SpriteMouth)
-		{
-			OriginalMouthSprite = CharacterAsset->GetMouthSprite().Sprite;
-		}
+    if (CharacterAsset)
+    {
+        if (SpriteEyelids)
+        {
+            OriginalEyelidsSprite = CharacterAsset->GetEyelidsSprite().Sprite;
+        }
+        if (SpriteMouth)
+        {
+            OriginalMouthSprite = CharacterAsset->GetMouthSprite().Sprite;
+        }
 		
-		// ИСПРАВЛЕНО: Правильная инициализация Auto Blink/Talk
-		EnableBlinking(CharacterAsset->bAutoBlink);
-		EnableTalking(CharacterAsset->bAutoTalk);
-	}
+        // ИСПРАВЛЕНО: Включаем Auto анимации только в игре, НЕ в редакторе
+        if (GetWorld() && GetWorld()->IsGameWorld())
+        {
+            EnableBlinking(CharacterAsset->bAutoBlink);
+            EnableTalking(CharacterAsset->bAutoTalk);
+        }
+        else
+        {
+            // В редакторе всегда отключены по умолчанию
+            bBlinkingActive = false;
+            bTalkingActive = false;
+        }
+    }
 }
 
 void ACharacter2DActor::OnConstruction(const FTransform& Transform)
 {
-	Super::OnConstruction(Transform);
-	if (!CharacterAsset) return;
+    Super::OnConstruction(Transform);
+    if (!CharacterAsset) return;
 
-	SetupSkeletalComponent(BodyComponent, CharacterAsset->Body);
-	SetupSkeletalComponent(ArmsComponent, CharacterAsset->Arms);
-	SetupSkeletalComponent(HeadComponent, CharacterAsset->Head);
+    SetupSkeletalComponent(BodyComponent, CharacterAsset->Body);
+    SetupSkeletalComponent(ArmsComponent, CharacterAsset->Arms);
+    SetupSkeletalComponent(HeadComponent, CharacterAsset->Head);
 
     const auto& BodySpriteData = CharacterAsset->GetBodySprite();
     const auto& ArmsSpriteData = CharacterAsset->GetArmsSprite();
     
-	// ОБНОВЛЕНО: Добавлены Color и Opacity параметры
-	SetupSpriteComponent(SpriteBody, BodySpriteData.Sprite, BodySpriteData.Offset, BodySpriteData.Scale, BodySpriteData.bVisible, BodySpriteData.Color, BodySpriteData.Opacity);
+    // ОБНОВЛЕНО: Добавлены Color и Opacity параметры
+    SetupSpriteComponent(SpriteBody, BodySpriteData.Sprite, BodySpriteData.Offset, BodySpriteData.Scale, BodySpriteData.bVisible, BodySpriteData.Color, BodySpriteData.Opacity);
     SetupSpriteComponent(SpriteArms, ArmsSpriteData.Sprite, ArmsSpriteData.Offset, ArmsSpriteData.Scale, ArmsSpriteData.bVisible, ArmsSpriteData.Color, ArmsSpriteData.Opacity);
-	SetupHeadHierarchy();
+    SetupHeadHierarchy();
     
-	AttachSpriteToSocket(SpriteBody, BodySpriteData.AttachmentTarget, BodySpriteData.SocketName, BodySpriteData.bUseSocketTransform, BodySpriteData.Offset, BodySpriteData.Scale);
+    AttachSpriteToSocket(SpriteBody, BodySpriteData.AttachmentTarget, BodySpriteData.SocketName, BodySpriteData.bUseSocketTransform, BodySpriteData.Offset, BodySpriteData.Scale);
     AttachSpriteToSocket(SpriteArms, ArmsSpriteData.AttachmentTarget, ArmsSpriteData.SocketName, ArmsSpriteData.bUseSocketTransform, ArmsSpriteData.Offset, ArmsSpriteData.Scale);
-	AttachHeadToSocket();
+    AttachHeadToSocket();
 
-	SetupEffectLayers();
-	SetSpritesVisible(HasValidSprites());
-	SetSkeletalVisible(HasValidSkeletalMeshes());
+    SetupEffectLayers();
+    SetSpritesVisible(HasValidSprites());
+    SetSkeletalVisible(HasValidSkeletalMeshes());
 	
-	// ИСПРАВЛЕНО: Обновляем состояние анимаций после OnConstruction
-	if (CharacterAsset)
-	{
-		// Устанавливаем флаги активности согласно настройкам ассета
-		bBlinkingActive = CharacterAsset->bAutoBlink;
-		bTalkingActive = CharacterAsset->bAutoTalk;
-	}
+    // ИСПРАВЛЕНО: НЕ устанавливаем флаги анимаций в OnConstruction
+    // Это должно происходить только в BeginPlay для игровых акторов
+    // В редакторе анимации контролируются вручную через Action Panel
 }
 
 void ACharacter2DActor::SetupHeadHierarchy()
@@ -406,12 +411,25 @@ void ACharacter2DActor::RefreshFromAsset()
     FTransform SavedTransform = GetActorTransform();
     bool bOldBlinkingActive = bBlinkingActive;
     bool bOldTalkingActive = bTalkingActive;
+    
     StopAllAnimationsForRefresh();
     OnConstruction(SavedTransform);
     SetActorTransform(SavedTransform);
     SetActorHiddenInGame(bOldHidden);
-    EnableBlinking(bOldBlinkingActive);
-    EnableTalking(bOldTalkingActive);
+    
+    // ИСПРАВЛЕНО: Восстанавливаем анимации только если это игровой мир
+    if (GetWorld() && GetWorld()->IsGameWorld())
+    {
+        EnableBlinking(bOldBlinkingActive);
+        EnableTalking(bOldTalkingActive);
+    }
+    else
+    {
+        // В редакторе оставляем анимации выключенными
+        // Они будут управляться через Action Panel
+        bBlinkingActive = false;
+        bTalkingActive = false;
+    }
 }
 
 void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)

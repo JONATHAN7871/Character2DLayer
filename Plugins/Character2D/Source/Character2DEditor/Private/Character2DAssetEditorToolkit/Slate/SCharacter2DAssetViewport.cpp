@@ -51,6 +51,10 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
         {
             PreviewActor->CharacterAsset = Asset;
             PreviewActor->RefreshFromAsset();
+            
+            // НОВОЕ: Отключаем Auto Blink/Talk для актора в редакторе
+            PreviewActor->bBlinkingActive = false;
+            PreviewActor->bTalkingActive = false;
         }
     }
 }
@@ -59,15 +63,18 @@ TSharedRef<FEditorViewportClient> SCharacter2DAssetViewport::MakeEditorViewportC
 {
     EditorViewportClient = MakeShareable(new FCharacter2DViewportClient(PreviewScene.Get()));
 
-    EditorViewportClient->SetViewMode(VMI_Lit);
+    // ИСПРАВЛЕНО: Устанавливаем Unlit вместо Lit
+    EditorViewportClient->SetViewMode(VMI_Unlit);
     EditorViewportClient->SetRealtime(true);
     EditorViewportClient->EngineShowFlags.SetPaper2DSprites(true);
 
     // Отключаем gizmo
     EditorViewportClient->SetWidgetMode(UE::Widget::EWidgetMode::WM_None);
 
-    EditorViewportClient->SetViewLocation(FVector(0.f, 100.f, 75.f));
-    EditorViewportClient->SetViewRotation(FRotator(0.f, -90.f, 0.f));
+    // ИСПРАВЛЕНО: Настройки камеры для вида справа (Right)
+    // Right view: камера смотрит вдоль оси +Y (справа налево)
+    EditorViewportClient->SetViewLocation(FVector(0.f, 150.f, 0.f));  // Камера справа от объекта
+    EditorViewportClient->SetViewRotation(FRotator(0.f, -90.f, 0.f)); // Поворот для вида справа
 
     return EditorViewportClient.ToSharedRef();
 }
@@ -109,9 +116,17 @@ void SCharacter2DAssetViewport::RefreshPreview()
         PreviewActor = World->SpawnActor<ACharacter2DActor>();
         if (!PreviewActor.IsValid()) return;
         PreviewActor->CharacterAsset = Asset;
+        
+        // НОВОЕ: Принудительно отключаем Auto анимации для preview актора
+        PreviewActor->bBlinkingActive = false;
+        PreviewActor->bTalkingActive = false;
     }
 
     PreviewActor->RefreshFromAsset();
+    
+    // НОВОЕ: После обновления снова отключаем Auto анимации
+    PreviewActor->bBlinkingActive = false;
+    PreviewActor->bTalkingActive = false;
 
     World->GetTimerManager().ClearTimer(RefreshTimerHandle);
     World->GetTimerManager().SetTimer(
@@ -123,6 +138,10 @@ void SCharacter2DAssetViewport::RefreshPreview()
                 PreviewActor->SetActorLocation(OldLoc);
                 PreviewActor->SetActorRotation(OldRot);
                 PreviewActor->SetActorScale3D(OldScale);
+                
+                // НОВОЕ: Гарантируем отключение Auto анимаций после восстановления трансформа
+                PreviewActor->bBlinkingActive = false;
+                PreviewActor->bTalkingActive = false;
             }
         },
         0.1f, false
@@ -143,6 +162,10 @@ void SCharacter2DAssetViewport::ForceRefreshPreview()
         {
             PreviewActor->CharacterAsset = Asset;
             PreviewActor->RefreshFromAsset();
+            
+            // НОВОЕ: Отключаем Auto анимации для нового актора
+            PreviewActor->bBlinkingActive = false;
+            PreviewActor->bTalkingActive = false;
         }
     }
 }

@@ -260,15 +260,25 @@ UCLASS(BlueprintType)
 class CHARACTER2DRUNTIME_API UCharacter2DAsset : public UDataAsset
 {
     GENERATED_BODY()
+    
 public:
+    // НОВОЕ: Конструктор с правильными значениями по умолчанию
+    UCharacter2DAsset()
+    {
+        bAutoBlink = true;  // Включено по умолчанию
+        bAutoTalk = true;   // Включено по умолчанию
+        GlobalScale = 1.0f;
+        SkeletalGlobalOffset = FVector::ZeroVector;
+    }
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Body")) FCharacter2DSkeletalPart Body;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Arms")) FCharacter2DSkeletalPart Arms;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Head")) FCharacter2DSkeletalPart Head;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Global Offset")) FVector SkeletalGlobalOffset = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Global Scale")) float GlobalScale = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sprite") FCharacter2DSpriteStructure SpriteStructure;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoBlink = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoTalk = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoBlink = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoTalk = true;
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DSpriteBodyStructure& GetBodySprite() const { return SpriteStructure.Body; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DSpriteArmsStructure& GetArmsSprite() const { return SpriteStructure.Arms; }
@@ -294,6 +304,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character2D|Validation") bool IsValidForRuntime() const;
     UFUNCTION(BlueprintCallable, Category = "Character2D|Validation") bool HasValidSpriteConfiguration() const;
     UFUNCTION(BlueprintCallable, Category = "Character2D|Validation") bool HasValidSkeletalConfiguration() const;
+    
 protected:
     virtual void PostLoad() override;
 };

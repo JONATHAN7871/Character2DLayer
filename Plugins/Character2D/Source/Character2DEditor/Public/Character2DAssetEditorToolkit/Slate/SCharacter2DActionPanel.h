@@ -26,12 +26,22 @@ private:
     // === Ссылки ===
     TWeakObjectPtr<UCharacter2DAsset> CharacterAsset;
     TWeakObjectPtr<ACharacter2DActor> PreviewActor;
+    
+    // === Виджеты для Auto Animations ===
+    TSharedPtr<SCheckBox> AutoBlinkCheckBox;
+    TSharedPtr<SCheckBox> AutoTalkCheckBox;
+    TSharedPtr<STextBlock> AutoBlinkLabel;
+    TSharedPtr<STextBlock> AutoTalkLabel;
 
     // === Флаги состояния ===
     bool bBlinkingEnabled = false;
     bool bTalkingEnabled = false;
     bool bSpritesVisible = true;
     bool bSkeletalVisible = true;
+    
+    // НОВОЕ: Editor-only флаги для preview (не влияют на игровую логику)
+    bool bPreviewBlinkingEnabled = false;
+    bool bPreviewTalkingEnabled = false;
 
     // === Хэндлы таймеров ===
     FTimerHandle BlinkTestHandle;
@@ -46,18 +56,22 @@ private:
     void EnsurePreviewVisible();
 
     // === Построение UI ===
-    TSharedRef<SWidget> BuildAutoAnimationsSection();        // НОВОЕ: Секция Auto Animations
-    TSharedRef<SWidget> BuildAnimationTestingSection();
+    TSharedRef<SWidget> BuildAutoAnimationsSection();        // Секция Auto Animations (настройки ассета)
+    TSharedRef<SWidget> BuildAnimationTestingSection();      // Секция тестирования (только preview)
     TSharedRef<SWidget> BuildVisibilityTestSection();
 
     // === Быстрые действия ===
     FReply OnResetCharacter();
 
-    // === Auto Animations ===
-    void OnAutoBlinkChanged(ECheckBoxState NewState);        // НОВОЕ: Обработчик Auto Blink
-    void OnAutoTalkChanged(ECheckBoxState NewState);         // НОВОЕ: Обработчик Auto Talk
+    // === Auto Animations (влияют на настройки ассета) ===
+    void OnAutoBlinkChanged(ECheckBoxState NewState);        
+    void OnAutoTalkChanged(ECheckBoxState NewState);
+    ECheckBoxState GetAutoBlinkState() const;
+    ECheckBoxState GetAutoTalkState() const;
+    FSlateColor GetAutoBlinkColor() const;
+    FSlateColor GetAutoTalkColor() const;
 
-    // === Анимация ===
+    // === Preview-only анимации (НЕ влияют на игровую логику) ===
     void OnBlinkChanged(ECheckBoxState NewState);
     void OnTalkChanged(ECheckBoxState NewState);
     FReply OnTestBlink();
@@ -69,6 +83,10 @@ private:
     void OnToggleSkeletal(ECheckBoxState NewState);
     ECheckBoxState GetSpritesVisibleState() const;
     ECheckBoxState GetSkeletalVisibleState() const;
+    
+    // === НОВОЕ: Preview-specific методы ===
+    void SetPreviewBlinking(bool bEnable);
+    void SetPreviewTalking(bool bEnable);
 
     // === Вспомогательные функции ===
     bool IsPreviewActorValid() const

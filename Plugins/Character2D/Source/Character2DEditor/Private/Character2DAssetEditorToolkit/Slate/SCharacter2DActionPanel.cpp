@@ -28,30 +28,30 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
     [
         SNew(SScrollBox)
         + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("AutoAnimations", "Auto Animations")).InitiallyCollapsed(false).BodyContent()[BuildAutoAnimationsSection()] ]
-        + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("AnimationTesting", "Animation Testing")).InitiallyCollapsed(true).BodyContent()[BuildAnimationTestingSection()] ]
+        + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("EditorPreview", "Editor Preview Testing")).InitiallyCollapsed(true).BodyContent()[BuildAnimationTestingSection()] ]
         + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("VisibilityTest", "Visibility Testing")).InitiallyCollapsed(true).BodyContent()[BuildVisibilityTestSection()] ]
     ];
 }
 
 void SCharacter2DActionPanel::SyncStateFromActor()
 {
+    // ИСПРАВЛЕНО: Синхронизируем состояние с preview-specific флагами, а не с актором
+    bBlinkingEnabled = bPreviewBlinkingEnabled;
+    bTalkingEnabled = bPreviewTalkingEnabled;
+    
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        bBlinkingEnabled = Actor->IsBlinkingEnabled();
-        bTalkingEnabled = Actor->IsTalkingEnabled();
         bSpritesVisible = Actor->bSpritesVisible;
         bSkeletalVisible = Actor->bSkeletalVisible;
     }
     else
     {
-        bBlinkingEnabled = false;
-        bTalkingEnabled = false;
         bSpritesVisible = true;
         bSkeletalVisible = true;
     }
 }
 
-// НОВАЯ СЕКЦИЯ: Auto Animations для отображения состояния Auto Blink/Talk
+// Секция Auto Animations для отображения состояния Auto Blink/Talk (только информативно)
 TSharedRef<SWidget> SCharacter2DActionPanel::BuildAutoAnimationsSection()
 {
     return SNew(SVerticalBox)
@@ -60,29 +60,74 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildAutoAnimationsSection()
         SNew(SHorizontalBox)
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
         [ 
-            SNew(SCheckBox)
+            SAssignNew(AutoBlinkCheckBox, SCheckBox)
             .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnAutoBlinkChanged)
+            .IsChecked(this, &SCharacter2DActionPanel::GetAutoBlinkState)
+        ]
+        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
+        [ 
+            SAssignNew(AutoBlinkLabel, STextBlock)
+            .Text(LOCTEXT("AutoBlink", "Auto Blink (Game Setting)"))
+            .ColorAndOpacity(this, &SCharacter2DActionPanel::GetAutoBlinkColor)
+            .ToolTipText(LOCTEXT("AutoBlinkTooltip", "Controls whether actors spawned in game will automatically blink"))
+        ]
+    ]
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
+        [ 
+            SAssignNew(AutoTalkCheckBox, SCheckBox)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnAutoTalkChanged)
+            .IsChecked(this, &SCharacter2DActionPanel::GetAutoTalkState)
+        ]
+        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
+        [ 
+            SAssignNew(AutoTalkLabel, STextBlock)
+            .Text(LOCTEXT("AutoTalk", "Auto Talk (Game Setting)"))
+            .ColorAndOpacity(this, &SCharacter2DActionPanel::GetAutoTalkColor)
+            .ToolTipText(LOCTEXT("AutoTalkTooltip", "Controls whether actors spawned in game will automatically talk"))
+        ]
+    ];
+}
+
+TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
+{
+    return SNew(SVerticalBox)
+    
+    // НОВОЕ: Пояснительный текст
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(STextBlock)
+        .Text(LOCTEXT("EditorOnlyNote", "Note: These controls are for editor preview only and don't affect game behavior"))
+        .ColorAndOpacity(FLinearColor(1.0f, 1.0f, 0.0f, 0.8f)) // Желтый цвет для предупреждения
+        .AutoWrapText(true)
+    ]
+    
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
+        [ 
+            SNew(SCheckBox)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnBlinkChanged)
             .IsChecked_Lambda([this]() 
             { 
-                if (CharacterAsset.IsValid())
-                {
-                    return CharacterAsset->bAutoBlink ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-                }
-                return ECheckBoxState::Unchecked;
+                SyncStateFromActor(); 
+                return bBlinkingEnabled ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; 
             })
         ]
         + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
         [ 
             SNew(STextBlock)
-            .Text(LOCTEXT("AutoBlink", "Auto Blink"))
-            .ColorAndOpacity_Lambda([this]()
-            {
-                if (CharacterAsset.IsValid() && CharacterAsset->bAutoBlink)
-                {
-                    return FLinearColor::Green;
-                }
-                return FLinearColor::White;
-            })
+            .Text(LOCTEXT("EnableBlinking", "Enable Blinking (Preview Only)"))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(8,0) 
+        [ 
+            SNew(SButton)
+            .Text(LOCTEXT("TestBlink", "Test Blink"))
+            .OnClicked(this, &SCharacter2DActionPanel::OnTestBlink)
+            .IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid) 
         ]
     ]
     + SVerticalBox::Slot().AutoHeight().Padding(2)
@@ -91,48 +136,25 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildAutoAnimationsSection()
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
         [ 
             SNew(SCheckBox)
-            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnAutoTalkChanged)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnTalkChanged)
             .IsChecked_Lambda([this]() 
             { 
-                if (CharacterAsset.IsValid())
-                {
-                    return CharacterAsset->bAutoTalk ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-                }
-                return ECheckBoxState::Unchecked;
+                SyncStateFromActor(); 
+                return bTalkingEnabled ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; 
             })
         ]
         + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
         [ 
             SNew(STextBlock)
-            .Text(LOCTEXT("AutoTalk", "Auto Talk"))
-            .ColorAndOpacity_Lambda([this]()
-            {
-                if (CharacterAsset.IsValid() && CharacterAsset->bAutoTalk)
-                {
-                    return FLinearColor::Green;
-                }
-                return FLinearColor::White;
-            })
+            .Text(LOCTEXT("EnableTalking", "Enable Talking (Preview Only)"))
         ]
-    ];
-}
-
-TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
-{
-    return SNew(SVerticalBox)
-    + SVerticalBox::Slot().AutoHeight().Padding(2)
-    [
-        SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) [ SNew(SCheckBox).OnCheckStateChanged(this, &SCharacter2DActionPanel::OnBlinkChanged).IsChecked_Lambda([this]() { SyncStateFromActor(); return bBlinkingEnabled ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }) ]
-        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) [ SNew(STextBlock).Text(LOCTEXT("EnableBlinking", "Enable Blinking")) ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(8,0) [ SNew(SButton).Text(LOCTEXT("TestBlink", "Test Blink")).OnClicked(this, &SCharacter2DActionPanel::OnTestBlink).IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid) ]
-    ]
-    + SVerticalBox::Slot().AutoHeight().Padding(2)
-    [
-        SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) [ SNew(SCheckBox).OnCheckStateChanged(this, &SCharacter2DActionPanel::OnTalkChanged).IsChecked_Lambda([this]() { SyncStateFromActor(); return bTalkingEnabled ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }) ]
-        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) [ SNew(STextBlock).Text(LOCTEXT("EnableTalking", "Enable Talking")) ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(8,0) [ SNew(SButton).Text(LOCTEXT("TestTalk", "Test Talk")).OnClicked(this, &SCharacter2DActionPanel::OnTestTalk).IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid) ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(8,0) 
+        [ 
+            SNew(SButton)
+            .Text(LOCTEXT("TestTalk", "Test Talk"))
+            .OnClicked(this, &SCharacter2DActionPanel::OnTestTalk)
+            .IsEnabled(this, &SCharacter2DActionPanel::IsPreviewActorValid) 
+        ]
     ]
     + SVerticalBox::Slot().AutoHeight().Padding(2)
     [
@@ -161,10 +183,50 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildVisibilityTestSection()
 }
 
 // =========================================
+// === НОВЫЕ МЕТОДЫ: Для получения состояния Auto настроек ===
+// =========================================
+
+ECheckBoxState SCharacter2DActionPanel::GetAutoBlinkState() const
+{
+    if (CharacterAsset.IsValid())
+    {
+        return CharacterAsset->bAutoBlink ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+    }
+    return ECheckBoxState::Unchecked;
+}
+
+ECheckBoxState SCharacter2DActionPanel::GetAutoTalkState() const
+{
+    if (CharacterAsset.IsValid())
+    {
+        return CharacterAsset->bAutoTalk ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+    }
+    return ECheckBoxState::Unchecked;
+}
+
+FSlateColor SCharacter2DActionPanel::GetAutoBlinkColor() const
+{
+    if (CharacterAsset.IsValid() && CharacterAsset->bAutoBlink)
+    {
+        return FSlateColor(FLinearColor::Green);
+    }
+    return FSlateColor(FLinearColor::White);
+}
+
+FSlateColor SCharacter2DActionPanel::GetAutoTalkColor() const
+{
+    if (CharacterAsset.IsValid() && CharacterAsset->bAutoTalk)
+    {
+        return FSlateColor(FLinearColor::Green);
+    }
+    return FSlateColor(FLinearColor::White);
+}
+
+// =========================================
 // === Обработчики событий (Event Handlers) ===
 // =========================================
 
-// НОВЫЕ ОБРАБОТЧИКИ: Auto Blink/Talk
+// Auto Blink/Talk обработчики (влияют на настройки ассета)
 void SCharacter2DActionPanel::OnAutoBlinkChanged(ECheckBoxState NewState)
 {
     if (CharacterAsset.IsValid())
@@ -172,11 +234,18 @@ void SCharacter2DActionPanel::OnAutoBlinkChanged(ECheckBoxState NewState)
         CharacterAsset->bAutoBlink = (NewState == ECheckBoxState::Checked);
         CharacterAsset->MarkPackageDirty();
         
-        // Обновляем актор немедленно
-        if (ACharacter2DActor* Actor = PreviewActor.Get())
+        UE_LOG(LogTemp, Log, TEXT("Auto Blink changed to: %s"), CharacterAsset->bAutoBlink ? TEXT("TRUE") : TEXT("FALSE"));
+        
+        // НЕ влияем на preview актора - он остается под контролем editor-only настроек
+        
+        // Принудительно обновляем UI
+        if (AutoBlinkCheckBox.IsValid())
         {
-            Actor->EnableBlinking(CharacterAsset->bAutoBlink);
-            EnsurePreviewVisible();
+            AutoBlinkCheckBox->Invalidate(EInvalidateWidget::LayoutAndVolatility);
+        }
+        if (AutoBlinkLabel.IsValid())
+        {
+            AutoBlinkLabel->Invalidate(EInvalidateWidget::LayoutAndVolatility);
         }
     }
 }
@@ -188,11 +257,18 @@ void SCharacter2DActionPanel::OnAutoTalkChanged(ECheckBoxState NewState)
         CharacterAsset->bAutoTalk = (NewState == ECheckBoxState::Checked);
         CharacterAsset->MarkPackageDirty();
         
-        // Обновляем актор немедленно
-        if (ACharacter2DActor* Actor = PreviewActor.Get())
+        UE_LOG(LogTemp, Log, TEXT("Auto Talk changed to: %s"), CharacterAsset->bAutoTalk ? TEXT("TRUE") : TEXT("FALSE"));
+        
+        // НЕ влияем на preview актора - он остается под контролем editor-only настроек
+        
+        // Принудительно обновляем UI
+        if (AutoTalkCheckBox.IsValid())
         {
-            Actor->EnableTalking(CharacterAsset->bAutoTalk);
-            EnsurePreviewVisible();
+            AutoTalkCheckBox->Invalidate(EInvalidateWidget::LayoutAndVolatility);
+        }
+        if (AutoTalkLabel.IsValid())
+        {
+            AutoTalkLabel->Invalidate(EInvalidateWidget::LayoutAndVolatility);
         }
     }
 }
@@ -208,31 +284,58 @@ FReply SCharacter2DActionPanel::OnResetCharacter()
         Actor->SetActorHiddenInGame(false);
         Actor->SetBothVisible(true, true);
         Actor->ClearAllEffects();
+        
+        // НОВОЕ: Сбрасываем editor-only флаги
+        bPreviewBlinkingEnabled = false;
+        bPreviewTalkingEnabled = false;
+        
         SyncStateFromActor();
     }
     return FReply::Handled();
 }
 
+// ИСПРАВЛЕНО: Preview-only обработчики анимаций
 void SCharacter2DActionPanel::OnBlinkChanged(ECheckBoxState NewState)
 {
-    bBlinkingEnabled = (NewState == ECheckBoxState::Checked);
-    if (ACharacter2DActor* Actor = PreviewActor.Get()) { Actor->EnableBlinking(bBlinkingEnabled); EnsurePreviewVisible(); }
+    bPreviewBlinkingEnabled = (NewState == ECheckBoxState::Checked);
+    bBlinkingEnabled = bPreviewBlinkingEnabled;
+    
+    if (ACharacter2DActor* Actor = PreviewActor.Get()) 
+    { 
+        // Используем специальный метод для preview
+        SetPreviewBlinking(bPreviewBlinkingEnabled);
+        EnsurePreviewVisible(); 
+    }
 }
 
 void SCharacter2DActionPanel::OnTalkChanged(ECheckBoxState NewState)
 {
-    bTalkingEnabled = (NewState == ECheckBoxState::Checked);
-    if (ACharacter2DActor* Actor = PreviewActor.Get()) { Actor->EnableTalking(bTalkingEnabled); EnsurePreviewVisible(); }
+    bPreviewTalkingEnabled = (NewState == ECheckBoxState::Checked);
+    bTalkingEnabled = bPreviewTalkingEnabled;
+    
+    if (ACharacter2DActor* Actor = PreviewActor.Get()) 
+    { 
+        // Используем специальный метод для preview
+        SetPreviewTalking(bPreviewTalkingEnabled);
+        EnsurePreviewVisible(); 
+    }
 }
 
 FReply SCharacter2DActionPanel::OnTestBlink()
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        Actor->EnableBlinking(true);
+        SetPreviewBlinking(true);
         EnsurePreviewVisible();
         FTimerDelegate TimerDel;
-        TimerDel.BindLambda([this](){ if (ACharacter2DActor* InnerActor = PreviewActor.Get()){ InnerActor->EnableBlinking(false); EnsurePreviewVisible(); }});
+        TimerDel.BindLambda([this]()
+        { 
+            if (ACharacter2DActor* InnerActor = PreviewActor.Get())
+            { 
+                SetPreviewBlinking(false);
+                EnsurePreviewVisible(); 
+            }
+        });
         Actor->GetWorldTimerManager().SetTimer(BlinkTestHandle, TimerDel, 2.0f, false);
     }
     return FReply::Handled();
@@ -242,10 +345,17 @@ FReply SCharacter2DActionPanel::OnTestTalk()
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        Actor->EnableTalking(true);
+        SetPreviewTalking(true);
         EnsurePreviewVisible();
         FTimerDelegate TimerDel;
-        TimerDel.BindLambda([this](){ if (ACharacter2DActor* InnerActor = PreviewActor.Get()){ InnerActor->EnableTalking(false); EnsurePreviewVisible(); }});
+        TimerDel.BindLambda([this]()
+        { 
+            if (ACharacter2DActor* InnerActor = PreviewActor.Get())
+            { 
+                SetPreviewTalking(false);
+                EnsurePreviewVisible(); 
+            }
+        });
         Actor->GetWorldTimerManager().SetTimer(TalkTestHandle, TimerDel, 2.0f, false);
     }
     return FReply::Handled();
@@ -295,11 +405,14 @@ void SCharacter2DActionPanel::StopAllPreviewAnimations()
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        Actor->EnableBlinking(false);
-        Actor->EnableTalking(false);
+        SetPreviewBlinking(false);
+        SetPreviewTalking(false);
         Actor->GetWorldTimerManager().ClearTimer(BlinkTestHandle);
         Actor->GetWorldTimerManager().ClearTimer(TalkTestHandle);
     }
+    
+    bPreviewBlinkingEnabled = false;
+    bPreviewTalkingEnabled = false;
 }
 
 void SCharacter2DActionPanel::EnsurePreviewVisible()
@@ -308,6 +421,45 @@ void SCharacter2DActionPanel::EnsurePreviewVisible()
     {
         Actor->SetActorHiddenInGame(false);
         Actor->SetBothVisible(bSpritesVisible, bSkeletalVisible);
+    }
+}
+
+// НОВЫЕ МЕТОДЫ: Специально для preview, не затрагивающие игровую логику
+void SCharacter2DActionPanel::SetPreviewBlinking(bool bEnable)
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        // Напрямую вызываем методы анимации, не изменяя bBlinkingActive
+        if (bEnable)
+        {
+            Actor->EnableBlinking(true);
+        }
+        else
+        {
+            Actor->EnableBlinking(false);
+        }
+        
+        // ВАЖНО: Сбрасываем флаг чтобы при обновлении актора анимации не восстанавливались
+        Actor->bBlinkingActive = false;
+    }
+}
+
+void SCharacter2DActionPanel::SetPreviewTalking(bool bEnable)
+{
+    if (ACharacter2DActor* Actor = PreviewActor.Get())
+    {
+        // Напрямую вызываем методы анимации, не изменяя bTalkingActive
+        if (bEnable)
+        {
+            Actor->EnableTalking(true);
+        }
+        else
+        {
+            Actor->EnableTalking(false);
+        }
+        
+        // ВАЖНО: Сбрасываем флаг чтобы при обновлении актора анимации не восстанавливались
+        Actor->bTalkingActive = false;
     }
 }
 
