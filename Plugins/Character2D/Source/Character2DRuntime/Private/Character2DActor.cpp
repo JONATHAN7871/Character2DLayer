@@ -52,10 +52,6 @@ void ACharacter2DActor::SetupComponents()
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
 	}
-
-	MovementTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("MovementTimeline"));
-	EmotionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("EmotionTimeline"));
-	FadeTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("FadeTimeline"));
 }
 
 void ACharacter2DActor::BeginPlay()
@@ -101,169 +97,10 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
 	AttachHeadToSocket();
 
 	SetupEffectLayers();
-	SetSpritesVisible(CharacterAsset->bEnableDualRendering || !HasValidSkeletalMeshes());
-	SetSkeletalVisible(CharacterAsset->bEnableDualRendering || !HasValidSprites());
+	SetSpritesVisible(HasValidSprites());
+	SetSkeletalVisible(HasValidSkeletalMeshes());
 }
 
-void ACharacter2DActor::MoveToLocationWithSettings(const FVector& TargetLocation, const FCharacter2DMovementSettings& Settings)
-{
-	if (Settings.bTeleport || Settings.Duration <= 0.0f)
-	{
-		SetActorLocation(TargetLocation);
-		return;
-	}
-
-	if (bIsMoving)
-	{
-		MovementTimeline->Stop();
-	}
-
-	bIsMoving = true;
-	MovementStartLocation = GetActorLocation();
-	MovementTargetLocation = TargetLocation;
-	CurrentMovementSettings = Settings;
-
-	MovementTimeline->SetPlaybackPosition(0.0f, false);
-    
-    // ИСПРАВЛЕНИЕ C2445
-	UCurveFloat* CurveToUse = Settings.AnimationCurve.Get();
-	if (!CurveToUse)
-	{
-		CurveToUse = NewObject<UCurveFloat>(this);
-		CurveToUse->FloatCurve.AddKey(0.0f, 0.0f);
-		CurveToUse->FloatCurve.AddKey(1.0f, 1.0f);
-	}
-
-	FOnTimelineFloat TimelineProgress;
-	TimelineProgress.BindUFunction(this, FName("OnMovementTimelineUpdate"));
-	MovementTimeline->AddInterpFloat(CurveToUse, TimelineProgress);
-
-	FOnTimelineEvent TimelineFinish;
-	TimelineFinish.BindUFunction(this, FName("OnMovementTimelineFinished"));
-	MovementTimeline->SetTimelineFinishedFunc(TimelineFinish);
-
-	MovementTimeline->SetTimelineLength(Settings.Duration);
-	MovementTimeline->Play();
-}
-
-void ACharacter2DActor::PlayFadeIn(float Duration)
-{
-	if (bIsFading)
-	{
-		FadeTimeline->Stop();
-	}
-
-	bIsFading = true;
-	SetAllSpritesOpacity(0.0f);
-	SetAllSkeletalOpacity(0.0f);
-	SetActorHiddenInGame(false);
-
-	FadeTimeline->SetPlaybackPosition(0.0f, false);
-    
-    // ИСПРАВЛЕНИЕ C2445
-	UCurveFloat* FadeCurve = nullptr;
-    if (CharacterAsset)
-    {
-        FadeCurve = CharacterAsset->VisualNovelSettings.DefaultFadeCurve.Get();
-    }
-	if (!FadeCurve)
-	{
-		FadeCurve = NewObject<UCurveFloat>(this);
-		FadeCurve->FloatCurve.AddKey(0.0f, 0.0f);
-		FadeCurve->FloatCurve.AddKey(1.0f, 1.0f);
-	}
-
-	FOnTimelineFloat TimelineProgress;
-	TimelineProgress.BindUFunction(this, FName("OnFadeTimelineUpdate"));
-	FadeTimeline->AddInterpFloat(FadeCurve, TimelineProgress);
-
-	FOnTimelineEvent TimelineFinish;
-	TimelineFinish.BindUFunction(this, FName("OnFadeTimelineFinished"));
-	FadeTimeline->SetTimelineFinishedFunc(TimelineFinish);
-
-	FadeTimeline->SetTimelineLength(Duration);
-	FadeTimeline->Play();
-}
-
-void ACharacter2DActor::PlayFadeOut(float Duration)
-{
-	if (bIsFading)
-	{
-		FadeTimeline->Stop();
-	}
-
-	bIsFading = true;
-	FadeTimeline->SetPlaybackPosition(0.0f, false);
-    
-    // ИСПРАВЛЕНИЕ C2445
-    UCurveFloat* FadeCurve = nullptr;
-    if (CharacterAsset)
-    {
-        FadeCurve = CharacterAsset->VisualNovelSettings.DefaultFadeCurve.Get();
-    }
-	if (!FadeCurve)
-	{
-		FadeCurve = NewObject<UCurveFloat>(this);
-		FadeCurve->FloatCurve.AddKey(0.0f, 1.0f);
-		FadeCurve->FloatCurve.AddKey(1.0f, 0.0f);
-	}
-
-	FOnTimelineFloat TimelineProgress;
-	TimelineProgress.BindUFunction(this, FName("OnFadeTimelineUpdate"));
-	FadeTimeline->AddInterpFloat(FadeCurve, TimelineProgress);
-
-	FOnTimelineEvent TimelineFinish;
-	TimelineFinish.BindUFunction(this, FName("OnFadeTimelineFinished"));
-	FadeTimeline->SetTimelineFinishedFunc(TimelineFinish);
-
-	FadeTimeline->SetTimelineLength(Duration);
-	FadeTimeline->ReverseFromEnd(); // Using ReverseFromEnd is safer than setting pos and calling Reverse
-}
-
-
-void ACharacter2DActor::PlayEmotion(ECharacter2DEmotionEffect EmotionType, const FCharacter2DEmotionSettings& Settings)
-{
-	if (bIsPlayingEmotion)
-	{
-		StopCurrentEmotion();
-	}
-	if (EmotionType == ECharacter2DEmotionEffect::None) return;
-
-	bIsPlayingEmotion = true;
-	CurrentEmotionType = EmotionType;
-	EmotionTimeline->SetPlaybackPosition(0.0f, false);
-
-    // ИСПРАВЛЕНИЕ C2445
-	UCurveFloat* CurveToUse = Settings.AnimationCurve.Get();
-	if (!CurveToUse)
-	{
-		CurveToUse = NewObject<UCurveFloat>(this);
-		CurveToUse->FloatCurve.AddKey(0.0f, 0.0f);
-		CurveToUse->FloatCurve.AddKey(0.5f, 1.0f);
-		CurveToUse->FloatCurve.AddKey(1.0f, 0.0f);
-	}
-
-	FOnTimelineFloat EmotionProgress;
-	EmotionProgress.BindUFunction(this, FName("OnEmotionTimelineUpdate"));
-	EmotionTimeline->AddInterpFloat(CurveToUse, EmotionProgress);
-
-	FOnTimelineEvent EmotionFinish;
-	EmotionFinish.BindUFunction(this, FName("OnEmotionTimelineFinished"));
-	EmotionTimeline->SetTimelineFinishedFunc(EmotionFinish);
-
-	EmotionTimeline->SetTimelineLength(Settings.Duration);
-	EmotionTimeline->SetLooping(Settings.bLoop);
-	CurrentEmotionSettings = Settings;
-	EmotionTimeline->Play();
-}
-
-// ... ОСТАЛЬНОЙ КОД ФАЙЛА ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ ...
-// (здесь следует весь остальной код из вашего файла Character2DActor.cpp,
-// так как ошибки были только в приведенных выше функциях)
-
-// ... (остальные функции, такие как PlayEmotionWithDefaults, StopCurrentEmotion, OnEmotionTimelineUpdate и т.д.) ...
-// ... (я не буду вставлять весь код заново, чтобы не загромождать ответ, но он должен быть здесь)
-// КОПИЯ ОСТАЛЬНЫХ ФУНКЦИЙ:
 void ACharacter2DActor::SetupHeadHierarchy()
 {
     if (!CharacterAsset) return;
@@ -531,52 +368,6 @@ void ACharacter2DActor::HandleTalkFrame()
     GetWorldTimerManager().SetTimer(TalkTimerHandle, this, &ACharacter2DActor::HandleTalkFrame, Settings.MouthChangeInterval, false);
 }
 
-void ACharacter2DActor::MoveToLocation(const FVector& TargetLocation, float Duration)
-{
-    FCharacter2DMovementSettings Settings;
-    Settings.Duration = Duration;
-    Settings.bTeleport = (Duration <= 0.0f);
-    MoveToLocationWithSettings(TargetLocation, Settings);
-}
-
-void ACharacter2DActor::OnMovementTimelineUpdate(float Value) { SetActorLocation(FMath::Lerp(MovementStartLocation, MovementTargetLocation, Value)); }
-void ACharacter2DActor::OnMovementTimelineFinished() { bIsMoving = false; SetActorLocation(MovementTargetLocation); }
-
-void ACharacter2DActor::OnFadeTimelineUpdate(float Value) { SetAllSpritesOpacity(Value); SetAllSkeletalOpacity(Value); }
-void ACharacter2DActor::OnFadeTimelineFinished() { bIsFading = false; if (FadeTimeline->GetPlaybackPosition() <= 0.01f) SetActorHiddenInGame(true); }
-
-void ACharacter2DActor::PlayEmotionWithDefaults(ECharacter2DEmotionEffect EmotionType)
-{
-    PlayEmotion(EmotionType, CharacterAsset ? CharacterAsset->VisualNovelSettings.DefaultEmotionSettings : FCharacter2DEmotionSettings());
-}
-
-void ACharacter2DActor::StopCurrentEmotion()
-{
-    if (!bIsPlayingEmotion) return;
-    if (EmotionTimeline) EmotionTimeline->Stop();
-    RestoreOriginalValues();
-    bIsPlayingEmotion = false;
-    OnEmotionFinished.Broadcast(CurrentEmotionType);
-    CurrentEmotionType = ECharacter2DEmotionEffect::None;
-}
-
-void ACharacter2DActor::OnEmotionTimelineUpdate(float Value)
-{
-    if (!bIsPlayingEmotion) return;
-    const float IntensityMultiplier = CurrentEmotionSettings.Intensity;
-    switch (CurrentEmotionType)
-    {
-    case ECharacter2DEmotionEffect::Shake: SetActorLocation(OriginalActorLocation + FVector(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f), 0) * Value * IntensityMultiplier * 10.f); break;
-    case ECharacter2DEmotionEffect::Pulse: SetActorScale3D(OriginalActorScale * (1.0f + (Value * IntensityMultiplier * 0.2f))); break;
-    case ECharacter2DEmotionEffect::ColorShift: SetAllSpritesColor(FMath::Lerp(FLinearColor::White, CurrentEmotionSettings.TargetColor, Value * IntensityMultiplier)); break;
-    case ECharacter2DEmotionEffect::Bounce: SetActorLocation(OriginalActorLocation + FVector(0, 0, Value * IntensityMultiplier * 50.0f)); break;
-    case ECharacter2DEmotionEffect::Flash: SetAllSpritesOpacity(Value); break;
-    default: break;
-    }
-}
-
-void ACharacter2DActor::OnEmotionTimelineFinished() { if (!EmotionTimeline->IsLooping()) StopCurrentEmotion(); }
-
 void ACharacter2DActor::SetSpritesVisible(bool bVisible)
 {
     bSpritesVisible = bVisible;
@@ -607,6 +398,27 @@ void ACharacter2DActor::RefreshFromAsset()
     EnableTalking(bOldTalkingActive);
 }
 
+void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    // Вызов базовой реализации для корректного завершения Actor
+    Super::EndPlay(EndPlayReason);
+
+    // Остановим все таймеры анимаций, чтобы не было висящих колбэков после уничтожения
+    StopAllAnimationsForRefresh();
+}
+
+void ACharacter2DActor::StopAllAnimationsForRefresh()
+{
+    // Очистка всех таймеров моргания и говорения
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkFrameTimerHandle);
+    GetWorldTimerManager().ClearTimer(TalkTimerHandle);
+
+    // Сбросим флаги, чтобы внутренняя логика не пыталась продолжать анимации
+    bIsBlinking = false;
+    bIsTalking  = false;
+}
+
 void ACharacter2DActor::UpdateFromAssetPreserveState()
 {
     if (!CharacterAsset) return;
@@ -616,28 +428,12 @@ void ACharacter2DActor::UpdateFromAssetPreserveState()
     for (const auto& Pair : SavedSprites) { if (Pair.Key && Pair.Value) Pair.Key->SetSprite(Pair.Value); }
 }
 
-void ACharacter2DActor::StopAllAnimationsForRefresh()
-{
-    GetWorldTimerManager().ClearAllTimersForObject(this);
-    if (MovementTimeline) MovementTimeline->Stop();
-    if (EmotionTimeline) EmotionTimeline->Stop();
-    if (FadeTimeline) FadeTimeline->Stop();
-    bIsBlinking = bIsTalking = bIsMoving = bIsPlayingEmotion = bIsFading = false;
-}
-
 void ACharacter2DActor::StoreOriginalValues()
 {
     OriginalActorLocation = GetActorLocation();
     OriginalActorScale = GetActorScale3D();
     OriginalSpriteColors.Empty();
     for (UPaperSpriteComponent* Component : GetAllSpriteComponents()) { if(Component) OriginalSpriteColors.Add(Component, Component->GetSpriteColor()); }
-}
-
-void ACharacter2DActor::RestoreOriginalValues()
-{
-    if (!bIsMoving) SetActorLocation(OriginalActorLocation);
-    if (!bIsPlayingEmotion || CurrentEmotionType != ECharacter2DEmotionEffect::Pulse) SetActorScale3D(OriginalActorScale);
-    for (const auto& Pair : OriginalSpriteColors) { if (Pair.Key) Pair.Key->SetSpriteColor(Pair.Value); }
 }
 
 TArray<UPaperSpriteComponent*> ACharacter2DActor::GetAllSpriteComponents(bool bIncludeEffects) const
@@ -713,13 +509,4 @@ void ACharacter2DActor::SetAllSpritesColor(const FLinearColor& Color)
 void ACharacter2DActor::SetAllSkeletalOpacity(float Opacity)
 {
     for (USkeletalMeshComponent* Component : GetAllSkeletalComponents()) { if (Component) Component->SetVisibility((Opacity > 0.01f) && bSkeletalVisible); }
-}
-
-void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-    GetWorldTimerManager().ClearAllTimersForObject(this);
-    if(MovementTimeline) MovementTimeline->Stop();
-    if(EmotionTimeline) EmotionTimeline->Stop();
-    if(FadeTimeline) FadeTimeline->Stop();
-    Super::EndPlay(EndPlayReason);
 }

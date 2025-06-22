@@ -8,7 +8,6 @@
 #include "Character2DAsset.h"
 #include "Character2DActor.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacter2DEmotionFinished, ECharacter2DEmotionEffect, EmotionType);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkFinished);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DTalkStarted);
@@ -36,9 +35,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect1;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect2;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect3;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Timeline") TObjectPtr<UTimelineComponent> MovementTimeline;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Timeline") TObjectPtr<UTimelineComponent> EmotionTimeline;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Timeline") TObjectPtr<UTimelineComponent> FadeTimeline;
 
     // Data
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Character") TObjectPtr<UCharacter2DAsset> CharacterAsset;
@@ -48,25 +44,14 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bSkeletalVisible = true;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bBlinkingActive = false;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bTalkingActive = false;
-	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsMoving = false;
-	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsPlayingEmotion = false;
-	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsFading = false;
 
     // Events
-	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DEmotionFinished OnEmotionFinished;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DBlinkStarted OnBlinkStarted;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DBlinkFinished OnBlinkFinished;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStarted OnTalkStarted;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStopped OnTalkStopped;
 
     // API
-	UFUNCTION(BlueprintCallable, Category="Character|Movement") void MoveToLocation(const FVector& TargetLocation, float Duration = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Movement") void MoveToLocationWithSettings(const FVector& TargetLocation, const FCharacter2DMovementSettings& Settings);
-	UFUNCTION(BlueprintCallable, Category="Character|Appearance") void PlayFadeIn(float Duration = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Appearance") void PlayFadeOut(float Duration = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Emotions") void PlayEmotion(ECharacter2DEmotionEffect EmotionType, const FCharacter2DEmotionSettings& Settings);
-	UFUNCTION(BlueprintCallable, Category="Character|Emotions") void PlayEmotionWithDefaults(ECharacter2DEmotionEffect EmotionType);
-	UFUNCTION(BlueprintCallable, Category="Character|Emotions") void StopCurrentEmotion();
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetSpritesVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetSkeletalVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetBothVisible(bool bSprites, bool bSkeletal);
@@ -135,7 +120,6 @@ private:
         TObjectPtr<UPaperFlipbook> CurrentBlinkFlipbook = nullptr;
         TObjectPtr<UPaperSprite> OriginalEyelidsSprite = nullptr;
         TObjectPtr<UPaperSprite> OriginalMouthSprite = nullptr;
-	ECharacter2DEmotionEffect CurrentEmotionType = ECharacter2DEmotionEffect::None;
 	FVector OriginalActorLocation;
 	FVector OriginalActorScale;
 	TMap<TObjectPtr<UPaperSpriteComponent>, FLinearColor> OriginalSpriteColors;
@@ -143,11 +127,4 @@ private:
 	FVector MovementTargetLocation;
 	FCharacter2DEmotionSettings CurrentEmotionSettings;
 	FCharacter2DMovementSettings CurrentMovementSettings;
-	
-	UFUNCTION() void OnMovementTimelineUpdate(float Value);
-	UFUNCTION() void OnMovementTimelineFinished();
-	UFUNCTION() void OnEmotionTimelineUpdate(float Value);
-	UFUNCTION() void OnEmotionTimelineFinished();
-	UFUNCTION() void OnFadeTimelineUpdate(float Value);
-	UFUNCTION() void OnFadeTimelineFinished();
 };

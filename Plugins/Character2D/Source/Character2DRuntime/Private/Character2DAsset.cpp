@@ -13,12 +13,20 @@ DEFINE_LOG_CATEGORY_STATIC(LogCharacter2D, Log, All);
 void UCharacter2DAsset::PostLoad()
 {
     Super::PostLoad();
-    
-    bool bHasSprites = HasValidSpriteConfiguration();
-    bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
-    
-    if (bHasSprites && !bHasSkeletalMeshes) { bEnableDualRendering = false; }
-    else if (!bHasSprites && bHasSkeletalMeshes) { bEnableDualRendering = false; }
+
+    const bool bHasSprites        = HasValidSpriteConfiguration();
+    const bool bHasSkeletalMeshes = HasValidSkeletalConfiguration();
+
+    // Если ни спрайтов, ни скелетных мешей, выводим предупреждение
+    if (!bHasSprites && !bHasSkeletalMeshes)
+    {
+        UE_LOG(
+            LogCharacter2D,
+            Warning,
+            TEXT("Invalid configuration: no sprites or skeletal meshes in asset \"%s\""),
+            *GetName()
+        );
+    }
 }
 
 bool UCharacter2DAsset::HasValidSpriteConfiguration() const
@@ -41,16 +49,36 @@ bool UCharacter2DAsset::IsValidForRuntime() const
 void UCharacter2DAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
+
     if (FProperty* Property = PropertyChangedEvent.Property)
     {
         const FString PropertyName = Property->GetName();
-        if (PropertyName.Contains(TEXT("Head")) || PropertyName.Contains(TEXT("Eyebrow")) || PropertyName.Contains(TEXT("Eyes")) || PropertyName.Contains(TEXT("Eyelids")) || PropertyName.Contains(TEXT("Mouth")) || PropertyName.Contains(TEXT("Blink")) || PropertyName.Contains(TEXT("Talk")) || PropertyName.Contains(TEXT("Effect")))
+
+        // При изменении любой части головы — проверяем иерархию
+        if (PropertyName.Contains(TEXT("Head")) ||
+            PropertyName.Contains(TEXT("Eyebrow")) ||
+            PropertyName.Contains(TEXT("Eyes")) ||
+            PropertyName.Contains(TEXT("Eyelids")) ||
+            PropertyName.Contains(TEXT("Mouth")) ||
+            PropertyName.Contains(TEXT("Blink")) ||
+            PropertyName.Contains(TEXT("Talk")) ||
+            PropertyName.Contains(TEXT("Effect")))
         {
             ValidateHeadHierarchy();
         }
-        if (PropertyName == TEXT("bEnableDualRendering") && bEnableDualRendering && (!HasValidSpriteConfiguration() || !HasValidSkeletalConfiguration()))
+
+        // Проверяем конфигурацию сразу после изменения любого свойства
+        const bool bHasSprites  = HasValidSpriteConfiguration();
+        const bool bHasSkeletal = HasValidSkeletalConfiguration();
+
+        if (!bHasSprites && !bHasSkeletal)
         {
-            UE_LOG(LogCharacter2D, Warning, TEXT("Dual rendering enabled but missing sprites or skeletal meshes in %s"), *GetName());
+            UE_LOG(
+                LogCharacter2D,
+                Warning,
+                TEXT("Invalid configuration: no sprites or skeletal meshes in asset \"%s\""),
+                *GetName()
+            );
         }
     }
 }
@@ -83,19 +111,47 @@ void UCharacter2DAsset::ValidateHeadHierarchy()
 void UCharacter2DAsset::GetAssetRegistryTags(FAssetRegistryTagsContext Context) const
 {
     Super::GetAssetRegistryTags(Context);
-    
+
     auto GetRenderingModeDescription = [this]()
     {
-        const bool bHasSprites = HasValidSpriteConfiguration();
+        const bool bHasSprites  = HasValidSpriteConfiguration();
         const bool bHasSkeletal = HasValidSkeletalConfiguration();
-        if (bEnableDualRendering && bHasSprites && bHasSkeletal) { return TEXT("Dual Rendering"); }
-        if (bHasSprites) { return TEXT("Sprite Only"); }
-        if (bHasSkeletal) { return TEXT("Skeletal Mesh Only"); }
+
+        if (bHasSprites && bHasSkeletal)
+        {
+            return TEXT("Dual Rendering");            // или TEXT("Sprite + Skeletal")
+        }
+        if (bHasSprites)
+        {
+            return TEXT("Sprite Only");
+        }
+        if (bHasSkeletal)
+        {
+            return TEXT("Skeletal Mesh Only");
+        }
         return TEXT("Invalid Configuration");
     };
 
-    Context.AddTag(FAssetRegistryTag(TEXT("RenderingMode"), GetRenderingModeDescription(), FAssetRegistryTag::TT_Alphabetical));
-    Context.AddTag(FAssetRegistryTag(TEXT("HasSprites"), HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
-    Context.AddTag(FAssetRegistryTag(TEXT("HasSkeletalMeshes"), HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"), FAssetRegistryTag::TT_Alphabetical));
+    Context.AddTag(
+        FAssetRegistryTag(
+            TEXT("RenderingMode"),
+            GetRenderingModeDescription(),
+            FAssetRegistryTag::TT_Alphabetical
+        )
+    );
+    Context.AddTag(
+        FAssetRegistryTag(
+            TEXT("HasSprites"),
+            HasValidSpriteConfiguration() ? TEXT("True") : TEXT("False"),
+            FAssetRegistryTag::TT_Alphabetical
+        )
+    );
+    Context.AddTag(
+        FAssetRegistryTag(
+            TEXT("HasSkeletalMeshes"),
+            HasValidSkeletalConfiguration() ? TEXT("True") : TEXT("False"),
+            FAssetRegistryTag::TT_Alphabetical
+        )
+    );
 }
 #endif // WITH_EDITOR

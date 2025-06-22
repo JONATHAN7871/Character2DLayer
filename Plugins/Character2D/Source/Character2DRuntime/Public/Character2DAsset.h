@@ -13,17 +13,6 @@
 class FAssetRegistryTagsContext;
 
 UENUM(BlueprintType)
-enum class ECharacter2DEmotionEffect : uint8
-{
-    None        UMETA(DisplayName = "None"),
-    Shake       UMETA(DisplayName = "Shake"),
-    Pulse       UMETA(DisplayName = "Pulse"),
-    ColorShift  UMETA(DisplayName = "Color Shift"),
-    Bounce      UMETA(DisplayName = "Bounce"),
-    Flash       UMETA(DisplayName = "Flash")
-};
-
-UENUM(BlueprintType)
 enum class ECharacter2DAttachmentTarget : uint8
 {
     None    UMETA(DisplayName = "None"),
@@ -247,16 +236,6 @@ struct FCharacter2DSkeletalPart
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal") float Scale = 1.0f;
 };
 
-USTRUCT(BlueprintType)
-struct FCharacter2DVisualNovelSettings
-{
-    GENERATED_BODY()
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Visual Novel|Movement") FCharacter2DMovementSettings DefaultMovementSettings;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Visual Novel|Emotions") FCharacter2DEmotionSettings DefaultEmotionSettings;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Visual Novel|Appearance") float DefaultFadeDuration = 1.0f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Visual Novel|Appearance") TObjectPtr<UCurveFloat> DefaultFadeCurve = nullptr;
-};
-
 UCLASS(BlueprintType)
 class CHARACTER2DRUNTIME_API UCharacter2DAsset : public UDataAsset
 {
@@ -268,10 +247,8 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Global Offset")) FVector SkeletalGlobalOffset = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal", meta=(DisplayName="Global Scale")) float GlobalScale = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sprite") FCharacter2DSpriteStructure SpriteStructure;
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Visual Novel") FCharacter2DVisualNovelSettings VisualNovelSettings;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoBlink = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bAutoTalk = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="General") bool bEnableDualRendering = false;
 
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DSpriteBodyStructure& GetBodySprite() const { return SpriteStructure.Body; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DSpriteArmsStructure& GetArmsSprite() const { return SpriteStructure.Arms; }
