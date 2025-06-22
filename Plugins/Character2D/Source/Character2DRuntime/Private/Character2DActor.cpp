@@ -71,6 +71,7 @@ void ACharacter2DActor::BeginPlay()
 			OriginalMouthSprite = CharacterAsset->GetMouthSprite().Sprite;
 		}
 		
+		// ИСПРАВЛЕНО: Правильная инициализация Auto Blink/Talk
 		EnableBlinking(CharacterAsset->bAutoBlink);
 		EnableTalking(CharacterAsset->bAutoTalk);
 	}
@@ -88,8 +89,9 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     const auto& BodySpriteData = CharacterAsset->GetBodySprite();
     const auto& ArmsSpriteData = CharacterAsset->GetArmsSprite();
     
-	SetupSpriteComponent(SpriteBody, BodySpriteData.Sprite, BodySpriteData.Offset, BodySpriteData.Scale, BodySpriteData.bVisible);
-    SetupSpriteComponent(SpriteArms, ArmsSpriteData.Sprite, ArmsSpriteData.Offset, ArmsSpriteData.Scale, ArmsSpriteData.bVisible);
+	// ОБНОВЛЕНО: Добавлены Color и Opacity параметры
+	SetupSpriteComponent(SpriteBody, BodySpriteData.Sprite, BodySpriteData.Offset, BodySpriteData.Scale, BodySpriteData.bVisible, BodySpriteData.Color, BodySpriteData.Opacity);
+    SetupSpriteComponent(SpriteArms, ArmsSpriteData.Sprite, ArmsSpriteData.Offset, ArmsSpriteData.Scale, ArmsSpriteData.bVisible, ArmsSpriteData.Color, ArmsSpriteData.Opacity);
 	SetupHeadHierarchy();
     
 	AttachSpriteToSocket(SpriteBody, BodySpriteData.AttachmentTarget, BodySpriteData.SocketName, BodySpriteData.bUseSocketTransform, BodySpriteData.Offset, BodySpriteData.Scale);
@@ -99,6 +101,14 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
 	SetupEffectLayers();
 	SetSpritesVisible(HasValidSprites());
 	SetSkeletalVisible(HasValidSkeletalMeshes());
+	
+	// ИСПРАВЛЕНО: Обновляем состояние анимаций после OnConstruction
+	if (CharacterAsset)
+	{
+		// Устанавливаем флаги активности согласно настройкам ассета
+		bBlinkingActive = CharacterAsset->bAutoBlink;
+		bTalkingActive = CharacterAsset->bAutoTalk;
+	}
 }
 
 void ACharacter2DActor::SetupHeadHierarchy()
@@ -107,7 +117,8 @@ void ACharacter2DActor::SetupHeadHierarchy()
 
     const auto& HeadStructure = CharacterAsset->SpriteStructure.Head;
     
-    SetupSpriteComponent(SpriteHead, HeadStructure.Head.Sprite, HeadStructure.Head.Offset, HeadStructure.Head.Scale, HeadStructure.Head.bVisible);
+    // ОБНОВЛЕНО: Устанавливаем Head Root с Color/Opacity
+    SetupSpriteComponent(SpriteHead, HeadStructure.Head.Sprite, HeadStructure.Head.Offset, HeadStructure.Head.Scale, HeadStructure.Head.bVisible, HeadStructure.Head.Color, HeadStructure.Head.Opacity);
     
     auto SetupChildSprite = [this, &HeadStructure](
         UPaperSpriteComponent* Component, 
@@ -118,6 +129,11 @@ void ACharacter2DActor::SetupHeadHierarchy()
         Component->SetRelativeLocation(ChildData.LocalOffset);
         Component->SetRelativeScale3D(FVector(ChildData.LocalScale));
         Component->SetVisibility(HeadStructure.GetFinalChildVisibility(ChildData) && bSpritesVisible);
+        
+        // НОВОЕ: Применяем Color и Opacity для дочерних спрайтов головы
+        FLinearColor FinalColor = ChildData.Color;
+        FinalColor.A = ChildData.Opacity;
+        Component->SetSpriteColor(FinalColor);
     };
 
     SetupChildSprite(SpriteEyebrow, HeadStructure.Eyebrows);
@@ -400,21 +416,15 @@ void ACharacter2DActor::RefreshFromAsset()
 
 void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    // Вызов базовой реализации для корректного завершения Actor
     Super::EndPlay(EndPlayReason);
-
-    // Остановим все таймеры анимаций, чтобы не было висящих колбэков после уничтожения
     StopAllAnimationsForRefresh();
 }
 
 void ACharacter2DActor::StopAllAnimationsForRefresh()
 {
-    // Очистка всех таймеров моргания и говорения
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
     GetWorldTimerManager().ClearTimer(BlinkFrameTimerHandle);
     GetWorldTimerManager().ClearTimer(TalkTimerHandle);
-
-    // Сбросим флаги, чтобы внутренняя логика не пыталась продолжать анимации
     bIsBlinking = false;
     bIsTalking  = false;
 }
@@ -464,7 +474,8 @@ void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component
     Component->SetVisibility(Part.Mesh != nullptr && bSkeletalVisible);
 }
 
-void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, TObjectPtr<UPaperSprite> Sprite, const FVector& Offset, float Scale, bool bIsVisible)
+// ОБНОВЛЕНО: Добавлены параметры Color и Opacity
+void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, TObjectPtr<UPaperSprite> Sprite, const FVector& Offset, float Scale, bool bIsVisible, const FLinearColor& Color, float Opacity)
 {
     if (!Component || !CharacterAsset) return;
     const FVector FinalOffset = CharacterAsset->GetGlobalSpriteOffset() + Offset;
@@ -473,6 +484,11 @@ void ACharacter2DActor::SetupSpriteComponent(UPaperSpriteComponent* Component, T
     Component->SetRelativeLocation(FinalOffset);
     Component->SetRelativeScale3D(FVector(FinalScale));
     Component->SetVisibility(bIsVisible && bSpritesVisible);
+    
+    // НОВОЕ: Применяем Color и Opacity
+    FLinearColor FinalColor = Color;
+    FinalColor.A = Opacity;
+    Component->SetSpriteColor(FinalColor);
 }
 
 void ACharacter2DActor::AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, ECharacter2DAttachmentTarget TargetType, FName SocketName, bool bUseSocketTransform, const FVector& Offset, float Scale)

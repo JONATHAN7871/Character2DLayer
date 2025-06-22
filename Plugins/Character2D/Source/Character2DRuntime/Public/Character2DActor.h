@@ -88,7 +88,7 @@ private:
 	void SetupEffectLayers();
 	void AttachHeadToSocket();
 	void SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part);
-	void SetupSpriteComponent(UPaperSpriteComponent* Component, TObjectPtr<UPaperSprite> Sprite, const FVector& Offset, float Scale, bool bIsVisible);
+	void SetupSpriteComponent(UPaperSpriteComponent* Component, TObjectPtr<UPaperSprite> Sprite, const FVector& Offset, float Scale, bool bIsVisible, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
 	void AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, ECharacter2DAttachmentTarget TargetType, FName SocketName, bool bUseSocketTransform, const FVector& Offset, float Scale);
 	bool HasValidSprites() const;
 	bool HasValidSkeletalMeshes() const;

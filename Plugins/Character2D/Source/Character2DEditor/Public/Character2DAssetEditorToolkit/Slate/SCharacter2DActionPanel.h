@@ -46,11 +46,16 @@ private:
     void EnsurePreviewVisible();
 
     // === Построение UI ===
+    TSharedRef<SWidget> BuildAutoAnimationsSection();        // НОВОЕ: Секция Auto Animations
     TSharedRef<SWidget> BuildAnimationTestingSection();
     TSharedRef<SWidget> BuildVisibilityTestSection();
 
     // === Быстрые действия ===
     FReply OnResetCharacter();
+
+    // === Auto Animations ===
+    void OnAutoBlinkChanged(ECheckBoxState NewState);        // НОВОЕ: Обработчик Auto Blink
+    void OnAutoTalkChanged(ECheckBoxState NewState);         // НОВОЕ: Обработчик Auto Talk
 
     // === Анимация ===
     void OnBlinkChanged(ECheckBoxState NewState);

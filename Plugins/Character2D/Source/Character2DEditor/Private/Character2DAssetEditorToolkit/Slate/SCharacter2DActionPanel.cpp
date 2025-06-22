@@ -27,6 +27,7 @@ void SCharacter2DActionPanel::Construct(const FArguments& InArgs)
     ChildSlot
     [
         SNew(SScrollBox)
+        + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("AutoAnimations", "Auto Animations")).InitiallyCollapsed(false).BodyContent()[BuildAutoAnimationsSection()] ]
         + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("AnimationTesting", "Animation Testing")).InitiallyCollapsed(true).BodyContent()[BuildAnimationTestingSection()] ]
         + SScrollBox::Slot().Padding(4) [ SNew(SExpandableArea).AreaTitle(LOCTEXT("VisibilityTest", "Visibility Testing")).InitiallyCollapsed(true).BodyContent()[BuildVisibilityTestSection()] ]
     ];
@@ -48,6 +49,72 @@ void SCharacter2DActionPanel::SyncStateFromActor()
         bSpritesVisible = true;
         bSkeletalVisible = true;
     }
+}
+
+// НОВАЯ СЕКЦИЯ: Auto Animations для отображения состояния Auto Blink/Talk
+TSharedRef<SWidget> SCharacter2DActionPanel::BuildAutoAnimationsSection()
+{
+    return SNew(SVerticalBox)
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
+        [ 
+            SNew(SCheckBox)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnAutoBlinkChanged)
+            .IsChecked_Lambda([this]() 
+            { 
+                if (CharacterAsset.IsValid())
+                {
+                    return CharacterAsset->bAutoBlink ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                }
+                return ECheckBoxState::Unchecked;
+            })
+        ]
+        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
+        [ 
+            SNew(STextBlock)
+            .Text(LOCTEXT("AutoBlink", "Auto Blink"))
+            .ColorAndOpacity_Lambda([this]()
+            {
+                if (CharacterAsset.IsValid() && CharacterAsset->bAutoBlink)
+                {
+                    return FLinearColor::Green;
+                }
+                return FLinearColor::White;
+            })
+        ]
+    ]
+    + SVerticalBox::Slot().AutoHeight().Padding(2)
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center) 
+        [ 
+            SNew(SCheckBox)
+            .OnCheckStateChanged(this, &SCharacter2DActionPanel::OnAutoTalkChanged)
+            .IsChecked_Lambda([this]() 
+            { 
+                if (CharacterAsset.IsValid())
+                {
+                    return CharacterAsset->bAutoTalk ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                }
+                return ECheckBoxState::Unchecked;
+            })
+        ]
+        + SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0) 
+        [ 
+            SNew(STextBlock)
+            .Text(LOCTEXT("AutoTalk", "Auto Talk"))
+            .ColorAndOpacity_Lambda([this]()
+            {
+                if (CharacterAsset.IsValid() && CharacterAsset->bAutoTalk)
+                {
+                    return FLinearColor::Green;
+                }
+                return FLinearColor::White;
+            })
+        ]
+    ];
 }
 
 TSharedRef<SWidget> SCharacter2DActionPanel::BuildAnimationTestingSection()
@@ -96,6 +163,39 @@ TSharedRef<SWidget> SCharacter2DActionPanel::BuildVisibilityTestSection()
 // =========================================
 // === Обработчики событий (Event Handlers) ===
 // =========================================
+
+// НОВЫЕ ОБРАБОТЧИКИ: Auto Blink/Talk
+void SCharacter2DActionPanel::OnAutoBlinkChanged(ECheckBoxState NewState)
+{
+    if (CharacterAsset.IsValid())
+    {
+        CharacterAsset->bAutoBlink = (NewState == ECheckBoxState::Checked);
+        CharacterAsset->MarkPackageDirty();
+        
+        // Обновляем актор немедленно
+        if (ACharacter2DActor* Actor = PreviewActor.Get())
+        {
+            Actor->EnableBlinking(CharacterAsset->bAutoBlink);
+            EnsurePreviewVisible();
+        }
+    }
+}
+
+void SCharacter2DActionPanel::OnAutoTalkChanged(ECheckBoxState NewState)
+{
+    if (CharacterAsset.IsValid())
+    {
+        CharacterAsset->bAutoTalk = (NewState == ECheckBoxState::Checked);
+        CharacterAsset->MarkPackageDirty();
+        
+        // Обновляем актор немедленно
+        if (ACharacter2DActor* Actor = PreviewActor.Get())
+        {
+            Actor->EnableTalking(CharacterAsset->bAutoTalk);
+            EnsurePreviewVisible();
+        }
+    }
+}
 
 FReply SCharacter2DActionPanel::OnResetCharacter()
 {
@@ -177,7 +277,6 @@ ECheckBoxState SCharacter2DActionPanel::GetSpritesVisibleState() const
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        // ИСПРАВЛЕНО: Используем публичную переменную bSpritesVisible
         return Actor->bSpritesVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
     }
     return bSpritesVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
@@ -187,7 +286,6 @@ ECheckBoxState SCharacter2DActionPanel::GetSkeletalVisibleState() const
 {
     if (ACharacter2DActor* Actor = PreviewActor.Get())
     {
-        // ИСПРАВЛЕНО: Используем публичную переменную bSkeletalVisible
         return Actor->bSkeletalVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
     }
     return bSkeletalVisible ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;

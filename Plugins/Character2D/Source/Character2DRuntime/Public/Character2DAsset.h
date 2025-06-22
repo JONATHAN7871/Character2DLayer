@@ -88,6 +88,11 @@ struct FCharacter2DHeadChildSprite
     bool bVisible = true;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Visibility", meta=(DisplayName="Override Head Visibility"))
     bool bOverrideHeadVisibility = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance")
+    FLinearColor Color = FLinearColor::White;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float Opacity = 1.0f;
+    
     FCharacter2DHeadChildSprite() { Name = TEXT("HeadChild"); }
     bool GetFinalVisibility(bool bHeadVisible) const { return bOverrideHeadVisibility ? bVisible : (bHeadVisible && bVisible); }
 };
@@ -136,6 +141,11 @@ struct FCharacter2DHeadRootSprite
     float Scale = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Visibility")
     bool bVisible = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Appearance")
+    FLinearColor Color = FLinearColor::White;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Root|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float Opacity = 1.0f;
+    
     FCharacter2DHeadRootSprite() { Name = TEXT("Head"); }
 };
 
@@ -179,6 +189,11 @@ struct FCharacter2DSpriteBodyStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite") FVector Offset = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sprite") float Scale = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite") bool bVisible = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance")
+    FLinearColor Color = FLinearColor::White;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float Opacity = 1.0f;
+    
     FCharacter2DSpriteBodyStructure() { Name = TEXT("Body"); }
 };
 
@@ -194,6 +209,11 @@ struct FCharacter2DSpriteArmsStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite") FVector Offset = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sprite") float Scale = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite") bool bVisible = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance")
+    FLinearColor Color = FLinearColor::White;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float Opacity = 1.0f;
+    
     FCharacter2DSpriteArmsStructure() { Name = TEXT("Arms"); }
 };
 
