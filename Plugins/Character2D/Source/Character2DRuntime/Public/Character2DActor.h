@@ -17,13 +17,22 @@ enum class ECharacter2DTransitionState : uint8
     Disappearing
 };
 
+// Перечисление для типов дефолтных кривых
+UENUM(BlueprintType)
+enum class ECharacter2DTransitionCurve : uint8
+{
+    Linear      UMETA(DisplayName = "Linear"),
+    Smooth      UMETA(DisplayName = "Smooth (Ease In-Out)"),
+    EaseIn      UMETA(DisplayName = "Ease In"),
+    EaseOut     UMETA(DisplayName = "Ease Out")
+};
+
 // Существующие делегаты
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkFinished);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DTalkStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DTalkStopped);
 
-// НОВЫЕ ДЕЛЕГАТЫ ДЛЯ ПОЯВЛЕНИЯ/ИСЧЕЗНОВЕНИЯ
 /** Вызывается на каждом кадре анимации появления/исчезновения */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacter2DTransitionUpdate, ECharacter2DTransitionState, State, float, Progress);
 
@@ -36,7 +45,7 @@ class CHARACTER2DRUNTIME_API ACharacter2DActor : public AActor
 	GENERATED_BODY()
 
 public:
-	ACharacter2DActor();
+	ACharacter2DActor(const FObjectInitializer& ObjectInitializer);
 
     // Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components") TObjectPtr<USkeletalMeshComponent> BodyComponent;
@@ -53,11 +62,19 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect2;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect3;
 
-    // НОВЫЙ КОМПОНЕНТ
     /** Таймлайн для управления анимациями появления и исчезновения */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UTimelineComponent> TransitionTimeline;
 
+    // НОВЫЕ КОМПОНЕНТЫ TIMELINE
+    /** Таймлайн для управления анимацией моргания */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UTimelineComponent> BlinkTimeline;
+
+    /** Таймлайн для управления анимацией разговора */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UTimelineComponent> TalkTimeline;
+    
     // Data
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Character") TObjectPtr<UCharacter2DAsset> CharacterAsset;
 
@@ -66,6 +83,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bSkeletalVisible = true;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bBlinkingActive = false;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bTalkingActive = false;
+	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsInTransition = false;
 
     // Events
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DBlinkStarted OnBlinkStarted;
@@ -73,7 +91,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStarted OnTalkStarted;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStopped OnTalkStopped;
 
-    // НОВЫЕ СОБЫТИЯ (DELEGATES)
     /** Событие, которое транслируется во время анимации появления/исчезновения. Прогресс изменяется от 0.0 до 1.0. */
     UPROPERTY(BlueprintAssignable, Category="Character|Events|Transition")
     FOnCharacter2DTransitionUpdate OnTransitionUpdate;
@@ -106,26 +123,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Character|Runtime") void RefreshFromAsset();
 	UFUNCTION(BlueprintCallable, Category="Character|Runtime") void UpdateFromAssetPreserveState();
 
-    // НОВЫЕ ФУНКЦИИ API
-    /**
-     * Запускает анимацию появления персонажа.
-     * @param Curve Кривая для управления скоростью анимации.
-     * @param Duration Общая продолжительность эффекта в секундах.
-     */
+    // Transition API
     UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void Appear(UCurveFloat* Curve, float Duration = 1.0f);
-
-    /**
-     * Запускает анимацию исчезновения персонажа.
-     * @param Curve Кривая для управления скоростью анимации.
-     * @param Duration Общая продолжительность эффекта в секундах.
-     */
+    void Appear(float Duration = 1.0f, ECharacter2DTransitionCurve CurveType = ECharacter2DTransitionCurve::Smooth);
     UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void Disappear(UCurveFloat* Curve, float Duration = 1.0f);
-
-    /** Возвращает true, если в данный момент проигрывается анимация появления/исчезновения. */
+    void AppearWithCustomCurve(UCurveFloat* Curve, float Duration = 1.0f);
+    UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
+    void Disappear(float Duration = 1.0f, ECharacter2DTransitionCurve CurveType = ECharacter2DTransitionCurve::Smooth);
+    UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
+    void DisappearWithCustomCurve(UCurveFloat* Curve, float Duration = 1.0f);
     UFUNCTION(BlueprintPure, Category="Character|Animation|Transition")
-    bool IsInTransition() const { return CurrentTransitionState != ECharacter2DTransitionState::None; }
+    bool IsInTransition() const { return bIsInTransition; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -145,42 +153,48 @@ private:
 	bool HasValidSprites() const;
 	bool HasValidSkeletalMeshes() const;
 	void StoreOriginalValues();
-	void RestoreOriginalValues();
 	void SetAllSpritesOpacity(float Opacity);
 	void SetAllSpritesColor(const FLinearColor& Color);
 	void SetAllSkeletalOpacity(float Opacity);
 	TArray<UPaperSpriteComponent*> GetAllSpriteComponents(bool bIncludeEffects = true) const;
 	TArray<USkeletalMeshComponent*> GetAllSkeletalComponents() const;
 	USkeletalMeshComponent* GetSkeletalComponentByTarget(ECharacter2DAttachmentTarget Target) const;
-	void StartBlinking();
+	
+	// Blinking
+    void StartBlinking();
     void StopBlinking();
-    void HandleBlink();
-    void HandleBlinkFrame();
+    void TriggerBlink(); // Запускает одно моргание (для таймера и BlinkOnce)
+	
+	// Talking
     void StartTalking();
     void StopTalking();
-    void HandleTalkFrame();
 
-    // НОВЫЕ ПРИВАТНЫЕ ФУНКЦИИ
-    /** Функция, вызываемая таймлайном на каждом обновлении. */
-    UFUNCTION()
-    void HandleTransitionUpdate(float Value);
-    
-    /** Функция, вызываемая по завершении работы таймлайна. */
-    UFUNCTION()
-    void HandleTransitionFinished();
+    void UpdateOriginalSprites();
+    void RestoreEyelidsAfterBlink();
+    void RestoreMouthAfterTalk();
 
+	// Timelines Callbacks
+    UFUNCTION() void HandleBlinkTimelineUpdate(float Value);
+    UFUNCTION() void HandleBlinkTimelineFinished();
+    UFUNCTION() void HandleTalkTimelineEvent();
+	
+    // Transition
+    UFUNCTION() void HandleTransitionUpdate(float Value);
+    UFUNCTION() void HandleTransitionFinished();
     void StartTransition(ECharacter2DTransitionState NewState, UCurveFloat* Curve, float Duration);
     void StopCurrentTransition();
+
+	// Curves
+	void InitializeDefaultCurves();
+    UCurveFloat* GetDefaultCurve(ECharacter2DTransitionCurve CurveType) const;
 	
-    FTimerHandle BlinkTimerHandle;
-    FTimerHandle BlinkFrameTimerHandle;
-    FTimerHandle TalkTimerHandle;
+    FTimerHandle BlinkTimerHandle; // Остается для интервала между морганиями
     bool bIsBlinking = false;
     bool bIsTalking = false;
-    bool bBlinkScheduleNext = false;
-    int32 BlinkFrameIndex = 0;
-    int32 BlinkTotalFrames = 0;
-    float BlinkFrameDuration = 0.f;
+    bool bBlinkScheduleNext = false; // Определяет, нужно ли планировать следующее моргание
+
+    UPROPERTY() TObjectPtr<UCurveFloat> BlinkCurve; // Кривая для анимации моргания
+
     TObjectPtr<UPaperFlipbook> CurrentBlinkFlipbook = nullptr;
     TObjectPtr<UPaperSprite> OriginalEyelidsSprite = nullptr;
     TObjectPtr<UPaperSprite> OriginalMouthSprite = nullptr;
@@ -192,14 +206,12 @@ private:
 	FCharacter2DEmotionSettings CurrentEmotionSettings;
 	FCharacter2DMovementSettings CurrentMovementSettings;
 
-    // НОВЫЕ ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    /** Текущее состояние перехода (появление, исчезновение или нет). */
     ECharacter2DTransitionState CurrentTransitionState = ECharacter2DTransitionState::None;
-
-    /** Хранит оригинальные цвета спрайтов перед началом анимации. */
     TMap<TObjectPtr<UPaperSpriteComponent>, FLinearColor> OriginalSpriteColorsForTransition;
 
-    /** Кривая, используемая для текущего перехода */
-    UPROPERTY()
-    TObjectPtr<UCurveFloat> CurrentTransitionCurve;
+	UPROPERTY() TObjectPtr<UCurveFloat> CurrentTransitionCurve;
+	UPROPERTY() TObjectPtr<UCurveFloat> DefaultLinearCurve;
+	UPROPERTY() TObjectPtr<UCurveFloat> DefaultSmoothCurve;
+	UPROPERTY() TObjectPtr<UCurveFloat> DefaultEaseInCurve;
+	UPROPERTY() TObjectPtr<UCurveFloat> DefaultEaseOutCurve;
 };

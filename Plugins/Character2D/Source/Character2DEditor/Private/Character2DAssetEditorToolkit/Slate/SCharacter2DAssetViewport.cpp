@@ -52,9 +52,12 @@ void SCharacter2DAssetViewport::Construct(const FArguments& InArgs)
             PreviewActor->CharacterAsset = Asset;
             PreviewActor->RefreshFromAsset();
             
-            // НОВОЕ: Отключаем Auto Blink/Talk для актора в редакторе
+            // ИСПРАВЛЕНО: Отключаем Auto Blink/Talk для актора в редакторе, 
+            // но НЕ блокируем их полностью - они могут быть включены через Action Panel
             PreviewActor->bBlinkingActive = false;
             PreviewActor->bTalkingActive = false;
+            
+            UE_LOG(LogTemp, Log, TEXT("Preview actor created and configured for editor"));
         }
     }
 }
@@ -110,6 +113,15 @@ void SCharacter2DAssetViewport::RefreshPreview()
     const FRotator OldRot   = PreviewActor.IsValid() ? PreviewActor->GetActorRotation() : FRotator::ZeroRotator;
     const FVector  OldScale = PreviewActor.IsValid() ? PreviewActor->GetActorScale3D() : FVector::OneVector;
 
+    // ИСПРАВЛЕНО: Сохраняем состояние анимаций до обновления
+    bool bOldBlinkingActive = false;
+    bool bOldTalkingActive = false;
+    if (PreviewActor.IsValid())
+    {
+        bOldBlinkingActive = PreviewActor->bBlinkingActive;
+        bOldTalkingActive = PreviewActor->bTalkingActive;
+    }
+
     if (!PreviewActor.IsValid() || PreviewActor->CharacterAsset != Asset)
     {
         if (PreviewActor.IsValid()) PreviewActor->Destroy();
@@ -117,21 +129,22 @@ void SCharacter2DAssetViewport::RefreshPreview()
         if (!PreviewActor.IsValid()) return;
         PreviewActor->CharacterAsset = Asset;
         
-        // НОВОЕ: Принудительно отключаем Auto анимации для preview актора
-        PreviewActor->bBlinkingActive = false;
-        PreviewActor->bTalkingActive = false;
+        // ИСПРАВЛЕНО: НЕ принудительно отключаем анимации, а сохраняем предыдущее состояние
+        PreviewActor->bBlinkingActive = bOldBlinkingActive;
+        PreviewActor->bTalkingActive = bOldTalkingActive;
     }
 
     PreviewActor->RefreshFromAsset();
     
-    // НОВОЕ: После обновления снова отключаем Auto анимации
-    PreviewActor->bBlinkingActive = false;
-    PreviewActor->bTalkingActive = false;
+    // ИСПРАВЛЕНО: После обновления восстанавливаем состояние анимаций
+    // но НЕ принудительно отключаем их
+    PreviewActor->bBlinkingActive = bOldBlinkingActive;
+    PreviewActor->bTalkingActive = bOldTalkingActive;
 
     World->GetTimerManager().ClearTimer(RefreshTimerHandle);
     World->GetTimerManager().SetTimer(
         RefreshTimerHandle,
-        [this, OldLoc, OldRot, OldScale]()
+        [this, OldLoc, OldRot, OldScale, bOldBlinkingActive, bOldTalkingActive]()
         {
             if (PreviewActor.IsValid())
             {
@@ -139,9 +152,23 @@ void SCharacter2DAssetViewport::RefreshPreview()
                 PreviewActor->SetActorRotation(OldRot);
                 PreviewActor->SetActorScale3D(OldScale);
                 
-                // НОВОЕ: Гарантируем отключение Auto анимаций после восстановления трансформа
-                PreviewActor->bBlinkingActive = false;
-                PreviewActor->bTalkingActive = false;
+                // ИСПРАВЛЕНО: Восстанавливаем состояние анимаций и перезапускаем их при необходимости
+                PreviewActor->bBlinkingActive = bOldBlinkingActive;
+                PreviewActor->bTalkingActive = bOldTalkingActive;
+                
+                // Если анимации были активны, перезапускаем их
+                if (bOldBlinkingActive && !PreviewActor->IsBlinkingEnabled())
+                {
+                    PreviewActor->EnableBlinking(true);
+                }
+                if (bOldTalkingActive && !PreviewActor->IsTalkingEnabled())
+                {
+                    PreviewActor->EnableTalking(true);
+                }
+                
+                UE_LOG(LogTemp, Log, TEXT("Preview actor state restored: Blinking=%s, Talking=%s"), 
+                       bOldBlinkingActive ? TEXT("true") : TEXT("false"),
+                       bOldTalkingActive ? TEXT("true") : TEXT("false"));
             }
         },
         0.1f, false
@@ -150,11 +177,17 @@ void SCharacter2DAssetViewport::RefreshPreview()
 
 void SCharacter2DAssetViewport::ForceRefreshPreview()
 {
+    // ИСПРАВЛЕНО: Сохраняем состояние анимаций перед полным пересозданием
+    bool bOldBlinkingActive = false;
+    bool bOldTalkingActive = false;
     if (PreviewActor.IsValid())
     {
+        bOldBlinkingActive = PreviewActor->bBlinkingActive;
+        bOldTalkingActive = PreviewActor->bTalkingActive;
         PreviewActor->Destroy();
         PreviewActor = nullptr;
     }
+    
     if (Asset && PreviewScene.IsValid() && PreviewScene->GetWorld())
     {
         PreviewActor = PreviewScene->GetWorld()->SpawnActor<ACharacter2DActor>();
@@ -163,9 +196,21 @@ void SCharacter2DAssetViewport::ForceRefreshPreview()
             PreviewActor->CharacterAsset = Asset;
             PreviewActor->RefreshFromAsset();
             
-            // НОВОЕ: Отключаем Auto анимации для нового актора
-            PreviewActor->bBlinkingActive = false;
-            PreviewActor->bTalkingActive = false;
+            // ИСПРАВЛЕНО: Восстанавливаем состояние анимаций после пересоздания
+            PreviewActor->bBlinkingActive = bOldBlinkingActive;
+            PreviewActor->bTalkingActive = bOldTalkingActive;
+            
+            // Если анимации были активны, запускаем их
+            if (bOldBlinkingActive)
+            {
+                PreviewActor->EnableBlinking(true);
+            }
+            if (bOldTalkingActive)
+            {
+                PreviewActor->EnableTalking(true);
+            }
+            
+            UE_LOG(LogTemp, Log, TEXT("Preview actor force refreshed with restored animation state"));
         }
     }
 }
@@ -178,11 +223,13 @@ FString SCharacter2DAssetViewport::GetDebugInfo() const
     }
     ACharacter2DActor* Actor = PreviewActor.Get();
     return FString::Printf(
-        TEXT("Actor: %s\nAsset: %s\nLocation: %s\nScale: %s\n"),
+        TEXT("Actor: %s\nAsset: %s\nLocation: %s\nScale: %s\nBlinking: %s\nTalking: %s\n"),
         *Actor->GetName(),
         *Actor->CharacterAsset->GetName(),
         *Actor->GetActorLocation().ToString(),
-        *Actor->GetActorScale3D().ToString()
+        *Actor->GetActorScale3D().ToString(),
+        Actor->bBlinkingActive ? TEXT("Active") : TEXT("Inactive"),
+        Actor->bTalkingActive ? TEXT("Active") : TEXT("Inactive")
     );
 }
 
