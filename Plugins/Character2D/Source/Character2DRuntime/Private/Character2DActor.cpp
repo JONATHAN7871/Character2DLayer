@@ -71,17 +71,18 @@ void ACharacter2DActor::BeginPlay()
             OriginalMouthSprite = CharacterAsset->GetMouthSprite().Sprite;
         }
 		
-        // ИСПРАВЛЕНО: Включаем Auto анимации только в игре, НЕ в редакторе
+        // ИСПРАВЛЕНО: Запускаем авто-анимации ТОЛЬКО в игровом мире.
+        // В редакторе начальное состояние всегда "выключено".
         if (GetWorld() && GetWorld()->IsGameWorld())
         {
-            EnableBlinking(CharacterAsset->bAutoBlink);
-            EnableTalking(CharacterAsset->bAutoTalk);
-        }
-        else
-        {
-            // В редакторе всегда отключены по умолчанию
-            bBlinkingActive = false;
-            bTalkingActive = false;
+            if (CharacterAsset->bAutoBlink)
+            {
+                EnableBlinking(true);
+            }
+            if (CharacterAsset->bAutoTalk)
+            {
+                EnableTalking(true);
+            }
         }
     }
 }
@@ -407,29 +408,26 @@ void ACharacter2DActor::SetBothVisible(bool bSprites, bool bSkeletal) { SetSprit
 void ACharacter2DActor::RefreshFromAsset()
 {
     if (!CharacterAsset) { UE_LOG(LogCharacter2DActor, Warning, TEXT("RefreshFromAsset: CharacterAsset is null")); return; }
-    bool bOldHidden = IsHidden();
-    FTransform SavedTransform = GetActorTransform();
-    bool bOldBlinkingActive = bBlinkingActive;
-    bool bOldTalkingActive = bTalkingActive;
-    
+	
+    // Сохраняем текущее состояние ПЕРЕД обновлением
+    const FTransform SavedTransform = GetActorTransform();
+    const bool bWasHidden = IsHidden();
+    const bool bOldBlinkingActive = bBlinkingActive;
+    const bool bOldTalkingActive = bTalkingActive;
+	
     StopAllAnimationsForRefresh();
+	
+    // Перестраиваем компоненты на основе ассета
     OnConstruction(SavedTransform);
+	
     SetActorTransform(SavedTransform);
-    SetActorHiddenInGame(bOldHidden);
-    
-    // ИСПРАВЛЕНО: Восстанавливаем анимации только если это игровой мир
-    if (GetWorld() && GetWorld()->IsGameWorld())
-    {
-        EnableBlinking(bOldBlinkingActive);
-        EnableTalking(bOldTalkingActive);
-    }
-    else
-    {
-        // В редакторе оставляем анимации выключенными
-        // Они будут управляться через Action Panel
-        bBlinkingActive = false;
-        bTalkingActive = false;
-    }
+    SetActorHiddenInGame(bWasHidden);
+	
+    // ИСПРАВЛЕНО: ВСЕГДА восстанавливаем предыдущее состояние анимации.
+    // В игре это восстановит состояние после перезагрузки.
+    // В редакторе это сохранит состояние, установленное панелью действий.
+    EnableBlinking(bOldBlinkingActive);
+    EnableTalking(bOldTalkingActive);
 }
 
 void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)

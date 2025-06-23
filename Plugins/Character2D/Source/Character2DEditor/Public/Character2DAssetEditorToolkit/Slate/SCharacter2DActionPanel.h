@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Character2DAsset.h" // Для FCharacter2DEmotionSettings
 #include "TimerManager.h"
 
 // Прямые объявления для уменьшения зависимостей в заголовке
@@ -10,7 +9,8 @@ class UCharacter2DAsset;
 class ACharacter2DActor;
 
 /**
- * Панель действий для тестирования возможностей Character2D в редакторе
+ * Панель действий для тестирования возможностей Character2D в редакторе.
+ * Эта панель напрямую взаимодействует с PreviewActor для управления анимациями в реальном времени.
  */
 class SCharacter2DActionPanel : public SCompoundWidget
 {
@@ -20,78 +20,62 @@ public:
         SLATE_ARGUMENT(TWeakObjectPtr<ACharacter2DActor>, PreviewActor)
     SLATE_END_ARGS()
 
+    /** Конструирует виджет */
     void Construct(const FArguments& InArgs);
 
 private:
-    // === Ссылки ===
+    // === ССЫЛКИ ===
+    /** Редактируемый ассет, используется для изменения настроек Auto-Blink/Talk. */
     TWeakObjectPtr<UCharacter2DAsset> CharacterAsset;
+    /** Актор в окне предпросмотра, которым мы управляем. */
     TWeakObjectPtr<ACharacter2DActor> PreviewActor;
     
-    // === Виджеты для Auto Animations ===
+    // === ВИДЖЕТЫ ===
+    /** Чекбокс для управления свойством bAutoBlink в ассете. */
     TSharedPtr<SCheckBox> AutoBlinkCheckBox;
+    /** Чекбокс для управления свойством bAutoTalk в ассете. */
     TSharedPtr<SCheckBox> AutoTalkCheckBox;
-    TSharedPtr<STextBlock> AutoBlinkLabel;
-    TSharedPtr<STextBlock> AutoTalkLabel;
 
-    // === Флаги состояния ===
-    bool bBlinkingEnabled = false;
-    bool bTalkingEnabled = false;
+    // === СОСТОЯНИЕ UI ===
+    /** Хранит состояние видимости спрайтов, установленное через эту панель. */
     bool bSpritesVisible = true;
+    /** Хранит состояние видимости скелетных мешей, установленное через эту панель. */
     bool bSkeletalVisible = true;
     
-    // НОВОЕ: Editor-only флаги для preview (не влияют на игровую логику)
-    bool bPreviewBlinkingEnabled = false;
-    bool bPreviewTalkingEnabled = false;
-
-    // === Хэндлы таймеров ===
-    FTimerHandle BlinkTestHandle;
-    FTimerHandle TalkTestHandle;
-    FTimerHandle TransitionTestHandle;
-    FTimerHandle LocationSyncHandle;
-
 private:
-    // === Управление состоянием ===
-    void SyncStateFromActor();
-    void StopAllPreviewAnimations();
-    void EnsurePreviewVisible();
+    // === ПОСТРОЕНИЕ UI ===
+    TSharedRef<SWidget> BuildAutoAnimationsSection();      // Секция для настроек ассета (In-Game Behavior)
+    TSharedRef<SWidget> BuildAnimationTestingSection();    // Секция для управления предпросмотром (Editor-Only)
+    TSharedRef<SWidget> BuildVisibilityTestSection();      // Секция для управления видимостью
 
-    // === Построение UI ===
-    TSharedRef<SWidget> BuildAutoAnimationsSection();        // Секция Auto Animations (настройки ассета)
-    TSharedRef<SWidget> BuildAnimationTestingSection();      // Секция тестирования (только preview)
-    TSharedRef<SWidget> BuildVisibilityTestSection();
-
-    // === Быстрые действия ===
-    FReply OnResetCharacter();
-
-    // === Auto Animations (влияют на настройки ассета) ===
+    // === ОБРАБОТЧИКИ ДЛЯ НАСТРОЕК АССЕТА ===
     void OnAutoBlinkChanged(ECheckBoxState NewState);        
     void OnAutoTalkChanged(ECheckBoxState NewState);
     ECheckBoxState GetAutoBlinkState() const;
     ECheckBoxState GetAutoTalkState() const;
-    FSlateColor GetAutoBlinkColor() const;
-    FSlateColor GetAutoTalkColor() const;
 
-    // === Preview-only анимации (НЕ влияют на игровую логику) ===
+    // === ОБРАБОТЧИКИ ДЛЯ ПРЕДПРОСМОТРА В РЕДАКТОРЕ ===
+    /** Включает/выключает моргание для актора в предпросмотре. */
     void OnBlinkChanged(ECheckBoxState NewState);
+    /** Включает/выключает разговор для актора в предпросмотре. */
     void OnTalkChanged(ECheckBoxState NewState);
-    FReply OnTestBlink();
-    FReply OnTestTalk();
+    /** Возвращает текущее состояние моргания актора в предпросмотре. */
+    ECheckBoxState GetBlinkState() const;
+    /** Возвращает текущее состояние разговора актора в предпросмотре. */
+    ECheckBoxState GetTalkState() const;
+    /** Запускает однократное моргание. */
     FReply OnBlinkOnce();
 
-    // === Видимость ===
+    // === ОБРАБОТЧИКИ ВИДИМОСТИ ===
     void OnToggleSprites(ECheckBoxState NewState);
     void OnToggleSkeletal(ECheckBoxState NewState);
     ECheckBoxState GetSpritesVisibleState() const;
     ECheckBoxState GetSkeletalVisibleState() const;
     
-    // === НОВОЕ: Preview-specific методы ===
-    void SetPreviewBlinking(bool bEnable);
-    void SetPreviewTalking(bool bEnable);
-
-    // === Вспомогательные функции ===
+    // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+    /** Проверяет, действителен ли актор для предпросмотра. */
     bool IsPreviewActorValid() const
     {
         return PreviewActor.IsValid();
     }
-    
 };
