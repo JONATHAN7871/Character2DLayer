@@ -10,6 +10,9 @@ ACharacter2DActor::ACharacter2DActor()
 	PrimaryActorTick.bCanEverTick = true;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 
+	// Создаем компонент таймлайна
+	TransitionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("TransitionTimeline"));
+
 	SetupComponents();
 }
 
@@ -58,6 +61,14 @@ void ACharacter2DActor::BeginPlay()
 {
     Super::BeginPlay();
 	
+    // Привязываем функции обратного вызова к таймлайну
+    if (TransitionTimeline)
+    {
+        FOnTimelineEvent FinishedCallback;
+        FinishedCallback.BindUFunction(this, FName("HandleTransitionFinished"));
+        TransitionTimeline->SetTimelineFinishedFunc(FinishedCallback);
+    }
+	
     StoreOriginalValues();
 	
     if (CharacterAsset)
@@ -71,18 +82,17 @@ void ACharacter2DActor::BeginPlay()
             OriginalMouthSprite = CharacterAsset->GetMouthSprite().Sprite;
         }
 		
-        // ИСПРАВЛЕНО: Запускаем авто-анимации ТОЛЬКО в игровом мире.
-        // В редакторе начальное состояние всегда "выключено".
+        // ИСПРАВЛЕНО: Включаем Auto анимации только в игре, НЕ в редакторе
         if (GetWorld() && GetWorld()->IsGameWorld())
         {
-            if (CharacterAsset->bAutoBlink)
-            {
-                EnableBlinking(true);
-            }
-            if (CharacterAsset->bAutoTalk)
-            {
-                EnableTalking(true);
-            }
+            EnableBlinking(CharacterAsset->bAutoBlink);
+            EnableTalking(CharacterAsset->bAutoTalk);
+        }
+        else
+        {
+            // В редакторе всегда отключены по умолчанию
+            bBlinkingActive = false;
+            bTalkingActive = false;
         }
     }
 }
@@ -116,6 +126,173 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     // Это должно происходить только в BeginPlay для игровых акторов
     // В редакторе анимации контролируются вручную через Action Panel
 }
+
+// --- РЕАЛИЗАЦИЯ НОВЫХ ФУНКЦИЙ ---
+
+void ACharacter2DActor::Appear(UCurveFloat* Curve, float Duration)
+{
+    StartTransition(ECharacter2DTransitionState::Appearing, Curve, Duration);
+}
+
+void ACharacter2DActor::Disappear(UCurveFloat* Curve, float Duration)
+{
+    StartTransition(ECharacter2DTransitionState::Disappearing, Curve, Duration);
+}
+
+void ACharacter2DActor::StartTransition(ECharacter2DTransitionState NewState, UCurveFloat* Curve, float Duration)
+{
+    if (IsInTransition())
+    {
+        // Если уже идет анимация, прерываем ее, чтобы начать новую
+        StopCurrentTransition();
+    }
+
+    if (!Curve)
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("StartTransition: Curve is null. Aborting."));
+        return;
+    }
+
+    CurrentTransitionState = NewState;
+    CurrentTransitionCurve = Curve;
+
+    // Сохраняем оригинальные цвета всех спрайтов
+    OriginalSpriteColorsForTransition.Empty();
+    for (UPaperSpriteComponent* SpriteComp : GetAllSpriteComponents(true))
+    {
+        if (SpriteComp)
+        {
+            OriginalSpriteColorsForTransition.Add(SpriteComp, SpriteComp->GetSpriteColor());
+        }
+    }
+    
+    // Устанавливаем начальное состояние в зависимости от типа перехода
+    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
+    {
+        // Для появления начинаем с черных и полностью прозрачных спрайтов
+        const FLinearColor StartColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
+        for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
+        {
+            if (SpriteComp) SpriteComp->SetSpriteColor(StartColor);
+        }
+        // Скелетные меши тоже изначально невидимы
+        SetAllSkeletalOpacity(0.f);
+    }
+
+    // Настраиваем и запускаем таймлайн
+    if (TransitionTimeline)
+    {
+        // Останавливаем и очищаем предыдущую анимацию
+        TransitionTimeline->Stop();
+        
+        // Создаем новый трек для кривой
+        FOnTimelineFloat UpdateCallback;
+        UpdateCallback.BindUFunction(this, FName("HandleTransitionUpdate"));
+        TransitionTimeline->AddInterpFloat(CurrentTransitionCurve, UpdateCallback);
+        TransitionTimeline->SetPlayRate(1.0f / FMath::Max(Duration, 0.001f));
+        TransitionTimeline->PlayFromStart();
+    }
+}
+
+void ACharacter2DActor::StopCurrentTransition()
+{
+    if (!IsInTransition()) return;
+
+    TransitionTimeline->Stop();
+    HandleTransitionFinished(); // Вызываем вручную для очистки
+}
+
+void ACharacter2DActor::HandleTransitionUpdate(float Value)
+{
+    // 'Value' - это значение с кривой, обычно от 0 до 1
+
+    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
+    {
+        // Фаза 1: Появление (увеличение прозрачности) - от 0.0 до 0.5
+        // Фаза 2: Просветление (уход черного цвета) - от 0.5 до 1.0
+        if (Value <= 0.5f)
+        {
+            const float OpacityProgress = Value / 0.5f; // Переводим [0, 0.5] в [0, 1]
+            const FLinearColor CurrentColor(0.f, 0.f, 0.f, OpacityProgress);
+            SetAllSpritesColor(CurrentColor);
+            SetAllSkeletalOpacity(OpacityProgress);
+        }
+        else
+        {
+            const float ColorProgress = (Value - 0.5f) / 0.5f; // Переводим [0.5, 1] в [0, 1]
+            for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
+            {
+                if (SpriteComp)
+                {
+                    // Интерполируем от черного к оригинальному цвету
+                    FLinearColor NewColor = FMath::Lerp(FLinearColor::Black, OriginalColor, ColorProgress);
+                    NewColor.A = OriginalColor.A; // Сохраняем оригинальную прозрачность
+                    SpriteComp->SetSpriteColor(NewColor);
+                }
+            }
+            SetAllSkeletalOpacity(1.f); // Скелетные меши уже должны быть полностью видимы
+        }
+    }
+    else if (CurrentTransitionState == ECharacter2DTransitionState::Disappearing)
+    {
+        // Фаза 1: Затемнение (переход в черный цвет) - от 0.0 до 0.5
+        // Фаза 2: Исчезновение (уменьшение прозрачности) - от 0.5 до 1.0
+        if (Value <= 0.5f)
+        {
+            const float ColorProgress = Value / 0.5f;
+            for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
+            {
+                if (SpriteComp)
+                {
+                    FLinearColor NewColor = FMath::Lerp(OriginalColor, FLinearColor::Black, ColorProgress);
+                    NewColor.A = OriginalColor.A;
+                    SpriteComp->SetSpriteColor(NewColor);
+                }
+            }
+        }
+        else
+        {
+            const float OpacityProgress = (Value - 0.5f) / 0.5f;
+            const float FinalOpacity = 1.0f - OpacityProgress; // Инвертируем, чтобы идти от 1 к 0
+            const FLinearColor CurrentColor(0.f, 0.f, 0.f, FinalOpacity);
+            SetAllSpritesColor(CurrentColor);
+            SetAllSkeletalOpacity(FinalOpacity);
+        }
+    }
+
+    // Оповещаем Blueprint о текущем прогрессе
+    OnTransitionUpdate.Broadcast(CurrentTransitionState, Value);
+}
+
+void ACharacter2DActor::HandleTransitionFinished()
+{
+    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
+    {
+        // Гарантируем, что все цвета восстановлены в исходное состояние
+        for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
+        {
+            if (SpriteComp) SpriteComp->SetSpriteColor(OriginalColor);
+        }
+        SetAllSkeletalOpacity(1.f);
+    }
+    else if (CurrentTransitionState == ECharacter2DTransitionState::Disappearing)
+    {
+        // Гарантируем, что все стало полностью невидимым
+        const FLinearColor EndColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
+        SetAllSpritesColor(EndColor);
+        SetAllSkeletalOpacity(0.f);
+    }
+
+    // Оповещаем Blueprint о завершении
+    OnTransitionFinished.Broadcast(CurrentTransitionState);
+
+    // Сбрасываем состояние
+    CurrentTransitionState = ECharacter2DTransitionState::None;
+    CurrentTransitionCurve = nullptr;
+    OriginalSpriteColorsForTransition.Empty();
+}
+
+// --- СУЩЕСТВУЮЩИЕ ФУНКЦИИ ---
 
 void ACharacter2DActor::SetupHeadHierarchy()
 {
@@ -408,26 +585,29 @@ void ACharacter2DActor::SetBothVisible(bool bSprites, bool bSkeletal) { SetSprit
 void ACharacter2DActor::RefreshFromAsset()
 {
     if (!CharacterAsset) { UE_LOG(LogCharacter2DActor, Warning, TEXT("RefreshFromAsset: CharacterAsset is null")); return; }
-	
-    // Сохраняем текущее состояние ПЕРЕД обновлением
-    const FTransform SavedTransform = GetActorTransform();
-    const bool bWasHidden = IsHidden();
-    const bool bOldBlinkingActive = bBlinkingActive;
-    const bool bOldTalkingActive = bTalkingActive;
-	
+    bool bOldHidden = IsHidden();
+    FTransform SavedTransform = GetActorTransform();
+    bool bOldBlinkingActive = bBlinkingActive;
+    bool bOldTalkingActive = bTalkingActive;
+    
     StopAllAnimationsForRefresh();
-	
-    // Перестраиваем компоненты на основе ассета
     OnConstruction(SavedTransform);
-	
     SetActorTransform(SavedTransform);
-    SetActorHiddenInGame(bWasHidden);
-	
-    // ИСПРАВЛЕНО: ВСЕГДА восстанавливаем предыдущее состояние анимации.
-    // В игре это восстановит состояние после перезагрузки.
-    // В редакторе это сохранит состояние, установленное панелью действий.
-    EnableBlinking(bOldBlinkingActive);
-    EnableTalking(bOldTalkingActive);
+    SetActorHiddenInGame(bOldHidden);
+    
+    // ИСПРАВЛЕНО: Восстанавливаем анимации только если это игровой мир
+    if (GetWorld() && GetWorld()->IsGameWorld())
+    {
+        EnableBlinking(bOldBlinkingActive);
+        EnableTalking(bOldTalkingActive);
+    }
+    else
+    {
+        // В редакторе оставляем анимации выключенными
+        // Они будут управляться через Action Panel
+        bBlinkingActive = false;
+        bTalkingActive = false;
+    }
 }
 
 void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
