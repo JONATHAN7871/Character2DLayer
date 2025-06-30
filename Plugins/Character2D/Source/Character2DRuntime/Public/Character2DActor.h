@@ -8,23 +8,12 @@
 #include "Character2DAsset.h"
 #include "Character2DActor.generated.h"
 
-// Перечисление для отслеживания состояния перехода
 UENUM(BlueprintType)
-enum class ECharacter2DTransitionState : uint8
+enum class ECharacter2DEffectLayerIndex : uint8
 {
-    None,
-    Appearing,
-    Disappearing
-};
-
-// Перечисление для типов дефолтных кривых
-UENUM(BlueprintType)
-enum class ECharacter2DTransitionCurve : uint8
-{
-    Linear      UMETA(DisplayName = "Linear"),
-    Smooth      UMETA(DisplayName = "Smooth (Ease In-Out)"),
-    EaseIn      UMETA(DisplayName = "Ease In"),
-    EaseOut     UMETA(DisplayName = "Ease Out")
+	Effect1    UMETA(DisplayName = "Effect Layer 1"),
+	Effect2    UMETA(DisplayName = "Effect Layer 2"),
+	Effect3    UMETA(DisplayName = "Effect Layer 3"),
 };
 
 // Существующие делегаты
@@ -32,12 +21,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DBlinkFinished);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DTalkStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacter2DTalkStopped);
-
-/** Вызывается на каждом кадре анимации появления/исчезновения */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacter2DTransitionUpdate, ECharacter2DTransitionState, State, float, Progress);
-
-/** Вызывается по завершении анимации появления/исчезновения */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacter2DTransitionFinished, ECharacter2DTransitionState, State);
 
 UCLASS(BlueprintType, Blueprintable)
 class CHARACTER2DRUNTIME_API ACharacter2DActor : public AActor
@@ -62,11 +45,25 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect2;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Effects") TObjectPtr<UPaperSpriteComponent> SpriteEffect3;
 
-    /** Таймлайн для управления анимациями появления и исчезновения */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-    TObjectPtr<UTimelineComponent> TransitionTimeline;
+	/**
+ * @brief Вызывается, когда нужно показать или обновить слой эффекта. Реализуйте анимацию появления в Blueprint.
+ * @param LayerIndex Индекс слоя, который нужно показать.
+ * @param EffectSprite Спрайт для установки.
+ */
+	UFUNCTION(BlueprintImplementableEvent, Category="Character|Effects|Events", meta=(DisplayName="On Show Effect Animate"))
+	void OnShowEffect(ECharacter2DEffectLayerIndex LayerIndex, UPaperSprite* EffectSprite);
+    
+	/**
+	 * @brief Вызывается, когда нужно скрыть слой эффекта. Реализуйте анимацию исчезновения в Blueprint.
+	 * @param LayerIndex Индекс слоя, который нужно скрыть.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category="Character|Effects|Events", meta=(DisplayName="On Hide Effect Animate"))
+	void OnHideEffect(ECharacter2DEffectLayerIndex LayerIndex);
+	
+	/** Компонент тени как отдельный слой */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components|Shadow") 
+	TObjectPtr<UPaperSpriteComponent> SpriteShadow;
 
-    // НОВЫЕ КОМПОНЕНТЫ TIMELINE
     /** Таймлайн для управления анимацией моргания */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UTimelineComponent> BlinkTimeline;
@@ -83,7 +80,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bSkeletalVisible = true;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bBlinkingActive = false;
 	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bTalkingActive = false;
-	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsInTransition = false;
+	UPROPERTY(BlueprintReadOnly, Category="Character|Runtime") bool bIsFocused = false;
 
     // Events
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DBlinkStarted OnBlinkStarted;
@@ -91,17 +88,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStarted OnTalkStarted;
 	UPROPERTY(BlueprintAssignable, Category="Character|Events") FOnCharacter2DTalkStopped OnTalkStopped;
 
-    /** Событие, которое транслируется во время анимации появления/исчезновения. Прогресс изменяется от 0.0 до 1.0. */
-    UPROPERTY(BlueprintAssignable, Category="Character|Events|Transition")
-    FOnCharacter2DTransitionUpdate OnTransitionUpdate;
-
-    /** Событие, которое транслируется по завершении анимации появления/исчезновения. */
-    UPROPERTY(BlueprintAssignable, Category="Character|Events|Transition")
-    FOnCharacter2DTransitionFinished OnTransitionFinished;
-
     // API
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetSpritesVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetSkeletalVisible(bool bVisible);
+	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetAllSpritesVisible(bool bVisible);
+	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetAllSkeletalVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category="Character|Visibility") void SetBothVisible(bool bSprites, bool bSkeletal);
 	UFUNCTION(BlueprintCallable, Category="Character|Sprites") void SetEyebrowSprite(UPaperSprite* NewSprite);
 	UFUNCTION(BlueprintCallable, Category="Character|Sprites") void SetEyesSprite(UPaperSprite* NewSprite);
@@ -110,11 +101,58 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Character|Sprites") void SetHeadSprite(UPaperSprite* NewSprite);
 	UFUNCTION(BlueprintCallable, Category="Character|Sprites") void SetBodySprite(UPaperSprite* NewSprite);
 	UFUNCTION(BlueprintCallable, Category="Character|Sprites") void SetArmsSprite(UPaperSprite* NewSprite);
-	UFUNCTION(BlueprintCallable, Category="Character|Effects") void SetEffectLayer1(UPaperSprite* Sprite, bool bVisible = true, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Effects") void SetEffectLayer2(UPaperSprite* Sprite, bool bVisible = true, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Effects") void SetEffectLayer3(UPaperSprite* Sprite, bool bVisible = true, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
-	UFUNCTION(BlueprintCallable, Category="Character|Effects") void ShowEffectLayer(int32 LayerIndex, bool bShow);
-	UFUNCTION(BlueprintCallable, Category="Character|Effects") void ClearAllEffects();
+
+	/**
+	 * @brief Устанавливает новый цвет для всех основных спрайтов персонажа. Не влияет на тень.
+	 * @param NewColor Новый цвет. Прозрачность (Alpha) будет проигнорирована, используется текущая прозрачность каждого спрайта.
+	 * @param bIncludeEffects Включать ли в изменение цвета спрайты эффектов.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Character|Appearance")
+	void SetAllCharacterSpritesColor(const FLinearColor& NewColor, bool bIncludeEffects = true);
+	
+    // Effects API
+	UFUNCTION(BlueprintCallable, Category="Character|Effects") 
+	void SetEffectLayer(ECharacter2DEffectLayerIndex LayerIndex, UPaperSprite* Sprite, bool bVisible = true, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
+    
+	UFUNCTION(BlueprintCallable, Category="Character|Effects") 
+	void SetEffectLayerOpacity(ECharacter2DEffectLayerIndex LayerIndex, float Opacity);
+    
+	UFUNCTION(BlueprintCallable, Category="Character|Effects") 
+	void SetEffectLayerColor(ECharacter2DEffectLayerIndex LayerIndex, const FLinearColor& Color);
+    
+	/** Запускает логику показа/скрытия эффекта через события в Blueprint. */
+	UFUNCTION(BlueprintCallable, Category="Character|Effects") 
+	void ShowEffectLayer(ECharacter2DEffectLayerIndex LayerIndex, bool bShow);
+    
+	/** Запускает логику скрытия для всех активных эффектов через события в Blueprint. */
+	UFUNCTION(BlueprintCallable, Category="Character|Effects") 
+	void ClearAllEffects();
+    
+	/** Мгновенно скрывает слой эффекта, устанавливая его видимость в false. Вызывайте в конце анимации исчезновения. */
+	UFUNCTION(BlueprintCallable, Category="Character|Effects")
+	void ForceHideEffect(ECharacter2DEffectLayerIndex LayerIndex);
+    
+	/** Мгновенно скрывает все слои эффектов. */
+	UFUNCTION(BlueprintCallable, Category="Character|Effects")
+	void ForceHideAllEffects();
+
+	
+	/** Устанавливает спрайт тени и её параметры */
+	UFUNCTION(BlueprintCallable, Category="Character|Shadow")
+	void SetShadowLayer(UPaperSprite* Sprite, bool bVisible = true, const FLinearColor& Color = FLinearColor::Black, float Opacity = 0.5f);
+	
+	/** Устанавливает только прозрачность тени */
+	UFUNCTION(BlueprintCallable, Category="Character|Shadow")
+	void SetShadowOpacity(float Opacity);
+	
+	/** Устанавливает цвет тени */
+	UFUNCTION(BlueprintCallable, Category="Character|Shadow")
+	void SetShadowColor(const FLinearColor& Color);
+	
+	/** Показывает/скрывает тень */
+	UFUNCTION(BlueprintCallable, Category="Character|Shadow")
+	void SetShadowVisible(bool bVisible);
+	
 	UFUNCTION(BlueprintCallable, Category="Character|Animation") void EnableBlinking(bool bEnable);
 	UFUNCTION(BlueprintCallable, Category="Character|Animation") void EnableTalking(bool bEnable);
 	UFUNCTION(BlueprintCallable, Category="Character|Animation") bool IsBlinkingEnabled() const { return bBlinkingActive; }
@@ -123,17 +161,39 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Character|Runtime") void RefreshFromAsset();
 	UFUNCTION(BlueprintCallable, Category="Character|Runtime") void UpdateFromAssetPreserveState();
 
-    // Transition API
+	/**
+	 * @brief Устанавливает новый CharacterAsset и полностью обновляет актора.
+	 * @param NewAsset Новый ассет для применения.
+	 * @param bPreserveAnimationState Если true, состояние анимаций (моргание, разговор) будет сохранено и перезапущено. Если false, анимации будут остановлены.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Character|Runtime", meta=(DisplayName="Set Character Asset"))
+	void SetCharacterAsset(UCharacter2DAsset* NewAsset, bool bPreserveAnimationState = true);
+
+    // Transition API for Blueprint
     UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void Appear(float Duration = 1.0f, ECharacter2DTransitionCurve CurveType = ECharacter2DTransitionCurve::Smooth);
+    void Appear();
+    
     UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void AppearWithCustomCurve(UCurveFloat* Curve, float Duration = 1.0f);
-    UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void Disappear(float Duration = 1.0f, ECharacter2DTransitionCurve CurveType = ECharacter2DTransitionCurve::Smooth);
-    UFUNCTION(BlueprintCallable, Category="Character|Animation|Transition")
-    void DisappearWithCustomCurve(UCurveFloat* Curve, float Duration = 1.0f);
-    UFUNCTION(BlueprintPure, Category="Character|Animation|Transition")
-    bool IsInTransition() const { return bIsInTransition; }
+    void Disappear();
+    
+    UFUNCTION(BlueprintImplementableEvent, Category="Character|Animation|Transition", meta=(DisplayName="On Appear"))
+    void OnAppear();
+    
+    UFUNCTION(BlueprintImplementableEvent, Category="Character|Animation|Transition", meta=(DisplayName="On Disappear"))
+    void OnDisappear();
+    
+    // Focus API
+    UFUNCTION(BlueprintCallable, Category="Character|Focus")
+    void GainFocus();
+    
+    UFUNCTION(BlueprintCallable, Category="Character|Focus")
+    void LoseFocus();
+    
+    UFUNCTION(BlueprintImplementableEvent, Category="Character|Focus", meta=(DisplayName="On Focus Gained"))
+    void OnFocusGained();
+    
+    UFUNCTION(BlueprintImplementableEvent, Category="Character|Focus", meta=(DisplayName="On Focus Lost"))
+    void OnFocusLost();
 
 protected:
 	virtual void BeginPlay() override;
@@ -144,26 +204,28 @@ private:
 	void SetupComponents();
 	void StopAllAnimationsForRefresh();
 	bool AttachComponentToSocket(USceneComponent* Component, USkeletalMeshComponent* TargetMesh, FName SocketName, bool bUseSocketTransform);
+	USkeletalMeshComponent* GetSkeletalComponentByAttachmentTarget(ECharacter2DSkeletalAttachmentTarget Target) const;
 	void SetupHeadHierarchy();
 	void SetupEffectLayers();
+	void SetupShadowLayer();
 	void AttachHeadToSocket();
+	void AttachShadowToSocket();
+	void AttachSkeletalComponentToSocket(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part);
 	void SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part);
 	void SetupSpriteComponent(UPaperSpriteComponent* Component, TObjectPtr<UPaperSprite> Sprite, const FVector& Offset, float Scale, bool bIsVisible, const FLinearColor& Color = FLinearColor::White, float Opacity = 1.0f);
 	void AttachSpriteToSocket(UPaperSpriteComponent* SpriteComp, ECharacter2DAttachmentTarget TargetType, FName SocketName, bool bUseSocketTransform, const FVector& Offset, float Scale);
 	bool HasValidSprites() const;
 	bool HasValidSkeletalMeshes() const;
 	void StoreOriginalValues();
-	void SetAllSpritesOpacity(float Opacity);
-	void SetAllSpritesColor(const FLinearColor& Color);
-	void SetAllSkeletalOpacity(float Opacity);
-	TArray<UPaperSpriteComponent*> GetAllSpriteComponents(bool bIncludeEffects = true) const;
+	TArray<UPaperSpriteComponent*> GetAllSpriteComponents(bool bIncludeEffects = true, bool bIncludeShadow = false) const;
 	TArray<USkeletalMeshComponent*> GetAllSkeletalComponents() const;
 	USkeletalMeshComponent* GetSkeletalComponentByTarget(ECharacter2DAttachmentTarget Target) const;
+	UPaperSpriteComponent* GetEffectComponentByIndex(ECharacter2DEffectLayerIndex LayerIndex) const;
 	
 	// Blinking
     void StartBlinking();
     void StopBlinking();
-    void TriggerBlink(); // Запускает одно моргание (для таймера и BlinkOnce)
+    void TriggerBlink();
 	
 	// Talking
     void StartTalking();
@@ -171,47 +233,33 @@ private:
 
     void UpdateOriginalSprites();
     void RestoreEyelidsAfterBlink();
+    void RestoreEyelidsPartiallyAfterBlink(float OpenAmount); // New for double blinks
     void RestoreMouthAfterTalk();
 
 	// Timelines Callbacks
     UFUNCTION() void HandleBlinkTimelineUpdate(float Value);
     UFUNCTION() void HandleBlinkTimelineFinished();
-    UFUNCTION() void HandleTalkTimelineEvent();
-	
-    // Transition
-    UFUNCTION() void HandleTransitionUpdate(float Value);
-    UFUNCTION() void HandleTransitionFinished();
-    void StartTransition(ECharacter2DTransitionState NewState, UCurveFloat* Curve, float Duration);
-    void StopCurrentTransition();
+    UFUNCTION() void HandleTalkTimelineUpdate(float Value);
+    UFUNCTION() void HandleTalkTimelineFinished();
 
-	// Curves
-	void InitializeDefaultCurves();
-    UCurveFloat* GetDefaultCurve(ECharacter2DTransitionCurve CurveType) const;
-	
-    FTimerHandle BlinkTimerHandle; // Остается для интервала между морганиями
+    FTimerHandle BlinkTimerHandle;
+    FTimerHandle TalkTimerHandle;
+    FTimerHandle InterBlinkTimerHandle; // For delay between double blinks
+    
     bool bIsBlinking = false;
     bool bIsTalking = false;
-    bool bBlinkScheduleNext = false; // Определяет, нужно ли планировать следующее моргание
+    bool bBlinkScheduleNext = false;
+    int32 BlinksLeftInSequence = 0; // For double blinks
 
-    UPROPERTY() TObjectPtr<UCurveFloat> BlinkCurve; // Кривая для анимации моргания
+    UPROPERTY() TObjectPtr<UCurveFloat> BlinkCurve;
+    UPROPERTY() TObjectPtr<UCurveFloat> TalkCurve;
 
     TObjectPtr<UPaperFlipbook> CurrentBlinkFlipbook = nullptr;
+    TObjectPtr<UPaperFlipbook> CurrentTalkFlipbook = nullptr;
     TObjectPtr<UPaperSprite> OriginalEyelidsSprite = nullptr;
     TObjectPtr<UPaperSprite> OriginalMouthSprite = nullptr;
+    
 	FVector OriginalActorLocation;
 	FVector OriginalActorScale;
 	TMap<TObjectPtr<UPaperSpriteComponent>, FLinearColor> OriginalSpriteColors;
-	FVector MovementStartLocation;
-	FVector MovementTargetLocation;
-	FCharacter2DEmotionSettings CurrentEmotionSettings;
-	FCharacter2DMovementSettings CurrentMovementSettings;
-
-    ECharacter2DTransitionState CurrentTransitionState = ECharacter2DTransitionState::None;
-    TMap<TObjectPtr<UPaperSpriteComponent>, FLinearColor> OriginalSpriteColorsForTransition;
-
-	UPROPERTY() TObjectPtr<UCurveFloat> CurrentTransitionCurve;
-	UPROPERTY() TObjectPtr<UCurveFloat> DefaultLinearCurve;
-	UPROPERTY() TObjectPtr<UCurveFloat> DefaultSmoothCurve;
-	UPROPERTY() TObjectPtr<UCurveFloat> DefaultEaseInCurve;
-	UPROPERTY() TObjectPtr<UCurveFloat> DefaultEaseOutCurve;
 };

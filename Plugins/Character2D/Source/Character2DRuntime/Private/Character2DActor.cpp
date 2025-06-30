@@ -11,42 +11,62 @@ ACharacter2DActor::ACharacter2DActor(const FObjectInitializer& ObjInit)
     PrimaryActorTick.bCanEverTick = true;
 
     // Корень и таймлайн-компоненты
-    RootComponent        = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-    TransitionTimeline   = CreateDefaultSubobject<UTimelineComponent>(TEXT("TransitionTimeline"));
-    BlinkTimeline        = CreateDefaultSubobject<UTimelineComponent>(TEXT("BlinkTimeline"));
-    TalkTimeline         = CreateDefaultSubobject<UTimelineComponent>(TEXT("TalkTimeline"));
+    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    BlinkTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("BlinkTimeline"));
+    TalkTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("TalkTimeline"));
 
-    // Кривые создаём как default-subobjects, им даётся имя
-    DefaultLinearCurve   = CreateDefaultSubobject<UCurveFloat>(TEXT("DefaultLinearCurve"));
-    DefaultSmoothCurve   = CreateDefaultSubobject<UCurveFloat>(TEXT("DefaultSmoothCurve"));
-    DefaultEaseInCurve   = CreateDefaultSubobject<UCurveFloat>(TEXT("DefaultEaseInCurve"));
-    DefaultEaseOutCurve  = CreateDefaultSubobject<UCurveFloat>(TEXT("DefaultEaseOutCurve"));
-    BlinkCurve           = CreateDefaultSubobject<UCurveFloat>(TEXT("BlinkCurve"));
+    // Кривые для анимаций
+    BlinkCurve = CreateDefaultSubobject<UCurveFloat>(TEXT("BlinkCurve"));
+    TalkCurve = CreateDefaultSubobject<UCurveFloat>(TEXT("TalkCurve"));
 
     // Спрайты и остальное
     SetupComponents();
+}
 
-    // Только здесь заполняем FloatCurve у уже созданных саб-объектов
-    InitializeDefaultCurves();
+void ACharacter2DActor::SetCharacterAsset(UCharacter2DAsset* NewAsset, bool bPreserveAnimationState)
+{
+    if (!IsValid(NewAsset) || NewAsset == CharacterAsset)
+    {
+        if (NewAsset == CharacterAsset)
+        {
+            UE_LOG(LogCharacter2DActor, Log, TEXT("SetCharacterAsset: Attempted to set the same asset. No changes were made."));
+        }
+        return;
+    }
+
+    const bool bRestoreBlink = bPreserveAnimationState && bBlinkingActive;
+    const bool bRestoreTalk = bPreserveAnimationState && bTalkingActive;
+
+    // Полностью останавливаем анимации и сбрасываем состояние, связанное со СТАРЫМ ассетом
+    StopBlinking();
+    StopTalking();
+    StopAllAnimationsForRefresh();
+    OriginalEyelidsSprite = nullptr;
+    OriginalMouthSprite = nullptr;
+    
+    CharacterAsset = NewAsset;
+    RefreshFromAsset();
+
+    // Безопасно перезапускаем анимации, если нужно, используя данные из НОВОГО ассета
+    if (bRestoreBlink)
+    {
+        EnableBlinking(true);
+    }
+    if (bRestoreTalk)
+    {
+        EnableTalking(true);
+    }
 }
 
 void ACharacter2DActor::RestoreEyelidsAfterBlink()
 {
-    if (IsValid(SpriteEyelids))
+    if (IsValid(SpriteEyelids) && CharacterAsset)
     {
-        if (OriginalEyelidsSprite)
-        {
-            SpriteEyelids->SetSprite(OriginalEyelidsSprite);
-        }
-        else if(CharacterAsset)
-        {
-            SpriteEyelids->SetSprite(CharacterAsset->GetEyelidsSprite().Sprite);
-        }
+        // Восстанавливаем либо сохраненный оригинальный спрайт, либо спрайт из ассета
+        SpriteEyelids->SetSprite(OriginalEyelidsSprite ? OriginalEyelidsSprite : CharacterAsset->GetEyelidsSprite().Sprite);
         
-        if (CharacterAsset)
-        {
-            SpriteEyelids->SetVisibility(CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids) && bSpritesVisible);
-        }
+        // Корректно устанавливаем видимость на основе данных ассета
+        SpriteEyelids->SetVisibility(CharacterAsset->SpriteStructure.Head.GetFinalChildVisibility(CharacterAsset->SpriteStructure.Head.Eyelids) && bSpritesVisible);
     }
 }
 
@@ -57,15 +77,12 @@ void ACharacter2DActor::StartTalking()
     UE_LOG(LogCharacter2DActor, Log, TEXT("StartTalking called"));
     
     bIsTalking = true;
+    CurrentTalkFlipbook = CharacterAsset->GetTalkSettings().TalkFlipbook;
     OnTalkStarted.Broadcast();
 
-    // Настраиваем длительность цикла таймлайна
-    const auto& Settings = CharacterAsset->GetTalkSettings();
-    TalkTimeline->SetTimelineLength(Settings.MouthChangeInterval);
-
-    // Сразу меняем спрайт, чтобы не ждать первого цикла
-    HandleTalkTimelineEvent(); 
-    TalkTimeline->Play();
+    // Настраиваем естественную анимацию разговора
+    HandleTalkTimelineUpdate(0.0f); // Устанавливаем первый кадр
+    HandleTalkTimelineFinished(); // Планируем следующую смену
 }
 
 void ACharacter2DActor::StopTalking()
@@ -73,40 +90,67 @@ void ACharacter2DActor::StopTalking()
     UE_LOG(LogCharacter2DActor, Log, TEXT("StopTalking called"));
     
     bIsTalking = false;
+    GetWorldTimerManager().ClearTimer(TalkTimerHandle);
+    
     if (TalkTimeline->IsPlaying())
     {
         TalkTimeline->Stop();
     }
     
+    CurrentTalkFlipbook = nullptr;
     RestoreMouthAfterTalk();
     OnTalkStopped.Broadcast();
 }
 
-void ACharacter2DActor::HandleTalkTimelineEvent()
+void ACharacter2DActor::HandleTalkTimelineUpdate(float Value)
 {
-    // Эта функция вызывается в начале каждого цикла TalkTimeline
-    if (!bIsTalking || !CharacterAsset || !IsValid(SpriteMouth)) 
+    if (!bIsTalking || !CurrentTalkFlipbook || !IsValid(SpriteMouth)) 
     {
-        StopTalking(); 
-        return; 
+        return;
     }
 
     const auto& Settings = CharacterAsset->GetTalkSettings();
-    if (!Settings.TalkFlipbook)
-    {
-        StopTalking();
-        return;
-    }
+    const int32 NumFrames = CurrentTalkFlipbook->GetNumFrames();
     
-    const int32 NumFrames = Settings.TalkFlipbook->GetNumFrames();
     if (NumFrames > 0)
     {
-        const int32 RandomIndex = FMath::RandRange(0, NumFrames - 1);
-        if (UPaperSprite* RandomMouthSprite = Settings.TalkFlipbook->GetSpriteAtFrame(RandomIndex))
+        // Проверяем шанс повторения кадра для более естественной речи
+        static int32 LastFrameIndex = -1;
+        int32 NewFrameIndex = LastFrameIndex;
+        
+        if (FMath::FRand() > Settings.FrameRepeatChance || LastFrameIndex == -1)
         {
-            SpriteMouth->SetSprite(RandomMouthSprite);
+            // Выбираем новый кадр, отличный от предыдущего
+            do {
+                NewFrameIndex = FMath::RandRange(0, NumFrames - 1);
+            } while (NewFrameIndex == LastFrameIndex && NumFrames > 1);
+        }
+        
+        LastFrameIndex = NewFrameIndex;
+        
+        if (UPaperSprite* MouthSprite = CurrentTalkFlipbook->GetSpriteAtFrame(NewFrameIndex))
+        {
+            SpriteMouth->SetSprite(MouthSprite);
         }
     }
+}
+
+void ACharacter2DActor::HandleTalkTimelineFinished()
+{
+    if (!bIsTalking || !CharacterAsset) return;
+    
+    // Планируем следующую смену с вариативным интервалом
+    const auto& Settings = CharacterAsset->GetTalkSettings();
+    const float NextDelay = FMath::FRandRange(Settings.MouthChangeIntervalMin, Settings.MouthChangeIntervalMax);
+    
+    GetWorldTimerManager().SetTimer(TalkTimerHandle, [this]()
+    {
+        if (bIsTalking)
+        {
+            HandleTalkTimelineUpdate(0.0f);
+            HandleTalkTimelineFinished();
+        }
+    }, NextDelay, false);
 }
 
 void ACharacter2DActor::RestoreMouthAfterTalk()
@@ -132,46 +176,57 @@ void ACharacter2DActor::RestoreMouthAfterTalk()
 void ACharacter2DActor::SetSpritesVisible(bool bVisible)
 {
     bSpritesVisible = bVisible;
-    for (UPaperSpriteComponent* Component : GetAllSpriteComponents()) { if(Component) Component->SetVisibility(bVisible && Component->GetSprite() != nullptr); }
+    for (UPaperSpriteComponent* Component : GetAllSpriteComponents(true, true)) 
+    { 
+        if(Component) Component->SetVisibility(bVisible && Component->GetSprite() != nullptr); 
+    }
     if(CharacterAsset) SetupHeadHierarchy();
 }
 
 void ACharacter2DActor::SetSkeletalVisible(bool bVisible)
 {
     bSkeletalVisible = bVisible;
-    for (USkeletalMeshComponent* Component : GetAllSkeletalComponents()) { if(Component) Component->SetVisibility(bVisible); }
+    for (USkeletalMeshComponent* Component : GetAllSkeletalComponents()) 
+    { 
+        if(Component) Component->SetVisibility(bVisible); 
+    }
 }
 
-void ACharacter2DActor::SetBothVisible(bool bSprites, bool bSkeletal) { SetSpritesVisible(bSprites); SetSkeletalVisible(bSkeletal); }
+void ACharacter2DActor::SetBothVisible(bool bSprites, bool bSkeletal) 
+{ 
+    SetSpritesVisible(bSprites); 
+    SetSkeletalVisible(bSkeletal); 
+}
 
 void ACharacter2DActor::RefreshFromAsset()
 {
-    if (!CharacterAsset) { UE_LOG(LogCharacter2DActor, Warning, TEXT("RefreshFromAsset: CharacterAsset is null")); return; }
+    if (!CharacterAsset) 
+    { 
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("RefreshFromAsset: CharacterAsset is null")); 
+        return; 
+    }
     
-    bool bOldHidden = IsHidden();
-    FTransform SavedTransform = GetActorTransform();
-    bool bOldBlinkingActive = bBlinkingActive;
-    bool bOldTalkingActive = bTalkingActive;
+    const FTransform SavedTransform = GetActorTransform();
+    const bool bWasHidden = IsHidden();
+    const bool bWasBlinkingActive = bBlinkingActive;
+    const bool bWasTalkingActive = bTalkingActive;
     
     StopAllAnimationsForRefresh();
     OnConstruction(SavedTransform);
-    SetActorTransform(SavedTransform);
-    SetActorHiddenInGame(bOldHidden);
     
-    // ИСПРАВЛЕНО: Восстанавливаем анимации только если это игровой мир
+    SetActorTransform(SavedTransform);
+    SetActorHiddenInGame(bWasHidden);
+    
+    bBlinkingActive = bWasBlinkingActive;
+    bTalkingActive = bWasTalkingActive;
+
     if (GetWorld() && GetWorld()->IsGameWorld())
     {
-        EnableBlinking(bOldBlinkingActive);
-        EnableTalking(bOldTalkingActive);
+        EnableBlinking(bBlinkingActive);
+        EnableTalking(bTalkingActive);
     }
     else
     {
-        // В редакторе восстанавливаем состояние анимаций (управляется через Action Panel)
-        // НЕ запускаем автоматически, но сохраняем флаги активности
-        bBlinkingActive = bOldBlinkingActive;
-        bTalkingActive = bOldTalkingActive;
-        
-        // Если анимации были активны, перезапускаем их
         if (bBlinkingActive && !bIsBlinking) StartBlinking();
         if (bTalkingActive && !bIsTalking) StartTalking();
     }
@@ -185,24 +240,28 @@ void ACharacter2DActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ACharacter2DActor::StopAllAnimationsForRefresh()
 {
-    GetWorldTimerManager().ClearAllTimersForObject(this); // Очищаем все таймеры
+    GetWorldTimerManager().ClearAllTimersForObject(this);
 
     if (BlinkTimeline && BlinkTimeline->IsPlaying()) BlinkTimeline->Stop();
     if (TalkTimeline && TalkTimeline->IsPlaying()) TalkTimeline->Stop();
-    if (TransitionTimeline && TransitionTimeline->IsPlaying()) TransitionTimeline->Stop();
     
     bIsBlinking = false;
-    bIsTalking  = false;
-    bIsInTransition = false;
+    bIsTalking = false;
 }
 
 void ACharacter2DActor::UpdateFromAssetPreserveState()
 {
     if (!CharacterAsset) return;
     TMap<TObjectPtr<UPaperSpriteComponent>, TObjectPtr<UPaperSprite>> SavedSprites;
-    for(auto* Comp : GetAllSpriteComponents()) { if(Comp) SavedSprites.Add(Comp, Comp->GetSprite()); }
+    for(auto* Comp : GetAllSpriteComponents(true, true)) 
+    { 
+        if(Comp) SavedSprites.Add(Comp, Comp->GetSprite()); 
+    }
     RefreshFromAsset();
-    for (const auto& Pair : SavedSprites) { if (Pair.Key && Pair.Value) Pair.Key->SetSprite(Pair.Value); }
+    for (const auto& Pair : SavedSprites) 
+    { 
+        if (Pair.Key && Pair.Value) Pair.Key->SetSprite(Pair.Value); 
+    }
 }
 
 void ACharacter2DActor::StoreOriginalValues()
@@ -210,34 +269,100 @@ void ACharacter2DActor::StoreOriginalValues()
     OriginalActorLocation = GetActorLocation();
     OriginalActorScale = GetActorScale3D();
     OriginalSpriteColors.Empty();
-    for (UPaperSpriteComponent* Component : GetAllSpriteComponents()) { if(Component) OriginalSpriteColors.Add(Component, Component->GetSpriteColor()); }
+    for (UPaperSpriteComponent* Component : GetAllSpriteComponents(true, true)) 
+    { 
+        if(Component) OriginalSpriteColors.Add(Component, Component->GetSpriteColor()); 
+    }
 }
 
-TArray<UPaperSpriteComponent*> ACharacter2DActor::GetAllSpriteComponents(bool bIncludeEffects) const
+TArray<UPaperSpriteComponent*> ACharacter2DActor::GetAllSpriteComponents(bool bIncludeEffects, bool bIncludeShadow) const
 {
     TArray<UPaperSpriteComponent*> Components = {SpriteBody, SpriteArms, SpriteHead, SpriteEyebrow, SpriteEyes, SpriteEyelids, SpriteMouth};
     if(bIncludeEffects) Components.Append({SpriteEffect1, SpriteEffect2, SpriteEffect3});
+    if(bIncludeShadow) Components.Add(SpriteShadow);
     return Components;
 }
 
-TArray<USkeletalMeshComponent*> ACharacter2DActor::GetAllSkeletalComponents() const { return {BodyComponent, ArmsComponent, HeadComponent}; }
+TArray<USkeletalMeshComponent*> ACharacter2DActor::GetAllSkeletalComponents() const 
+{ 
+    return {BodyComponent, ArmsComponent, HeadComponent}; 
+}
 
 USkeletalMeshComponent* ACharacter2DActor::GetSkeletalComponentByTarget(ECharacter2DAttachmentTarget Target) const
 {
-    switch (Target) { case ECharacter2DAttachmentTarget::Body: return BodyComponent; case ECharacter2DAttachmentTarget::Arms: return ArmsComponent; case ECharacter2DAttachmentTarget::Head: return HeadComponent; default: return nullptr; }
+    switch (Target) 
+    { 
+        case ECharacter2DAttachmentTarget::Body: return BodyComponent; 
+        case ECharacter2DAttachmentTarget::Arms: return ArmsComponent; 
+        case ECharacter2DAttachmentTarget::Head: return HeadComponent; 
+        default: return nullptr; 
+    }
 }
 
-bool ACharacter2DActor::HasValidSprites() const { return CharacterAsset && CharacterAsset->HasValidSpriteConfiguration(); }
-bool ACharacter2DActor::HasValidSkeletalMeshes() const { return CharacterAsset && CharacterAsset->HasValidSkeletalConfiguration(); }
+USkeletalMeshComponent* ACharacter2DActor::GetSkeletalComponentByAttachmentTarget(ECharacter2DSkeletalAttachmentTarget Target) const
+{
+    switch (Target) 
+    { 
+        case ECharacter2DSkeletalAttachmentTarget::Body: return BodyComponent; 
+        default: return nullptr; 
+    }
+}
+
+bool ACharacter2DActor::HasValidSprites() const 
+{ 
+    return CharacterAsset && CharacterAsset->HasValidSpriteConfiguration(); 
+}
+
+bool ACharacter2DActor::HasValidSkeletalMeshes() const 
+{ 
+    return CharacterAsset && CharacterAsset->HasValidSkeletalConfiguration(); 
+}
+
+void ACharacter2DActor::AttachSkeletalComponentToSocket(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part)
+{
+    if (!Component || !CharacterAsset || Part.AttachmentTarget == ECharacter2DSkeletalAttachmentTarget::None) 
+    {
+        return;
+    }
+    
+    USkeletalMeshComponent* TargetComponent = GetSkeletalComponentByAttachmentTarget(Part.AttachmentTarget);
+    if (AttachComponentToSocket(Component, TargetComponent, Part.SocketName, Part.bUseSocketTransform))
+    {
+        UE_LOG(LogCharacter2DActor, Log, TEXT("Attached skeletal component %s to socket %s"), 
+               *Component->GetName(), *Part.SocketName.ToString());
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DActor, Warning, TEXT("Failed to attach skeletal component %s to socket %s"), 
+               *Component->GetName(), *Part.SocketName.ToString());
+    }
+}
 
 void ACharacter2DActor::SetupSkeletalComponent(USkeletalMeshComponent* Component, const FCharacter2DSkeletalPart& Part)
 {
     if (!Component || !CharacterAsset) return;
+    
     Component->SetSkeletalMesh(Part.Mesh);
     Component->SetAnimInstanceClass(Part.AnimInstance);
-    for (const auto& Material : Part.Materials) { Component->SetMaterial(Material.SlotIndex, Material.Material); }
-    Component->SetRelativeLocation(Part.Offset + CharacterAsset->SkeletalGlobalOffset);
-    Component->SetRelativeScale3D(FVector(Part.Scale * CharacterAsset->GlobalScale));
+    
+    for (const auto& Material : Part.Materials) 
+    { 
+        Component->SetMaterial(Material.SlotIndex, Material.Material); 
+    }
+    
+    // Если компонент не аттачится к сокету, применяем offset и scale
+    if (Part.AttachmentTarget == ECharacter2DSkeletalAttachmentTarget::None)
+    {
+        Component->SetRelativeLocation(Part.Offset + CharacterAsset->SkeletalGlobalOffset);
+        Component->SetRelativeScale3D(FVector(Part.Scale * CharacterAsset->GlobalScale));
+    }
+    else
+    {
+        // Если аттачится к сокету, offset и scale будут применены после аттачмента
+        Component->SetRelativeLocation(Part.Offset);
+        Component->SetRelativeScale3D(FVector(Part.Scale));
+    }
+    
     Component->SetVisibility(Part.Mesh != nullptr && bSkeletalVisible);
 }
 
@@ -273,40 +398,11 @@ bool ACharacter2DActor::AttachComponentToSocket(USceneComponent* Component, USke
 {
     if (!Component || !TargetMesh || SocketName == NAME_None || !TargetMesh->DoesSocketExist(SocketName)) return false;
     Component->AttachToComponent(TargetMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-    if(bUseSocketTransform) { Component->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator); }
+    if(bUseSocketTransform) 
+    { 
+        Component->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator); 
+    }
     return true;
-}
-
-void ACharacter2DActor::SetAllSpritesOpacity(float Opacity)
-{
-    for (UPaperSpriteComponent* Component : GetAllSpriteComponents()) { if (Component) { FLinearColor C = Component->GetSpriteColor(); C.A = FMath::Clamp(Opacity, 0.f, 1.f); Component->SetSpriteColor(C); } }
-}
-
-void ACharacter2DActor::SetAllSpritesColor(const FLinearColor& Color)
-{
-    for (UPaperSpriteComponent* Component : GetAllSpriteComponents()) { if (Component) { FLinearColor C = Color; C.A = Component->GetSpriteColor().A; Component->SetSpriteColor(C); } }
-}
-
-void ACharacter2DActor::SetAllSkeletalOpacity(float Opacity)
-{
-    for (USkeletalMeshComponent* Component : GetAllSkeletalComponents()) { if (Component) Component->SetVisibility((Opacity > 0.01f) && bSkeletalVisible); }
-}
-
-UCurveFloat* ACharacter2DActor::GetDefaultCurve(ECharacter2DTransitionCurve CurveType) const
-{
-	switch(CurveType)
-	{
-		case ECharacter2DTransitionCurve::Linear:
-			return DefaultLinearCurve;
-		case ECharacter2DTransitionCurve::Smooth:
-			return DefaultSmoothCurve;
-		case ECharacter2DTransitionCurve::EaseIn:
-			return DefaultEaseInCurve;
-		case ECharacter2DTransitionCurve::EaseOut:
-			return DefaultEaseOutCurve;
-		default:
-			return DefaultSmoothCurve; // По умолчанию используем smooth
-	}
 }
 
 void ACharacter2DActor::SetupComponents()
@@ -328,6 +424,7 @@ void ACharacter2DActor::SetupComponents()
 	SpriteEffect1 = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteEffect1"));
 	SpriteEffect2 = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteEffect2"));
 	SpriteEffect3 = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteEffect3"));
+	SpriteShadow = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("SpriteShadow"));
 
 	SpriteBody->SetupAttachment(RootComponent);
 	SpriteArms->SetupAttachment(RootComponent);
@@ -339,8 +436,10 @@ void ACharacter2DActor::SetupComponents()
 	SpriteEffect1->SetupAttachment(SpriteHead);
 	SpriteEffect2->SetupAttachment(SpriteHead);
 	SpriteEffect3->SetupAttachment(SpriteHead);
+	// Shadow теперь отдельный слой, аттачим к root
+	SpriteShadow->SetupAttachment(RootComponent);
 
-	for (UPaperSpriteComponent* Component : GetAllSpriteComponents())
+	for (UPaperSpriteComponent* Component : GetAllSpriteComponents(true, true))
 	{
 		if (Component)
 		{
@@ -354,40 +453,31 @@ void ACharacter2DActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    // --- Привязка функций к таймлайну переходов ---
-    if (TransitionTimeline)
-    {
-        FOnTimelineFloat TransitionUpdateCallback;
-        TransitionUpdateCallback.BindUFunction(this, FName("HandleTransitionUpdate"));
-        TransitionTimeline->SetLooping(false);
-        // Добавление кривой будет происходить в StartTransition
-        
-        FOnTimelineEvent TransitionFinishedCallback;
-        TransitionFinishedCallback.BindUFunction(this, FName("HandleTransitionFinished"));
-        TransitionTimeline->SetTimelineFinishedFunc(TransitionFinishedCallback);
-    }
-
-    // --- НОВОЕ: Привязка функций к таймлайну моргания ---
+    // Привязка функций к таймлайну моргания
     if (BlinkTimeline)
     {
         FOnTimelineFloat BlinkUpdateCallback;
         BlinkUpdateCallback.BindUFunction(this, FName("HandleBlinkTimelineUpdate"));
         BlinkTimeline->AddInterpFloat(BlinkCurve, BlinkUpdateCallback);
         BlinkTimeline->SetLooping(false);
+        BlinkTimeline->SetTimelineLength(1.0f);
 
         FOnTimelineEvent BlinkFinishedCallback;
         BlinkFinishedCallback.BindUFunction(this, FName("HandleBlinkTimelineFinished"));
         BlinkTimeline->SetTimelineFinishedFunc(BlinkFinishedCallback);
     }
 
-    // --- НОВОЕ: Привязка функций к таймлайну разговора ---
+    // Привязка функций к таймлайну разговора
     if (TalkTimeline)
     {
-        FOnTimelineEvent TalkEventCallback;
-        TalkEventCallback.BindUFunction(this, FName("HandleTalkTimelineEvent"));
-        // Событие срабатывает в самом начале каждого цикла
-        TalkTimeline->AddEvent(0.0f, TalkEventCallback);
-        TalkTimeline->SetLooping(true);
+        FOnTimelineFloat TalkUpdateCallback;
+        TalkUpdateCallback.BindUFunction(this, FName("HandleTalkTimelineUpdate"));
+        TalkTimeline->AddInterpFloat(TalkCurve, TalkUpdateCallback);
+        TalkTimeline->SetLooping(false);
+
+        FOnTimelineEvent TalkFinishedCallback;
+        TalkFinishedCallback.BindUFunction(this, FName("HandleTalkTimelineFinished"));
+        TalkTimeline->SetTimelineFinishedFunc(TalkFinishedCallback);
     }
 	
     StoreOriginalValues();
@@ -409,9 +499,14 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     if (!CharacterAsset) return;
 
+    // Настройка skeletal компонентов
     SetupSkeletalComponent(BodyComponent, CharacterAsset->Body);
     SetupSkeletalComponent(ArmsComponent, CharacterAsset->Arms);
     SetupSkeletalComponent(HeadComponent, CharacterAsset->Head);
+    
+    // Аттач skeletal компонентов к сокетам (если настроено)
+    AttachSkeletalComponentToSocket(ArmsComponent, CharacterAsset->Arms);
+    AttachSkeletalComponentToSocket(HeadComponent, CharacterAsset->Head);
 
     const auto& BodySpriteData = CharacterAsset->GetBodySprite();
     const auto& ArmsSpriteData = CharacterAsset->GetArmsSprite();
@@ -425,19 +520,18 @@ void ACharacter2DActor::OnConstruction(const FTransform& Transform)
     AttachHeadToSocket();
 
     SetupEffectLayers();
+    SetupShadowLayer();
+    AttachShadowToSocket();
     SetSpritesVisible(HasValidSprites());
     SetSkeletalVisible(HasValidSkeletalMeshes());
 	
-    // ИСПРАВЛЕНО: Обновляем оригинальные спрайты после конструкции
     UpdateOriginalSprites();
 }
 
-// НОВАЯ ФУНКЦИЯ: Обновляет оригинальные спрайты из текущего состояния ассета
 void ACharacter2DActor::UpdateOriginalSprites()
 {
     if (!CharacterAsset) return;
     
-    // Сохраняем текущие спрайты как "оригинальные" для анимаций
     if (SpriteEyelids && CharacterAsset->GetEyelidsSprite().Sprite)
     {
         OriginalEyelidsSprite = CharacterAsset->GetEyelidsSprite().Sprite;
@@ -452,175 +546,6 @@ void ACharacter2DActor::UpdateOriginalSprites()
            OriginalEyelidsSprite ? *OriginalEyelidsSprite->GetName() : TEXT("None"),
            OriginalMouthSprite ? *OriginalMouthSprite->GetName() : TEXT("None"));
 }
-
-// --- ОБНОВЛЕННЫЕ ФУНКЦИИ ПОЯВЛЕНИЯ/ИСЧЕЗНОВЕНИЯ ---
-
-void ACharacter2DActor::Appear(float Duration, ECharacter2DTransitionCurve CurveType)
-{
-    UCurveFloat* CurveToUse = GetDefaultCurve(CurveType);
-    StartTransition(ECharacter2DTransitionState::Appearing, CurveToUse, Duration);
-}
-
-void ACharacter2DActor::AppearWithCustomCurve(UCurveFloat* Curve, float Duration)
-{
-    if (!Curve)
-    {
-        UE_LOG(LogCharacter2DActor, Warning, TEXT("AppearWithCustomCurve: Custom curve is null, using default smooth curve"));
-        Curve = GetDefaultCurve(ECharacter2DTransitionCurve::Smooth);
-    }
-    StartTransition(ECharacter2DTransitionState::Appearing, Curve, Duration);
-}
-
-void ACharacter2DActor::Disappear(float Duration, ECharacter2DTransitionCurve CurveType)
-{
-    UCurveFloat* CurveToUse = GetDefaultCurve(CurveType);
-    StartTransition(ECharacter2DTransitionState::Disappearing, CurveToUse, Duration);
-}
-
-void ACharacter2DActor::DisappearWithCustomCurve(UCurveFloat* Curve, float Duration)
-{
-    if (!Curve)
-    {
-        UE_LOG(LogCharacter2DActor, Warning, TEXT("DisappearWithCustomCurve: Custom curve is null, using default smooth curve"));
-        Curve = GetDefaultCurve(ECharacter2DTransitionCurve::Smooth);
-    }
-    StartTransition(ECharacter2DTransitionState::Disappearing, Curve, Duration);
-}
-
-void ACharacter2DActor::StartTransition(ECharacter2DTransitionState NewState, UCurveFloat* Curve, float Duration)
-{
-    if (IsInTransition())
-    {
-        StopCurrentTransition();
-    }
-
-    if (!Curve)
-    {
-        UE_LOG(LogCharacter2DActor, Warning, TEXT("StartTransition: Curve is null, using default smooth curve"));
-        Curve = GetDefaultCurve(ECharacter2DTransitionCurve::Smooth);
-    }
-
-    CurrentTransitionState = NewState;
-    CurrentTransitionCurve = Curve;
-
-    OriginalSpriteColorsForTransition.Empty();
-    for (UPaperSpriteComponent* SpriteComp : GetAllSpriteComponents(true))
-    {
-        if (SpriteComp)
-        {
-            OriginalSpriteColorsForTransition.Add(SpriteComp, SpriteComp->GetSpriteColor());
-        }
-    }
-    
-    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
-    {
-        const FLinearColor StartColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
-        for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
-        {
-            if (SpriteComp) SpriteComp->SetSpriteColor(StartColor);
-        }
-        SetAllSkeletalOpacity(0.f);
-    }
-
-    if (TransitionTimeline)
-    {
-        TransitionTimeline->Stop();
-        
-        FOnTimelineFloat UpdateCallback;
-        UpdateCallback.BindUFunction(this, FName("HandleTransitionUpdate"));
-        TransitionTimeline->AddInterpFloat(CurrentTransitionCurve, UpdateCallback);
-        TransitionTimeline->SetPlayRate(1.0f / FMath::Max(Duration, 0.001f));
-        TransitionTimeline->PlayFromStart();
-    }
-}
-
-void ACharacter2DActor::StopCurrentTransition()
-{
-    if (!IsInTransition()) return;
-
-    TransitionTimeline->Stop();
-    HandleTransitionFinished();
-}
-
-void ACharacter2DActor::HandleTransitionUpdate(float Value)
-{
-    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
-    {
-        if (Value <= 0.5f)
-        {
-            const float OpacityProgress = Value / 0.5f;
-            const FLinearColor CurrentColor(0.f, 0.f, 0.f, OpacityProgress);
-            SetAllSpritesColor(CurrentColor);
-            SetAllSkeletalOpacity(OpacityProgress);
-        }
-        else
-        {
-            const float ColorProgress = (Value - 0.5f) / 0.5f;
-            for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
-            {
-                if (SpriteComp)
-                {
-                    FLinearColor NewColor = FMath::Lerp(FLinearColor::Black, OriginalColor, ColorProgress);
-                    NewColor.A = OriginalColor.A;
-                    SpriteComp->SetSpriteColor(NewColor);
-                }
-            }
-            SetAllSkeletalOpacity(1.f);
-        }
-    }
-    else if (CurrentTransitionState == ECharacter2DTransitionState::Disappearing)
-    {
-        if (Value <= 0.5f)
-        {
-            const float ColorProgress = Value / 0.5f;
-            for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
-            {
-                if (SpriteComp)
-                {
-                    FLinearColor NewColor = FMath::Lerp(OriginalColor, FLinearColor::Black, ColorProgress);
-                    NewColor.A = OriginalColor.A;
-                    SpriteComp->SetSpriteColor(NewColor);
-                }
-            }
-        }
-        else
-        {
-            const float OpacityProgress = (Value - 0.5f) / 0.5f;
-            const float FinalOpacity = 1.0f - OpacityProgress;
-            const FLinearColor CurrentColor(0.f, 0.f, 0.f, FinalOpacity);
-            SetAllSpritesColor(CurrentColor);
-            SetAllSkeletalOpacity(FinalOpacity);
-        }
-    }
-
-    OnTransitionUpdate.Broadcast(CurrentTransitionState, Value);
-}
-
-void ACharacter2DActor::HandleTransitionFinished()
-{
-    if (CurrentTransitionState == ECharacter2DTransitionState::Appearing)
-    {
-        for (auto const& [SpriteComp, OriginalColor] : OriginalSpriteColorsForTransition)
-        {
-            if (SpriteComp) SpriteComp->SetSpriteColor(OriginalColor);
-        }
-        SetAllSkeletalOpacity(1.f);
-    }
-    else if (CurrentTransitionState == ECharacter2DTransitionState::Disappearing)
-    {
-        const FLinearColor EndColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
-        SetAllSpritesColor(EndColor);
-        SetAllSkeletalOpacity(0.f);
-    }
-
-    OnTransitionFinished.Broadcast(CurrentTransitionState);
-
-    CurrentTransitionState = ECharacter2DTransitionState::None;
-    CurrentTransitionCurve = nullptr;
-    OriginalSpriteColorsForTransition.Empty();
-}
-
-// --- ОСТАЛЬНЫЕ ФУНКЦИИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ ---
 
 void ACharacter2DActor::SetupHeadHierarchy()
 {
@@ -651,8 +576,6 @@ void ACharacter2DActor::SetupHeadHierarchy()
     SetupChildSprite(SpriteMouth, HeadStructure.Mouth);
 }
 
-// [Включаю все остальные функции без изменений для краткости - они остаются теми же]
-
 void ACharacter2DActor::SetupEffectLayers()
 {
     if (!CharacterAsset) return;
@@ -675,6 +598,38 @@ void ACharacter2DActor::SetupEffectLayers()
     SetupLayer(SpriteEffect3, HeadStructure.EffectLayer3);
 }
 
+void ACharacter2DActor::SetupShadowLayer()
+{
+    if (!CharacterAsset || !SpriteShadow) return;
+    
+    const auto& ShadowData = CharacterAsset->GetShadowLayer();
+    
+    // Применяем GlobalOffset и GlobalScale как для других спрайтов
+    const FVector FinalOffset = CharacterAsset->GetGlobalSpriteOffset() + ShadowData.Offset;
+    const float FinalScale = CharacterAsset->GetGlobalSpriteScale() * ShadowData.Scale;
+    
+    SpriteShadow->SetSprite(ShadowData.Sprite);
+    SpriteShadow->SetRelativeLocation(FinalOffset);
+    SpriteShadow->SetRelativeScale3D(FVector(FinalScale));
+    SpriteShadow->SetVisibility(ShadowData.bVisible && bSpritesVisible);
+    
+    FLinearColor ShadowColor = ShadowData.Color;
+    ShadowColor.A = ShadowData.Opacity;
+    SpriteShadow->SetSpriteColor(ShadowColor);
+}
+
+void ACharacter2DActor::AttachShadowToSocket()
+{
+    if (!CharacterAsset) return;
+    const auto& ShadowData = CharacterAsset->GetShadowLayer();
+    
+    // Передаем правильные offset и scale с учетом Global параметров
+    const FVector FinalOffset = CharacterAsset->GetGlobalSpriteOffset() + ShadowData.Offset;
+    const float FinalScale = CharacterAsset->GetGlobalSpriteScale() * ShadowData.Scale;
+    
+    AttachSpriteToSocket(SpriteShadow, ShadowData.AttachmentTarget, ShadowData.SocketName, ShadowData.bUseSocketTransform, FinalOffset, FinalScale);
+}
+
 void ACharacter2DActor::AttachHeadToSocket()
 {
     if (!CharacterAsset) return;
@@ -682,8 +637,64 @@ void ACharacter2DActor::AttachHeadToSocket()
     AttachSpriteToSocket(SpriteHead, HeadRoot.AttachmentTarget, HeadRoot.SocketName, HeadRoot.bUseSocketTransform, HeadRoot.Offset, HeadRoot.Scale);
 }
 
-void ACharacter2DActor::SetEyebrowSprite(UPaperSprite* NewSprite) { if (SpriteEyebrow) SpriteEyebrow->SetSprite(NewSprite); }
-void ACharacter2DActor::SetEyesSprite(UPaperSprite* NewSprite) { if (SpriteEyes) SpriteEyes->SetSprite(NewSprite); }
+// Shadow Layer Functions
+void ACharacter2DActor::SetShadowLayer(UPaperSprite* Sprite, bool bVisible, const FLinearColor& Color, float Opacity)
+{
+    if (!SpriteShadow || !CharacterAsset) return;
+    
+    SpriteShadow->SetSprite(Sprite);
+    SpriteShadow->SetVisibility(bVisible && bSpritesVisible);
+    
+    FLinearColor FinalColor = Color;
+    FinalColor.A = Opacity;
+    SpriteShadow->SetSpriteColor(FinalColor);
+    
+    // При ручной установке спрайта тени также учитываем Global параметры
+    if (Sprite)
+    {
+        const auto& ShadowData = CharacterAsset->GetShadowLayer();
+        const FVector FinalOffset = CharacterAsset->GetGlobalSpriteOffset() + ShadowData.Offset;
+        const float FinalScale = CharacterAsset->GetGlobalSpriteScale() * ShadowData.Scale;
+        
+        SpriteShadow->SetRelativeLocation(FinalOffset);
+        SpriteShadow->SetRelativeScale3D(FVector(FinalScale));
+    }
+}
+
+void ACharacter2DActor::SetShadowOpacity(float Opacity)
+{
+    if (!SpriteShadow) return;
+    
+    FLinearColor CurrentColor = SpriteShadow->GetSpriteColor();
+    CurrentColor.A = FMath::Clamp(Opacity, 0.0f, 1.0f);
+    SpriteShadow->SetSpriteColor(CurrentColor);
+}
+
+void ACharacter2DActor::SetShadowColor(const FLinearColor& Color)
+{
+    if (!SpriteShadow) return;
+    
+    FLinearColor NewColor = Color;
+    NewColor.A = SpriteShadow->GetSpriteColor().A;
+    SpriteShadow->SetSpriteColor(NewColor);
+}
+
+void ACharacter2DActor::SetShadowVisible(bool bVisible)
+{
+    if (!SpriteShadow) return;
+    SpriteShadow->SetVisibility(bVisible && bSpritesVisible);
+}
+
+// Sprite Setters
+void ACharacter2DActor::SetEyebrowSprite(UPaperSprite* NewSprite) 
+{ 
+    if (SpriteEyebrow) SpriteEyebrow->SetSprite(NewSprite); 
+}
+
+void ACharacter2DActor::SetEyesSprite(UPaperSprite* NewSprite) 
+{ 
+    if (SpriteEyes) SpriteEyes->SetSprite(NewSprite); 
+}
 
 void ACharacter2DActor::SetEyelidsSprite(UPaperSprite* NewSprite) 
 { 
@@ -713,24 +724,77 @@ void ACharacter2DActor::SetMouthSprite(UPaperSprite* NewSprite)
     }
 }
 
-void ACharacter2DActor::SetHeadSprite(UPaperSprite* NewSprite) { if (SpriteHead) SpriteHead->SetSprite(NewSprite); }
-void ACharacter2DActor::SetBodySprite(UPaperSprite* NewSprite) { if (SpriteBody) SpriteBody->SetSprite(NewSprite); }
-void ACharacter2DActor::SetArmsSprite(UPaperSprite* NewSprite) { if (SpriteArms) SpriteArms->SetSprite(NewSprite); }
+void ACharacter2DActor::SetHeadSprite(UPaperSprite* NewSprite) 
+{ 
+    if (SpriteHead) SpriteHead->SetSprite(NewSprite); 
+}
 
-void ACharacter2DActor::SetEffectLayer1(UPaperSprite* Sprite, bool bVisible, const FLinearColor& Color, float Opacity) { if(SpriteEffect1){ SpriteEffect1->SetSprite(Sprite); SpriteEffect1->SetVisibility(bVisible && bSpritesVisible); FLinearColor FinalColor = Color; FinalColor.A = Opacity; SpriteEffect1->SetSpriteColor(FinalColor); } }
-void ACharacter2DActor::SetEffectLayer2(UPaperSprite* Sprite, bool bVisible, const FLinearColor& Color, float Opacity) { if(SpriteEffect2){ SpriteEffect2->SetSprite(Sprite); SpriteEffect2->SetVisibility(bVisible && bSpritesVisible); FLinearColor FinalColor = Color; FinalColor.A = Opacity; SpriteEffect2->SetSpriteColor(FinalColor); } }
-void ACharacter2DActor::SetEffectLayer3(UPaperSprite* Sprite, bool bVisible, const FLinearColor& Color, float Opacity) { if(SpriteEffect3){ SpriteEffect3->SetSprite(Sprite); SpriteEffect3->SetVisibility(bVisible && bSpritesVisible); FLinearColor FinalColor = Color; FinalColor.A = Opacity; SpriteEffect3->SetSpriteColor(FinalColor); } }
+void ACharacter2DActor::SetBodySprite(UPaperSprite* NewSprite) 
+{ 
+    if (SpriteBody) SpriteBody->SetSprite(NewSprite); 
+}
 
-void ACharacter2DActor::ShowEffectLayer(int32 LayerIndex, bool bShow)
+void ACharacter2DActor::SetArmsSprite(UPaperSprite* NewSprite) 
+{ 
+    if (SpriteArms) SpriteArms->SetSprite(NewSprite); 
+}
+
+UPaperSpriteComponent* ACharacter2DActor::GetEffectComponentByIndex(ECharacter2DEffectLayerIndex LayerIndex) const
 {
-    UPaperSpriteComponent* EffectComponent = nullptr;
-    switch (LayerIndex) { case 1: EffectComponent = SpriteEffect1; break; case 2: EffectComponent = SpriteEffect2; break; case 3: EffectComponent = SpriteEffect3; break; default: return; }
-    if (EffectComponent) EffectComponent->SetVisibility(bShow && bSpritesVisible);
+    switch (LayerIndex)
+    {
+    case ECharacter2DEffectLayerIndex::Effect1: return SpriteEffect1;
+    case ECharacter2DEffectLayerIndex::Effect2: return SpriteEffect2;
+    case ECharacter2DEffectLayerIndex::Effect3: return SpriteEffect3;
+    default: return nullptr;
+    }
+}
+
+void ACharacter2DActor::ShowEffectLayer(ECharacter2DEffectLayerIndex LayerIndex, bool bShow)
+{
+    if (UPaperSpriteComponent* EffectComponent = GetEffectComponentByIndex(LayerIndex))
+    {
+        if (bShow)
+        {
+            EffectComponent->SetVisibility(true, true);
+            OnShowEffect(LayerIndex, EffectComponent->GetSprite());
+        }
+        else
+        {
+            OnHideEffect(LayerIndex);
+        }
+    }
 }
 
 void ACharacter2DActor::ClearAllEffects()
 {
-    for (UPaperSpriteComponent* Effect : {SpriteEffect1, SpriteEffect2, SpriteEffect3}) { if (Effect) { Effect->SetSprite(nullptr); Effect->SetVisibility(false); } }
+    if (SpriteEffect1 && SpriteEffect1->IsVisible())
+    {
+        OnHideEffect(ECharacter2DEffectLayerIndex::Effect1);
+    }
+    if (SpriteEffect2 && SpriteEffect2->IsVisible())
+    {
+        OnHideEffect(ECharacter2DEffectLayerIndex::Effect2);
+    }
+    if (SpriteEffect3 && SpriteEffect3->IsVisible())
+    {
+        OnHideEffect(ECharacter2DEffectLayerIndex::Effect3);
+    }
+}
+
+void ACharacter2DActor::ForceHideEffect(ECharacter2DEffectLayerIndex LayerIndex)
+{
+    if (UPaperSpriteComponent* EffectComponent = GetEffectComponentByIndex(LayerIndex))
+    {
+        EffectComponent->SetVisibility(false);
+    }
+}
+
+void ACharacter2DActor::ForceHideAllEffects()
+{
+    ForceHideEffect(ECharacter2DEffectLayerIndex::Effect1);
+    ForceHideEffect(ECharacter2DEffectLayerIndex::Effect2);
+    ForceHideEffect(ECharacter2DEffectLayerIndex::Effect3);
 }
 
 void ACharacter2DActor::EnableBlinking(bool bEnable)
@@ -775,35 +839,47 @@ void ACharacter2DActor::BlinkOnce()
 {
     if (!IsValid(this) || !IsValid(SpriteEyelids) || !CharacterAsset || BlinkTimeline->IsPlaying()) return;
 
-    bBlinkScheduleNext = false; // Это одиночное моргание, не планируем следующее
+    bBlinkScheduleNext = false;
     UpdateOriginalSprites();
     TriggerBlink();
 }
 
 void ACharacter2DActor::TriggerBlink()
 {
-    if (!bIsBlinking && !bBlinkScheduleNext) // Дополнительная проверка для BlinkOnce
-    {
-        if (!CharacterAsset || !SpriteEyelids || !IsValid(this)) return;
-    }
-    else if (!bIsBlinking) return;
-    
+    if (!bBlinkingActive && !bBlinkScheduleNext) return;
+    if (!CharacterAsset || !SpriteEyelids || !GetWorld()) return;
+
     const auto& Settings = CharacterAsset->GetBlinkSettings();
     if (!Settings.ClosedEyelidsFlipbook || Settings.ClosedEyelidsFlipbook->GetNumFrames() == 0) return;
+    
+    UpdateOriginalSprites();
 
+    if (BlinksLeftInSequence <= 0)
+    {
+        if (FMath::FRand() < Settings.DoubleBlinkChance)
+        {
+            BlinksLeftInSequence = 2;
+        }
+        else
+        {
+            BlinksLeftInSequence = 1;
+        }
+    }
+    
     OnBlinkStarted.Broadcast();
     
     CurrentBlinkFlipbook = Settings.ClosedEyelidsFlipbook;
     const int32 NumFrames = CurrentBlinkFlipbook->GetNumFrames();
-    const float BlinkDuration = Settings.BlinkDuration;
+    const float ActualDuration = Settings.BlinkDuration + FMath::FRandRange(-Settings.BlinkDurationVariation, Settings.BlinkDurationVariation);
+    const float FinalDuration = FMath::Max(ActualDuration, 0.01f);
     
-    // Настраиваем кривую, чтобы она выдавала значения от 0 до (NumFrames - 1)
     BlinkCurve->FloatCurve.Reset();
-    BlinkCurve->FloatCurve.AddKey(0.0f, 0.0f); // Начальный кадр
-    BlinkCurve->FloatCurve.AddKey(BlinkDuration, NumFrames); // Конечный кадр (timeline сам дойдет до него)
+    BlinkCurve->FloatCurve.AddKey(0.0f, 0.0f);
+    BlinkCurve->FloatCurve.AddKey(0.4f, static_cast<float>(NumFrames - 1));
+    BlinkCurve->FloatCurve.AddKey(0.6f, static_cast<float>(NumFrames - 1));
+    BlinkCurve->FloatCurve.AddKey(1.0f, 0.0f);
 
-    BlinkTimeline->SetPlayRate(1.0f);
-    BlinkTimeline->SetTimelineLength(BlinkDuration);
+    BlinkTimeline->SetPlayRate(1.0f / FinalDuration);
     BlinkTimeline->PlayFromStart();
 }
 
@@ -816,7 +892,6 @@ void ACharacter2DActor::StartBlinking()
     bIsBlinking = true;
     bBlinkScheduleNext = true;
 
-    // Запускаем первое моргание после случайной задержки
     const auto& Settings = CharacterAsset->GetBlinkSettings();
     const float Delay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
     GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::TriggerBlink, Delay, false);
@@ -829,12 +904,15 @@ void ACharacter2DActor::StopBlinking()
     bIsBlinking = false;
     bBlinkScheduleNext = false;
     
-    GetWorldTimerManager().ClearTimer(BlinkTimerHandle); // Отменяем запланированное моргание
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(InterBlinkTimerHandle);
+    
     if (BlinkTimeline && BlinkTimeline->IsPlaying())
     {
         BlinkTimeline->Stop();
     }
-    
+
+    BlinksLeftInSequence = 0;
     RestoreEyelidsAfterBlink();
 }
 
@@ -842,7 +920,6 @@ void ACharacter2DActor::HandleBlinkTimelineUpdate(float Value)
 {
     if (!CurrentBlinkFlipbook) return;
 
-    // Value - это текущий номер кадра (может быть дробным)
     int32 FrameIndex = FMath::Clamp(FMath::FloorToInt(Value), 0, CurrentBlinkFlipbook->GetNumFrames() - 1);
     
     if (UPaperSprite* FrameSprite = CurrentBlinkFlipbook->GetSpriteAtFrame(FrameIndex))
@@ -853,74 +930,144 @@ void ACharacter2DActor::HandleBlinkTimelineUpdate(float Value)
 
 void ACharacter2DActor::HandleBlinkTimelineFinished()
 {
-    RestoreEyelidsAfterBlink();
-    OnBlinkFinished.Broadcast();
-
-    CurrentBlinkFlipbook = nullptr;
-
-    // Если моргание должно продолжаться, планируем следующее
-    if (bBlinkScheduleNext && bIsBlinking && CharacterAsset)
+    BlinksLeftInSequence--;
+    
+    if (bBlinkScheduleNext && BlinksLeftInSequence > 0 && CharacterAsset)
     {
         const auto& Settings = CharacterAsset->GetBlinkSettings();
-        const float NextDelay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
-        GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::TriggerBlink, NextDelay, false);
+        RestoreEyelidsPartiallyAfterBlink(Settings.SecondBlinkOpenAmount);
+        GetWorldTimerManager().SetTimer(InterBlinkTimerHandle, this, &ACharacter2DActor::TriggerBlink, Settings.InterBlinkDelay, false);
+    }
+    else
+    {
+        BlinksLeftInSequence = 0;
+        RestoreEyelidsAfterBlink();
+        OnBlinkFinished.Broadcast();
+        CurrentBlinkFlipbook = nullptr;
+
+        if (bBlinkScheduleNext && bIsBlinking && CharacterAsset)
+        {
+            const auto& Settings = CharacterAsset->GetBlinkSettings();
+            const float NextDelay = FMath::FRandRange(Settings.BlinkIntervalMin, Settings.BlinkIntervalMax);
+            GetWorldTimerManager().SetTimer(BlinkTimerHandle, this, &ACharacter2DActor::TriggerBlink, NextDelay, false);
+        }
     }
 }
 
-void ACharacter2DActor::InitializeDefaultCurves()
+void ACharacter2DActor::SetAllSpritesVisible(bool bVisible)
 {
-    // 1) Linear
+    bSpritesVisible = bVisible;
+    for (UPaperSpriteComponent* Component : GetAllSpriteComponents(true, false)) 
+    { 
+        if(Component) Component->SetVisibility(bVisible && Component->GetSprite() != nullptr); 
+    }
+    if(CharacterAsset) SetupHeadHierarchy();
+}
+
+void ACharacter2DActor::SetAllSkeletalVisible(bool bVisible)
+{
+    bSkeletalVisible = bVisible;
+    for (USkeletalMeshComponent* Component : GetAllSkeletalComponents()) 
+    { 
+        if(Component) Component->SetVisibility(bVisible); 
+    }
+}
+
+void ACharacter2DActor::RestoreEyelidsPartiallyAfterBlink(float OpenAmount)
+{
+    if (!SpriteEyelids || !CurrentBlinkFlipbook || !CharacterAsset)
     {
-        FRichCurve& C = DefaultLinearCurve->FloatCurve;
-        C.Reset();
-        C.AddKey(0.f, 0.f);
-        C.AddKey(1.f, 1.f);
+        RestoreEyelidsAfterBlink();
+        return;
     }
 
-    // 2) Smooth (Ease In-Out)
+    const int32 NumFrames = CurrentBlinkFlipbook->GetNumFrames();
+    if (NumFrames > 1)
     {
-        FRichCurve& C = DefaultSmoothCurve->FloatCurve;
-        auto AddCubic = [&](float T, float V)
+        const int32 FrameIndex = FMath::Clamp(FMath::RoundToInt(static_cast<float>(NumFrames - 1) * (1.0f - OpenAmount)), 0, NumFrames - 1);
+        if (UPaperSprite* PartialSprite = CurrentBlinkFlipbook->GetSpriteAtFrame(FrameIndex))
         {
-            FKeyHandle H = C.AddKey(T, V);
-            FRichCurveKey& K = C.GetKey(H);
-            K.InterpMode    = ERichCurveInterpMode::RCIM_Cubic;
-            K.ArriveTangent = 0.f;
-            K.LeaveTangent  = 0.f;
-        };
-        AddCubic(0.f, 0.f);
-        AddCubic(1.f, 1.f);
+             SpriteEyelids->SetSprite(PartialSprite);
+        }
     }
-
-    // 3) Ease-In
+    else
     {
-        FRichCurve& C = DefaultEaseInCurve->FloatCurve;
-        auto AddEaseIn = [&](float T, float V, float Arr)
-        {
-            FKeyHandle H = C.AddKey(T, V);
-            FRichCurveKey& K = C.GetKey(H);
-            K.InterpMode    = ERichCurveInterpMode::RCIM_Cubic;
-            K.ArriveTangent = Arr;
-            K.LeaveTangent  = 0.f;
-        };
-        AddEaseIn(0.f, 0.f, 0.f);
-        AddEaseIn(1.f, 1.f, 3.f);
+        RestoreEyelidsAfterBlink();
     }
+}
 
-    // 4) Ease-Out
+void ACharacter2DActor::Appear()
+{
+    OnAppear();
+}
+
+void ACharacter2DActor::Disappear()
+{
+    OnDisappear();
+}
+
+void ACharacter2DActor::GainFocus()
+{
+    if (!bIsFocused)
     {
-        FRichCurve& C = DefaultEaseOutCurve->FloatCurve;
-        auto AddEaseOut = [&](float T, float V, float Leave)
-        {
-            FKeyHandle H = C.AddKey(T, V);
-            FRichCurveKey& K = C.GetKey(H);
-            K.InterpMode    = ERichCurveInterpMode::RCIM_Cubic;
-            K.ArriveTangent = 0.f;
-            K.LeaveTangent  = Leave;
-        };
-        AddEaseOut(0.f, 0.f, 3.f);
-        AddEaseOut(1.f, 1.f, 0.f);
+        bIsFocused = true;
+        OnFocusGained();
     }
+}
 
-    UE_LOG(LogCharacter2DActor, Log, TEXT("Initialized default transition curves"));
+void ACharacter2DActor::LoseFocus()
+{
+    if (bIsFocused)
+    {
+        bIsFocused = false;
+        OnFocusLost();
+    }
+}
+
+void ACharacter2DActor::SetEffectLayer(ECharacter2DEffectLayerIndex LayerIndex, UPaperSprite* Sprite, bool bVisible, const FLinearColor& Color, float Opacity)
+{
+    if (UPaperSpriteComponent* EffectComponent = GetEffectComponentByIndex(LayerIndex))
+    {
+        EffectComponent->SetSprite(Sprite);
+        FLinearColor FinalColor = Color;
+        FinalColor.A = FMath::Clamp(Opacity, 0.0f, 1.0f);
+        EffectComponent->SetSpriteColor(FinalColor);
+        
+        ShowEffectLayer(LayerIndex, bVisible);
+    }
+}
+
+void ACharacter2DActor::SetEffectLayerOpacity(ECharacter2DEffectLayerIndex LayerIndex, float Opacity)
+{
+    if (UPaperSpriteComponent* EffectComponent = GetEffectComponentByIndex(LayerIndex))
+    {
+        FLinearColor CurrentColor = EffectComponent->GetSpriteColor();
+        CurrentColor.A = FMath::Clamp(Opacity, 0.0f, 1.0f);
+        EffectComponent->SetSpriteColor(CurrentColor);
+    }
+}
+
+void ACharacter2DActor::SetEffectLayerColor(ECharacter2DEffectLayerIndex LayerIndex, const FLinearColor& Color)
+{
+    if (UPaperSpriteComponent* EffectComponent = GetEffectComponentByIndex(LayerIndex))
+    {
+        FLinearColor NewColor = Color;
+        NewColor.A = EffectComponent->GetSpriteColor().A;
+        EffectComponent->SetSpriteColor(NewColor);
+    }
+}
+
+void ACharacter2DActor::SetAllCharacterSpritesColor(const FLinearColor& NewColor, bool bIncludeEffects)
+{
+    for (UPaperSpriteComponent* SpriteComp : GetAllSpriteComponents(bIncludeEffects, false))
+    {
+        if (SpriteComp)
+        {
+            FLinearColor CurrentColor = SpriteComp->GetSpriteColor();
+            CurrentColor.R = NewColor.R;
+            CurrentColor.G = NewColor.G;
+            CurrentColor.B = NewColor.B;
+            SpriteComp->SetSpriteColor(CurrentColor);
+        }
+    }
 }

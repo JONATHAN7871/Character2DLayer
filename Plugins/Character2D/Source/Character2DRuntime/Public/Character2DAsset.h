@@ -21,34 +21,12 @@ enum class ECharacter2DAttachmentTarget : uint8
     Head    UMETA(DisplayName = "Head Mesh")
 };
 
-USTRUCT(BlueprintType)
-struct FCharacter2DMovementSettings
+// Новый enum для skeletal attachment
+UENUM(BlueprintType)
+enum class ECharacter2DSkeletalAttachmentTarget : uint8
 {
-    GENERATED_BODY()
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement", meta=(ClampMin="0.0"))
-    float Duration = 1.0f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement")
-    TObjectPtr<UCurveFloat> AnimationCurve = nullptr;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement")
-    bool bTeleport = false;
-};
-
-USTRUCT(BlueprintType)
-struct FCharacter2DEmotionSettings
-{
-    GENERATED_BODY()
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion", meta=(ClampMin="0.1"))
-    float Duration = 2.0f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion", meta=(ClampMin="0.0", ClampMax="1.0"))
-    float Intensity = 0.5f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion", meta=(ClampMin="1.0"))
-    float ShakeFrequency = 10.0f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion")
-    FLinearColor TargetColor = FLinearColor::Red;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion")
-    bool bLoop = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Emotion")
-    TObjectPtr<UCurveFloat> AnimationCurve = nullptr;
+    None    UMETA(DisplayName = "None (Root)"),
+    Body    UMETA(DisplayName = "Body Mesh")
 };
 
 USTRUCT(BlueprintType)
@@ -70,6 +48,33 @@ struct FCharacter2DEffectLayer
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Effect|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
     float Opacity = 1.0f;
     FCharacter2DEffectLayer() { Name = TEXT("Effect"); }
+};
+
+// Обновленная структура Shadow Layer - теперь отдельная
+USTRUCT(BlueprintType)
+struct FCharacter2DShadowLayer
+{
+    GENERATED_BODY()
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Shadow")
+    FName Name = TEXT("Shadow");
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow")
+    TObjectPtr<UPaperSprite> Sprite = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Attachment")
+    ECharacter2DAttachmentTarget AttachmentTarget = ECharacter2DAttachmentTarget::None;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    FName SocketName;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DAttachmentTarget::None", EditConditionHides))
+    bool bUseSocketTransform = true;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Transform")
+    FVector Offset = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Transform")
+    float Scale = 1.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Visibility")
+    bool bVisible = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Appearance")
+    FLinearColor Color = FLinearColor::Black;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shadow|Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float Opacity = 0.5f;
 };
 
 USTRUCT(BlueprintType)
@@ -109,6 +114,14 @@ struct FCharacter2DBlinkSettings
     float BlinkIntervalMax = 5.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.05"))
     float BlinkDuration = 0.15f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing", meta=(ClampMin="0.0", ClampMax="0.5"))
+    float BlinkDurationVariation = 0.05f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing|Advanced", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float DoubleBlinkChance = 0.2f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing|Advanced", meta=(ClampMin="0.01", EditCondition="DoubleBlinkChance > 0"))
+    float InterBlinkDelay = 0.1f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Blink Timing|Advanced", meta=(ClampMin="0.0", ClampMax="1.0", EditCondition="DoubleBlinkChance > 0"))
+    float SecondBlinkOpenAmount = 0.5f;
 };
 
 USTRUCT(BlueprintType)
@@ -118,7 +131,11 @@ struct FCharacter2DTalkSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation")
     TObjectPtr<UPaperFlipbook> TalkFlipbook = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation|Timing", meta=(ClampMin="0.05"))
-    float MouthChangeInterval = 0.1f;
+    float MouthChangeIntervalMin = 0.08f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation|Timing", meta=(ClampMin="0.05"))
+    float MouthChangeIntervalMax = 0.15f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Talk Animation", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float FrameRepeatChance = 0.3f;
 };
 
 USTRUCT(BlueprintType)
@@ -149,6 +166,7 @@ struct FCharacter2DHeadRootSprite
     FCharacter2DHeadRootSprite() { Name = TEXT("Head"); }
 };
 
+// Обновленная структура Head - убираем ShadowLayer
 USTRUCT(BlueprintType)
 struct FCharacter2DHeadStructure
 {
@@ -173,7 +191,19 @@ struct FCharacter2DHeadStructure
     FCharacter2DBlinkSettings BlinkSettings;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Head Animations", meta=(DisplayName="Talk Settings"))
     FCharacter2DTalkSettings TalkSettings;
-    FCharacter2DHeadStructure() { Head.Name = TEXT("Head"); Eyebrows.Name = TEXT("Eyebrows"); Eyes.Name = TEXT("Eyes"); Eyelids.Name = TEXT("Eyelids"); Mouth.Name = TEXT("Mouth"); EffectLayer1.Name = TEXT("EffectLayer1"); EffectLayer2.Name = TEXT("EffectLayer2"); EffectLayer3.Name = TEXT("EffectLayer3"); }
+    
+    FCharacter2DHeadStructure() 
+    { 
+        Head.Name = TEXT("Head"); 
+        Eyebrows.Name = TEXT("Eyebrows"); 
+        Eyes.Name = TEXT("Eyes"); 
+        Eyelids.Name = TEXT("Eyelids"); 
+        Mouth.Name = TEXT("Mouth"); 
+        EffectLayer1.Name = TEXT("EffectLayer1"); 
+        EffectLayer2.Name = TEXT("EffectLayer2"); 
+        EffectLayer3.Name = TEXT("EffectLayer3"); 
+    }
+    
     bool GetFinalChildVisibility(const FCharacter2DHeadChildSprite& ChildSprite) const { return ChildSprite.GetFinalVisibility(Head.bVisible); }
 };
 
@@ -227,6 +257,7 @@ struct FCharacter2DSpriteTransformStructure
     float GlobalScale = 1.0f;
 };
 
+// Обновленная структура Sprites - добавляем Shadow на том же уровне
 USTRUCT(BlueprintType)
 struct FCharacter2DSpriteStructure
 {
@@ -234,6 +265,7 @@ struct FCharacter2DSpriteStructure
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Body") FCharacter2DSpriteBodyStructure Body;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Arms") FCharacter2DSpriteArmsStructure Arms;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Head") FCharacter2DHeadStructure Head;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Shadow") FCharacter2DShadowLayer Shadow;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sprite Transform") FCharacter2DSpriteTransformStructure Transform;
 };
 
@@ -245,6 +277,7 @@ struct FCharacter2DSkeletalMaterial
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Skeletal") int32 SlotIndex = 0;
 };
 
+// Обновленная структура Skeletal Part - добавляем attachment для Arms и Head
 USTRUCT(BlueprintType)
 struct FCharacter2DSkeletalPart
 {
@@ -254,6 +287,14 @@ struct FCharacter2DSkeletalPart
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal") TSubclassOf<UAnimInstance> AnimInstance;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal") FVector Offset = FVector::ZeroVector;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skeletal") float Scale = 1.0f;
+    
+    // Новые поля для attachment (только для Arms и Head)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Skeletal|Attachment")
+    ECharacter2DSkeletalAttachmentTarget AttachmentTarget = ECharacter2DSkeletalAttachmentTarget::None;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Skeletal|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DSkeletalAttachmentTarget::None", EditConditionHides))
+    FName SocketName;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Skeletal|Attachment", meta=(EditCondition="AttachmentTarget != ECharacter2DSkeletalAttachmentTarget::None", EditConditionHides))
+    bool bUseSocketTransform = true;
 };
 
 UCLASS(BlueprintType)
@@ -262,11 +303,10 @@ class CHARACTER2DRUNTIME_API UCharacter2DAsset : public UDataAsset
     GENERATED_BODY()
     
 public:
-    // НОВОЕ: Конструктор с правильными значениями по умолчанию
     UCharacter2DAsset()
     {
-        bAutoBlink = true;  // Включено по умолчанию
-        bAutoTalk = true;   // Включено по умолчанию
+        bAutoBlink = true;
+        bAutoTalk = true;
         GlobalScale = 1.0f;
         SkeletalGlobalOffset = FVector::ZeroVector;
     }
@@ -292,6 +332,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DEffectLayer& GetEffectLayer1() const { return SpriteStructure.Head.EffectLayer1; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DEffectLayer& GetEffectLayer2() const { return SpriteStructure.Head.EffectLayer2; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DEffectLayer& GetEffectLayer3() const { return SpriteStructure.Head.EffectLayer3; }
+    UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") const FCharacter2DShadowLayer& GetShadowLayer() const { return SpriteStructure.Shadow; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") FVector GetGlobalSpriteOffset() const { return SpriteStructure.Transform.GlobalOffset; }
     UFUNCTION(BlueprintCallable, Category = "Character2D|Sprites") float GetGlobalSpriteScale() const { return SpriteStructure.Transform.GlobalScale; }
 
