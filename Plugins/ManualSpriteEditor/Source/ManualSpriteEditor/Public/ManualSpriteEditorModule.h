@@ -2,12 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
-#include "IAssetTypeActions.h"
-
-class FManualSpriteAssetTypeActions;
 
 /**
- * Главный модуль плагина ManualSpriteEditor
+ * Runtime модуль для Manual Sprite Editor
+ * Содержит только основные классы, которые нужны в игре
  */
 class MANUALSPRITEEDITOR_API FManualSpriteEditorModule : public IModuleInterface
 {
@@ -15,12 +13,4 @@ public:
 	/** IModuleInterface implementation */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
-
-private:
-	/** Регистрация типов ассетов */
-	void RegisterAssetTypeActions();
-	void UnregisterAssetTypeActions();
-
-	/** Asset type actions для Manual Sprite */
-	TSharedPtr<FManualSpriteAssetTypeActions> ManualSpriteAssetTypeActions;
 };

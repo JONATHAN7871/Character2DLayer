@@ -5,34 +5,24 @@ public class ManualSpriteEditor : ModuleRules
 	public ManualSpriteEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-		
-		PublicIncludePaths.AddRange([]);
-				
-		PrivateIncludePaths.AddRange([]);
-			
-		PublicDependencyModuleNames.AddRange([
+
+		// RUNTIME модуль - только основные зависимости
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
 			"Core",
 			"CoreUObject",
 			"Engine",
 			"Paper2D"
-		]);
-			
-		PrivateDependencyModuleNames.AddRange([
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
 			"Projects",
-			"InputCore",
-			"EditorWidgets",
-			"UnrealEd",
-			"ToolMenus",
-			"Slate",
-			"SlateCore",
-			"EditorStyle",
-			"AssetTools",
-			"Paper2DEditor",
-			"PropertyEditor",
 			"RenderCore",
 			"RHI"
-		]);
-		
-		DynamicallyLoadedModuleNames.AddRange([]);
+		});
+
+		// Никаких Editor зависимостей в Runtime модуле!
+		// Все Editor functionality будет в отдельном модуле ManualSpriteEditorTools
 	}
 }

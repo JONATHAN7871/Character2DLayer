@@ -1,50 +1,50 @@
 #include "ManualSprite.h"
 #include "Engine/Texture2D.h"
+#include "TextureResource.h"
 
 UManualSprite::UManualSprite()
 {
 	bUseManualGeometry = false;
 	bShowDebugGeometry = true;
-	bShowTriangulationButton = true; // v1.1
+	bShowTriangulationButton = true;
+	bShowingPreview = false;
 }
 
 void UManualSprite::AddVertex(const FVector2D& Position, const FVector2D& UV)
 {
 	ManualGeometry.Vertices.Add(FManualSpriteVertex(Position, UV));
-	
-	// Помечаем объект как изменённый для сохранения
 	MarkPackageDirty();
 }
 
 void UManualSprite::RemoveVertex(int32 VertexIndex)
 {
-	if (VertexIndex >= 0 && VertexIndex < ManualGeometry.Vertices.Num())
+	if (VertexIndex < 0 || VertexIndex >= ManualGeometry.Vertices.Num())
+		return;
+
+	// Удаляем вершину
+	ManualGeometry.Vertices.RemoveAt(VertexIndex);
+	
+	// Обновляем индексы в треугольниках и удаляем невалидные
+	for (int32 i = ManualGeometry.Triangles.Num() - 1; i >= 0; i--)
 	{
-		// Удаляем вершину
-		ManualGeometry.Vertices.RemoveAt(VertexIndex);
+		FManualSpriteTriangle& Triangle = ManualGeometry.Triangles[i];
 		
-		// Обновляем индексы в треугольниках и удаляем невалидные
-		for (int32 i = ManualGeometry.Triangles.Num() - 1; i >= 0; i--)
+		// Если треугольник использует удалённую вершину - удаляем треугольник
+		if (Triangle.VertexIndex0 == VertexIndex || 
+			Triangle.VertexIndex1 == VertexIndex || 
+			Triangle.VertexIndex2 == VertexIndex)
 		{
-			FManualSpriteTriangle& Triangle = ManualGeometry.Triangles[i];
-			
-			// Если треугольник использует удалённую вершину - удаляем треугольник
-			if (Triangle.VertexIndex0 == VertexIndex || 
-				Triangle.VertexIndex1 == VertexIndex || 
-				Triangle.VertexIndex2 == VertexIndex)
-			{
-				ManualGeometry.Triangles.RemoveAt(i);
-				continue;
-			}
-			
-			// Сдвигаем индексы больше удалённого
-			if (Triangle.VertexIndex0 > VertexIndex) Triangle.VertexIndex0--;
-			if (Triangle.VertexIndex1 > VertexIndex) Triangle.VertexIndex1--;
-			if (Triangle.VertexIndex2 > VertexIndex) Triangle.VertexIndex2--;
+			ManualGeometry.Triangles.RemoveAt(i);
+			continue;
 		}
 		
-		MarkPackageDirty();
+		// Сдвигаем индексы больше удалённого
+		if (Triangle.VertexIndex0 > VertexIndex) Triangle.VertexIndex0--;
+		if (Triangle.VertexIndex1 > VertexIndex) Triangle.VertexIndex1--;
+		if (Triangle.VertexIndex2 > VertexIndex) Triangle.VertexIndex2--;
 	}
+	
+	MarkPackageDirty();
 }
 
 void UManualSprite::AddTriangle(int32 VertexIndex0, int32 VertexIndex1, int32 VertexIndex2)
@@ -62,11 +62,11 @@ void UManualSprite::AddTriangle(int32 VertexIndex0, int32 VertexIndex1, int32 Ve
 
 void UManualSprite::RemoveTriangle(int32 TriangleIndex)
 {
-	if (TriangleIndex >= 0 && TriangleIndex < ManualGeometry.Triangles.Num())
-	{
-		ManualGeometry.Triangles.RemoveAt(TriangleIndex);
-		MarkPackageDirty();
-	}
+	if (TriangleIndex < 0 || TriangleIndex >= ManualGeometry.Triangles.Num())
+		return;
+
+	ManualGeometry.Triangles.RemoveAt(TriangleIndex);
+	MarkPackageDirty();
 }
 
 void UManualSprite::ClearManualGeometry()
@@ -80,7 +80,6 @@ bool UManualSprite::IsManualGeometryValid() const
 	return ManualGeometry.IsValid();
 }
 
-// v1.1: Автоматическая триангуляция
 void UManualSprite::AutoTriangulate()
 {
 	AutoTriangulateWithMethod(ManualGeometry.PreferredTriangulationMethod);
@@ -182,7 +181,6 @@ bool UManualSprite::IsConvexPolygon() const
 		else if (CrossProduct < 0.0f)
 			bNegative = true;
 		
-		// Если есть и положительные, и отрицательные произведения, многоугольник не выпуклый
 		if (bPositive && bNegative)
 			return false;
 	}
@@ -197,14 +195,418 @@ void UManualSprite::ReverseVertexOrder()
 	UE_LOG(LogTemp, Log, TEXT("Vertex order reversed"));
 }
 
+FVector2D UManualSprite::GetCentroid() const
+{
+	if (ManualGeometry.Vertices.Num() == 0)
+		return FVector2D::ZeroVector;
+	
+	FVector2D Sum = FVector2D::ZeroVector;
+	for (const FManualSpriteVertex& Vertex : ManualGeometry.Vertices)
+	{
+		Sum += Vertex.Position;
+	}
+	
+	return Sum / static_cast<float>(ManualGeometry.Vertices.Num());
+}
+
+#if WITH_EDITORONLY_DATA
+bool UManualSprite::GenerateGeometryFromTexture()
+{
+	ManualGeometry.Clear();
+	
+	switch (AutoGeometrySettings.GeometryType)
+	{
+	case EAutoGeometryType::FromRenderShapes:
+		return GenerateGeometryFromRenderShapes();
+		
+	case EAutoGeometryType::ShrinkWrapped:
+		return GenerateGeometryFromAlphaChannel();
+		
+	case EAutoGeometryType::TightBoundingBox:
+		return GenerateGeometryFromTightBounds();
+		
+	case EAutoGeometryType::SourceBoundingBox:
+	default:
+		return GenerateGeometryFromSourceBounds();
+	}
+}
+
+bool UManualSprite::GenerateGeometryFromRenderShapes()
+{
+#if WITH_EDITORONLY_DATA
+	// Получаем геометрию рендера напрямую из поля
+	const FSpriteGeometryCollection& LocalRenderGeometry = RenderGeometry;
+    
+	if (LocalRenderGeometry.Shapes.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No RenderShapes found in Paper2D sprite. Please use 'Edit RenderGeom' mode first."));
+		return false;
+	}
+
+	// Конвертируем RenderGeometry в нашу систему
+	ConvertRenderGeometryToManual(LocalRenderGeometry);
+    
+	// Включаем использование ручной геометрии
+	bUseManualGeometry = true;
+	(void)MarkPackageDirty();
+
+	UE_LOG(LogTemp, Log, TEXT("Successfully imported %d shapes from Paper2D RenderShapes"), 
+		  LocalRenderGeometry.Shapes.Num());
+    
+	return true;
+#else
+	UE_LOG(LogTemp, Warning, TEXT("GenerateGeometryFromRenderShapes is only available in editor builds"));
+	return false;
+#endif
+}
+
+void UManualSprite::ConvertRenderGeometryToManual(const FSpriteGeometryCollection& SpriteRenderGeometry)
+{
+	// Очищаем старую геометрию
+	ManualGeometry.Clear();
+
+	// Конвертируем каждый Shape в вершины и треугольники
+	for (const FSpriteGeometryShape& Shape : SpriteRenderGeometry.Shapes)
+	{
+		if (Shape.Vertices.Num() < 3)
+			continue; // Пропускаем невалидные фигуры
+
+		// Получаем вершины в текстурном пространстве
+		TArray<FVector2D> TextureSpaceVertices;
+		Shape.GetTextureSpaceVertices(TextureSpaceVertices);
+
+		const int32 StartVertexIndex = ManualGeometry.Vertices.Num();
+
+		// Конвертируем вершины в наш формат
+		for (const FVector2D& TexturePos : TextureSpaceVertices)
+		{
+			// Конвертируем из текстурного пространства в локальное пространство спрайта
+			const FVector2D LocalPos = ConvertTextureSpaceToPivotSpace(TexturePos);
+			
+			// Вычисляем UV координаты
+			const FVector2D UV = CalculateUVFromTexturePosition(TexturePos);
+			
+			ManualGeometry.Vertices.Add(FManualSpriteVertex(LocalPos, UV));
+		}
+
+		// Простая веерная триангуляция для каждого shape
+		const int32 VertexCount = TextureSpaceVertices.Num();
+		for (int32 i = 1; i < VertexCount - 1; i++)
+		{
+			ManualGeometry.Triangles.Add(FManualSpriteTriangle(
+				StartVertexIndex,
+				StartVertexIndex + i,
+				StartVertexIndex + i + 1
+			));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Converted %d Paper2D shapes into Manual Sprite geometry"), 
+		   SpriteRenderGeometry.Shapes.Num());
+}
+
+FVector2D UManualSprite::CalculateUVFromTexturePosition(const FVector2D& TexturePos) const
+{
+	// ИСПРАВЛЕНИЕ: Переименовываем локальные переменные
+	const FVector2D LocalSourceSize = GetSourceSize();
+	const FVector2D LocalSourceUV = GetSourceUV();
+	
+	if (LocalSourceSize.IsNearlyZero())
+		return FVector2D(0.5f, 0.5f);
+
+	// Нормализуем позицию относительно источника текстуры
+	const FVector2D RelativePos = (TexturePos - LocalSourceUV) / LocalSourceSize;
+	
+	// Ограничиваем UV в диапазоне [0,1]
+	return FVector2D(
+		FMath::Clamp(RelativePos.X, 0.0f, 1.0f),
+		FMath::Clamp(RelativePos.Y, 0.0f, 1.0f)
+	);
+}
+
+bool UManualSprite::GenerateGeometryFromAlphaChannel()
+{
+	TArray<uint8> WritableAlpha = GetTextureAlphaData();
+	if (WritableAlpha.IsEmpty())
+		return false;
+
+	TArray<TArray<FVector2D>> AllContours = FindAllContours(WritableAlpha);
+	if (AllContours.IsEmpty())
+		return false;
+
+	ManualGeometry.Clear();
+	int32 IslandCounter = 0;
+
+	for (const auto& Contour : AllContours)
+	{
+		if (Contour.Num() < 3)
+			continue;
+
+		TArray<FVector2D> SimplifiedContour = SimplifyPoints(Contour, AutoGeometrySettings.SimplifyEpsilon);
+		if (SimplifiedContour.Num() < 3)
+			continue;
+
+		const int32 StartVertexIndex = ManualGeometry.Vertices.Num();
+
+		// Добавляем вершины
+		for (const auto& Point : SimplifiedContour)
+		{
+			const FVector2D LocalPos = PixelToLocal(FIntPoint(Point.X, Point.Y));
+			ManualGeometry.Vertices.Add(FManualSpriteVertex(LocalPos, LocalToUV(LocalPos)));
+		}
+		
+		// Простая веерная триангуляция
+		const int32 VertexCount = SimplifiedContour.Num();
+		for (int32 i = 1; i < VertexCount - 1; i++)
+		{
+			ManualGeometry.Triangles.Add(FManualSpriteTriangle(
+				StartVertexIndex,
+				StartVertexIndex + i,
+				StartVertexIndex + i + 1
+			));
+		}
+	}
+
+	bUseManualGeometry = true;
+	MarkPackageDirty();
+	return ManualGeometry.Vertices.Num() > 0;
+}
+
+bool UManualSprite::GenerateGeometryFromTightBounds()
+{
+	TArray<uint8> AlphaData = GetTextureAlphaData();
+	if (AlphaData.IsEmpty())
+		return false;
+		
+	FIntRect TightBox = CalculateTightBoundingBox(AlphaData);
+	if (TightBox.Width() <= 0 || TightBox.Height() <= 0)
+		return false;
+	
+	return GenerateQuadGeometry(TightBox);
+}
+
+bool UManualSprite::GenerateGeometryFromSourceBounds()
+{
+	const FVector2D SpriteSize = GetSourceSize();
+	if (SpriteSize.IsNearlyZero())
+		return false;
+
+	const FIntRect SourceRect(0, 0, SpriteSize.X, SpriteSize.Y);
+	return GenerateQuadGeometry(SourceRect);
+}
+
+bool UManualSprite::GenerateQuadGeometry(const FIntRect& Bounds)
+{
+	ManualGeometry.Clear();
+
+	// Создаем 4 вершины
+	const FVector2D V0 = PixelToLocal(FIntPoint(Bounds.Min.X, Bounds.Max.Y));
+	const FVector2D V1 = PixelToLocal(FIntPoint(Bounds.Max.X, Bounds.Max.Y));
+	const FVector2D V2 = PixelToLocal(FIntPoint(Bounds.Max.X, Bounds.Min.Y));
+	const FVector2D V3 = PixelToLocal(FIntPoint(Bounds.Min.X, Bounds.Min.Y));
+	
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(V0, LocalToUV(V0)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(V1, LocalToUV(V1)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(V2, LocalToUV(V2)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(V3, LocalToUV(V3)));
+	
+	// Создаем 2 треугольника
+	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 1, 2));
+	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 2, 3));
+
+	bUseManualGeometry = true;
+	MarkPackageDirty();
+	return true;
+}
+
+TArray<uint8> UManualSprite::GetTextureAlphaData() const
+{
+	TArray<uint8> AlphaData;
+	UTexture2D* MyTexture = GetSourceTexture();
+	if (!MyTexture || !MyTexture->GetPlatformData())
+		return AlphaData;
+
+	const FTexture2DMipMap& Mip = MyTexture->GetPlatformData()->Mips[0];
+	const FByteBulkData& BulkData = Mip.BulkData;
+	
+	if (BulkData.IsBulkDataLoaded() && MyTexture->GetPixelFormat() == PF_B8G8R8A8)
+	{
+		const uint8* RawData = static_cast<const uint8*>(BulkData.LockReadOnly());
+		if (RawData)
+		{
+			const int32 NumPixels = MyTexture->GetSizeX() * MyTexture->GetSizeY();
+			AlphaData.SetNumUninitialized(NumPixels);
+			for (int32 i = 0; i < NumPixels; ++i)
+			{
+				AlphaData[i] = RawData[i * 4 + 3]; // Альфа канал
+			}
+		}
+		BulkData.Unlock();
+	}
+	return AlphaData;
+}
+
+FIntRect UManualSprite::CalculateTightBoundingBox(const TArray<uint8>& AlphaData) const
+{
+	const int32 Width = GetSourceTexture()->GetSizeX();
+	const int32 Height = GetSourceTexture()->GetSizeY();
+	const uint8 AlphaThresholdByte = static_cast<uint8>(AutoGeometrySettings.AlphaThreshold * 255.0f);
+	
+	FIntRect TightBox(Width, Height, -1, -1);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			if (AlphaData[Y * Width + X] > AlphaThresholdByte)
+			{
+				TightBox.Min.X = FMath::Min(TightBox.Min.X, X);
+				TightBox.Min.Y = FMath::Min(TightBox.Min.Y, Y);
+				TightBox.Max.X = FMath::Max(TightBox.Max.X, X);
+				TightBox.Max.Y = FMath::Max(TightBox.Max.Y, Y);
+			}
+		}
+	}
+	TightBox.Max.X += 1;
+	TightBox.Max.Y += 1;
+	return TightBox;
+}
+
+TArray<TArray<FVector2D>> UManualSprite::FindAllContours(TArray<uint8>& WritableAlphaData) const
+{
+	TArray<TArray<FVector2D>> AllContours;
+	
+	const int32 Width = GetSourceTexture()->GetSizeX();
+	const int32 Height = GetSourceTexture()->GetSizeY();
+	const uint8 AlphaThresholdByte = static_cast<uint8>(AutoGeometrySettings.AlphaThreshold * 255.0f);
+	
+	const FIntPoint Offsets[8] = {{0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}};
+	
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			if (WritableAlphaData[Y * Width + X] > AlphaThresholdByte)
+			{
+				FIntPoint StartPos(X, Y);
+				FIntPoint CurrentPos = StartPos;
+				FIntPoint PrevPos(X - 1, Y);
+				TArray<FVector2D> CurrentContour;
+				
+				for (int32 i = 0; i < Width * Height * 2; ++i)
+				{
+					WritableAlphaData[CurrentPos.Y * Width + CurrentPos.X] = 0;
+					CurrentContour.Add(FVector2D(CurrentPos));
+					
+					int32 StartOffset = 0;
+					for (int32 j = 0; j < 8; ++j)
+					{
+						if (PrevPos == CurrentPos + Offsets[j])
+						{
+							StartOffset = (j + 1) % 8;
+							break;
+						}
+					}
+					
+					bool bFoundNext = false;
+					for (int32 j = 0; j < 8; ++j)
+					{
+						const FIntPoint NextPos = CurrentPos + Offsets[(StartOffset + j) % 8];
+						if (NextPos.X >= 0 && NextPos.X < Width && NextPos.Y >= 0 && NextPos.Y < Height &&
+							WritableAlphaData[NextPos.Y * Width + NextPos.X] > AlphaThresholdByte)
+						{
+							PrevPos = CurrentPos;
+							CurrentPos = NextPos;
+							bFoundNext = true;
+							break;
+						}
+					}
+					if (!bFoundNext || CurrentPos == StartPos) break;
+				}
+				
+				if (CurrentContour.Num() > 2)
+				{
+					AllContours.Add(CurrentContour);
+				}
+			}
+		}
+	}
+	return AllContours;
+}
+
+TArray<FVector2D> UManualSprite::SimplifyPoints(const TArray<FVector2D>& InPoints, float Epsilon) const
+{
+	if (InPoints.Num() < 3)
+		return InPoints;
+
+	TArray<int32> PointsToKeepIndices;
+	PointsToKeepIndices.Add(0);
+
+	const float EpsilonSq = Epsilon * Epsilon;
+
+	for (int32 i = 1; i < InPoints.Num() - 1; ++i)
+	{
+		const FVector Point = FVector(InPoints[i].X, InPoints[i].Y, 0.0);
+		const FVector StartPoint = FVector(InPoints[PointsToKeepIndices.Last()].X, InPoints[PointsToKeepIndices.Last()].Y, 0.0);
+		const FVector EndPoint = FVector(InPoints[i+1].X, InPoints[i+1].Y, 0.0);
+		
+		if (FMath::PointDistToSegmentSquared(Point, StartPoint, EndPoint) > EpsilonSq)
+		{
+			PointsToKeepIndices.Add(i);
+		}
+	}
+	PointsToKeepIndices.Add(InPoints.Num() - 1);
+
+	TArray<FVector2D> Result;
+	for (const int32 Index : PointsToKeepIndices)
+	{
+		Result.Add(InPoints[Index]);
+	}
+
+	return Result;
+}
+
+FVector2D UManualSprite::PixelToLocal(const FIntPoint& PixelPos) const
+{
+	const FVector2D HalfSize(GetSourceSize() * 0.5f);
+	return FVector2D(static_cast<float>(PixelPos.X) - HalfSize.X, -(static_cast<float>(PixelPos.Y) - HalfSize.Y));
+}
+
+FVector2D UManualSprite::LocalToUV(const FVector2D& LocalPos) const
+{
+	const FVector2D Size(GetSourceSize());
+	if (Size.IsNearlyZero())
+		return FVector2D(0.5f, 0.5f);
+		
+	const FVector2D HalfSize = Size * 0.5f;
+	return FVector2D(
+		(LocalPos.X + HalfSize.X) / Size.X,
+		1.0f - (LocalPos.Y + HalfSize.Y) / Size.Y
+	);
+}
+#endif
+
 void UManualSprite::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+	
+	const FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
 	
 	// Если включили ручную геометрию, но её нет - создаём базовую
 	if (bUseManualGeometry && ManualGeometry.Vertices.Num() == 0)
 	{
 		GenerateDefaultGeometry();
+	}
+	
+	// Автогенерация при изменении настроек
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UManualSprite, AutoGeometrySettings))
+	{
+		// Автоматически применяем изменения только для определенных типов
+		if (AutoGeometrySettings.GeometryType == EAutoGeometryType::FromRenderShapes)
+		{
+#if WITH_EDITORONLY_DATA
+			GenerateGeometryFromRenderShapes();
+#endif
+		}
 	}
 	
 	// Валидируем геометрию при любых изменениях
@@ -215,24 +617,23 @@ void UManualSprite::GenerateDefaultGeometry()
 {
 	ManualGeometry.Clear();
 	
-	// Получаем размеры спрайта. Если текстуры нет, используем размер по умолчанию.
+	// Получаем размеры спрайта
 	FVector2D SpriteSize = GetSourceSize();
 	if (SpriteSize.IsNearlyZero())
 	{
-		SpriteSize = FVector2D(100.0f, 100.0f); // Размер по умолчанию
+		SpriteSize = FVector2D(100.0f, 100.0f);
 	}
 	FVector2D HalfSize = SpriteSize * 0.5f;
 	
 	// Создаём 4 вершины по углам спрайта
-	// Координаты UV должны быть (0,1) и (1,0), а не (0,0) и (1,1) для стандартного рендера Paper2D
-	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(-HalfSize.X, -HalfSize.Y), FVector2D(0, 1))); // Левый нижний
-	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(HalfSize.X, -HalfSize.Y), FVector2D(1, 1)));  // Правый нижний
-	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(HalfSize.X, HalfSize.Y), FVector2D(1, 0)));   // Правый верхний
-	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(-HalfSize.X, HalfSize.Y), FVector2D(0, 0)));  // Левый верхний
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(-HalfSize.X, -HalfSize.Y), FVector2D(0, 1)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(HalfSize.X, -HalfSize.Y), FVector2D(1, 1)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(HalfSize.X, HalfSize.Y), FVector2D(1, 0)));
+	ManualGeometry.Vertices.Add(FManualSpriteVertex(FVector2D(-HalfSize.X, HalfSize.Y), FVector2D(0, 0)));
 	
 	// Создаём 2 треугольника для квада
-	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 1, 2)); // Первый треугольник
-	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 2, 3)); // Второй треугольник
+	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 1, 2));
+	ManualGeometry.Triangles.Add(FManualSpriteTriangle(0, 2, 3));
 
 	MarkPackageDirty();
 }
@@ -256,8 +657,6 @@ void UManualSprite::ValidateGeometry()
 	}
 }
 
-// v1.1: Реализация алгоритмов триангуляции
-
 void UManualSprite::TriangulateFan()
 {
 	const int32 VertexCount = ManualGeometry.Vertices.Num();
@@ -275,8 +674,6 @@ void UManualSprite::TriangulateFan()
 
 void UManualSprite::TriangulateDelaunay()
 {
-	// Упрощённая версия триангуляции Делоне
-	// Для сложной реализации потребуется внешняя библиотека, пока используем Fan с улучшениями
 	const int32 VertexCount = ManualGeometry.Vertices.Num();
 	if (VertexCount < 3)
 		return;
@@ -355,10 +752,10 @@ void UManualSprite::TriangulateEarClipping()
 			}
 		}
 		
-		// Если не найдено ни одного уха, прерываем (защита от бесконечного цикла)
+		// Если не найдено ни одного уха, прерываем
 		if (!bFoundEar)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Ear clipping failed: no ears found. Remaining vertices: %d"), ActiveVertices.Num());
+			UE_LOG(LogTemp, Warning, TEXT("Ear clipping failed"));
 			break;
 		}
 	}
@@ -372,8 +769,6 @@ void UManualSprite::TriangulateEarClipping()
 	UE_LOG(LogTemp, Log, TEXT("Ear clipping triangulation: created %d triangles"), ManualGeometry.Triangles.Num());
 }
 
-// v1.1: Вспомогательные функции
-
 bool UManualSprite::IsEar(int32 PrevIndex, int32 CurrentIndex, int32 NextIndex) const
 {
 	const FVector2D Prev = ManualGeometry.Vertices[PrevIndex].Position;
@@ -381,7 +776,9 @@ bool UManualSprite::IsEar(int32 PrevIndex, int32 CurrentIndex, int32 NextIndex) 
 	const FVector2D Next = ManualGeometry.Vertices[NextIndex].Position;
 	
 	// Проверяем, что вершина выпуклая
-	if (!IsConvexVertex(PrevIndex, CurrentIndex, NextIndex))
+	const FVector2D Edge1 = Current - Prev;
+	const FVector2D Edge2 = Next - Current;
+	if (Cross2D(Edge1, Edge2) <= 0.0f)
 		return false;
 	
 	// Проверяем, что внутри треугольника нет других вершин
@@ -437,9 +834,8 @@ bool UManualSprite::IsConvexVertex(int32 PrevIndex, int32 CurrentIndex, int32 Ne
 
 TArray<int32> UManualSprite::GetConvexHull() const
 {
-	const int32 VertexCount = ManualGeometry.Vertices.Num();
 	TArray<int32> HullIndices;
-	
+	const int32 VertexCount = ManualGeometry.Vertices.Num();
 	if (VertexCount < 3)
 		return HullIndices;
 	
@@ -510,18 +906,4 @@ TArray<int32> UManualSprite::GetConvexHull() const
 	}
 	
 	return HullIndices;
-}
-
-FVector2D UManualSprite::GetCentroid() const
-{
-	if (ManualGeometry.Vertices.Num() == 0)
-		return FVector2D::ZeroVector;
-	
-	FVector2D Sum = FVector2D::ZeroVector;
-	for (const FManualSpriteVertex& Vertex : ManualGeometry.Vertices)
-	{
-		Sum += Vertex.Position;
-	}
-	
-	return Sum / static_cast<float>(ManualGeometry.Vertices.Num());
 }

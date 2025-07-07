@@ -3,6 +3,9 @@
 #include "CoreMinimal.h"
 #include "PaperSprite.h"
 #include "Engine/Texture2D.h"
+#if WITH_EDITORONLY_DATA
+#include "SpriteEditorOnlyTypes.h"
+#endif
 #include "ManualSprite.generated.h"
 
 // Структура для хранения вершины с UV координатами
@@ -11,11 +14,9 @@ struct MANUALSPRITEEDITOR_API FManualSpriteVertex
 {
 	GENERATED_BODY()
 
-	// Позиция вершины в локальных координатах спрайта
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vertex")
 	FVector2D Position;
 
-	// UV координаты для текстуры
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vertex")
 	FVector2D UV;
 
@@ -62,7 +63,7 @@ struct MANUALSPRITEEDITOR_API FManualSpriteTriangle
 	}
 };
 
-// v1.1: Перечисление для алгоритмов триангуляции
+// Перечисление для алгоритмов триангуляции
 UENUM(BlueprintType)
 enum class ETriangulationMethod : uint8
 {
@@ -72,28 +73,74 @@ enum class ETriangulationMethod : uint8
 	EarClipping UMETA(DisplayName = "Ear Clipping")
 };
 
-// Структура для хранения всей ручной геометрии
+// Типы автогенерации геометрии
+UENUM(BlueprintType)
+enum class EAutoGeometryType : uint8
+{
+	SourceBoundingBox UMETA(DisplayName = "Source Bounding Box"),
+	TightBoundingBox UMETA(DisplayName = "Tight Bounding Box"),
+	ShrinkWrapped UMETA(DisplayName = "Shrink Wrapped"),
+	FromRenderShapes UMETA(DisplayName = "From Paper2D Render Shapes")
+};
+
+// Настройки автогенерации
+USTRUCT(BlueprintType)
+struct MANUALSPRITEEDITOR_API FAutoGeometrySettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Geometry")
+	EAutoGeometryType GeometryType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Geometry", 
+		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "GeometryType == EAutoGeometryType::ShrinkWrapped"))
+	float AlphaThreshold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Geometry", 
+		meta = (ClampMin = "0.0", ClampMax = "10.0", EditCondition = "GeometryType == EAutoGeometryType::ShrinkWrapped"))
+	float SimplifyEpsilon;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Geometry",
+		meta = (EditCondition = "GeometryType == EAutoGeometryType::FromRenderShapes"))
+	bool bImportCollisionAsGeometry;
+
+	FAutoGeometrySettings()
+		: GeometryType(EAutoGeometryType::FromRenderShapes)
+		, AlphaThreshold(0.1f)
+		, SimplifyEpsilon(1.5f)
+		, bImportCollisionAsGeometry(false)
+	{
+	}
+};
+
+// УПРОЩЕННАЯ структура геометрии - ТОЛЬКО основные массивы
 USTRUCT(BlueprintType)
 struct MANUALSPRITEEDITOR_API FManualSpriteGeometry
 {
 	GENERATED_BODY()
 
-	// Массив всех вершин
+	// Основные массивы - ЕДИНСТВЕННЫЙ источник данных
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Manual Geometry")
 	TArray<FManualSpriteVertex> Vertices;
 
-	// Массив треугольников (каждый треугольник содержит 3 индекса вершин)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Manual Geometry")
 	TArray<FManualSpriteTriangle> Triangles;
 
-	// v1.1: Предпочитаемый метод автоматической триангуляции
+	// Предпочитаемый метод автоматической триангуляции
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Triangulation")
-	ETriangulationMethod PreferredTriangulationMethod = ETriangulationMethod::EarClipping;
+	ETriangulationMethod PreferredTriangulationMethod;
+
+	FManualSpriteGeometry()
+		: PreferredTriangulationMethod(ETriangulationMethod::EarClipping)
+	{
+	}
 
 	// Проверка валидности геометрии
 	bool IsValid() const
 	{
-		// Проверяем, что все индексы в треугольниках корректны
+		if (Vertices.Num() < 3 || Triangles.Num() < 1)
+			return false;
+
 		for (const FManualSpriteTriangle& Triangle : Triangles)
 		{
 			if (Triangle.VertexIndex0 >= Vertices.Num() || Triangle.VertexIndex0 < 0 ||
@@ -103,7 +150,7 @@ struct MANUALSPRITEEDITOR_API FManualSpriteGeometry
 				return false;
 			}
 		}
-		return Vertices.Num() >= 3 && Triangles.Num() >= 1;
+		return true;
 	}
 
 	// Очистка геометрии
@@ -113,16 +160,20 @@ struct MANUALSPRITEEDITOR_API FManualSpriteGeometry
 		Triangles.Empty();
 	}
 
-	// v1.1: Очистка только треугольников (оставляем вершины)
+	// Очистка только треугольников
 	void ClearTriangles()
 	{
 		Triangles.Empty();
 	}
+
+	// Получение количества элементов
+	int32 GetVertexCount() const { return Vertices.Num(); }
+	int32 GetTriangleCount() const { return Triangles.Num(); }
 };
 
 /**
  * Кастомный класс спрайта с поддержкой ручной триангуляции
- * v1.1: Добавлена автоматическая триангуляция
+ * УПРОЩЕННАЯ ВЕРСИЯ - только необходимый функционал
  */
 UCLASS(BlueprintType, Blueprintable)
 class MANUALSPRITEEDITOR_API UManualSprite : public UPaperSprite
@@ -140,60 +191,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Manual Geometry", meta = (EditCondition = "bUseManualGeometry"))
 	FManualSpriteGeometry ManualGeometry;
 
-	// Показывать ли отладочную информацию (вершины, рёбра) в редакторе
+	// Показывать ли отладочную информацию в редакторе
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bShowDebugGeometry;
 
-	// v1.1: Настройки автоматической триангуляции
+	// Настройки автоматической триангуляции
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Triangulation", meta = (EditCondition = "bUseManualGeometry"))
-	bool bShowTriangulationButton = true;
+	bool bShowTriangulationButton;
 
-	// Функции для работы с ручной геометрией
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
+	// Настройки автогенерации геометрии
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Geometry Generation", 
+		meta = (ShowOnlyInnerProperties))
+	FAutoGeometrySettings AutoGeometrySettings;
+
+	// ОСНОВНЫЕ ФУНКЦИИ для работы с ручной геометрией
 	void AddVertex(const FVector2D& Position, const FVector2D& UV);
-
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
 	void RemoveVertex(int32 VertexIndex);
-
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
 	void AddTriangle(int32 VertexIndex0, int32 VertexIndex1, int32 VertexIndex2);
-
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
 	void RemoveTriangle(int32 TriangleIndex);
-
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
 	void ClearManualGeometry();
-
-	UFUNCTION(BlueprintCallable, Category = "Manual Geometry")
 	bool IsManualGeometryValid() const;
 
-	// v1.1: Новые функции автоматической триангуляции
-	// ИСПРАВЛЕНИЕ: Убираем CallInEditor = true, оставляем только CallInEditor
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation", CallInEditor)
+	// Функции автоматической триангуляции
 	void AutoTriangulate();
-
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	void AutoTriangulateWithMethod(ETriangulationMethod Method);
-
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	void ClearTriangles();
-
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	bool CanAutoTriangulate() const;
 
-	// v1.1: Утилиты для работы с контуром
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
+	// Утилиты для работы с контуром
 	void SortVerticesByAngle();
-
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	bool IsConvexPolygon() const;
-
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	void ReverseVertexOrder();
-
-	// ИСПРАВЛЕНИЕ: Делаем GetCentroid публичной функцией
-	UFUNCTION(BlueprintCallable, Category = "Auto Triangulation")
 	FVector2D GetCentroid() const;
+
+	// Функции автогенерации (только для редактора)
+#if WITH_EDITORONLY_DATA
+	bool GenerateGeometryFromTexture();
+	bool GenerateGeometryFromRenderShapes();
+#endif
 
 	// Переопределяем для обновления геометрии при изменениях
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -205,18 +240,46 @@ protected:
 	// Валидация и очистка некорректных треугольников
 	void ValidateGeometry();
 
-	// v1.1: Различные алгоритмы триангуляции
+	// Различные алгоритмы триангуляции
 	void TriangulateFan();
 	void TriangulateDelaunay();
 	void TriangulateConvexHull();
 	void TriangulateEarClipping();
 
-	// v1.1: Вспомогательные функции для триангуляции
+	// Вспомогательные функции для триангуляции
 	bool IsEar(int32 PrevIndex, int32 CurrentIndex, int32 NextIndex) const;
 	bool IsPointInTriangle(const FVector2D& Point, const FVector2D& A, const FVector2D& B, const FVector2D& C) const;
 	float Cross2D(const FVector2D& A, const FVector2D& B) const;
 	bool IsConvexVertex(int32 PrevIndex, int32 CurrentIndex, int32 NextIndex) const;
 	TArray<int32> GetConvexHull() const;
+
+#if WITH_EDITORONLY_DATA
+	// Функции для работы с альфа-каналом текстуры
+	TArray<uint8> GetTextureAlphaData() const;
+	FIntRect CalculateTightBoundingBox(const TArray<uint8>& AlphaData) const;
+	TArray<TArray<FVector2D>> FindAllContours(TArray<uint8>& WritableAlphaData) const;
+	TArray<FVector2D> SimplifyPoints(const TArray<FVector2D>& InPoints, float Epsilon) const;
 	
-	// ИСПРАВЛЕНИЕ: GetCentroid теперь публичная, убираем из protected
+	// Конвертация координат для автогенерации
+	FVector2D PixelToLocal(const FIntPoint& PixelPos) const;
+	FVector2D LocalToUV(const FVector2D& LocalPos) const;
+
+	// Импорт из Paper2D RenderShapes
+	void ConvertRenderGeometryToManual(const FSpriteGeometryCollection& SpriteRenderGeometry);
+	FVector2D CalculateUVFromTexturePosition(const FVector2D& TexturePos) const;
+	
+	// Функции для различных типов автогенерации
+	bool GenerateGeometryFromAlphaChannel();
+	bool GenerateGeometryFromTightBounds();
+	bool GenerateGeometryFromSourceBounds();
+	bool GenerateQuadGeometry(const FIntRect& Bounds);
+#endif
+
+private:
+	// Превью для автогенерации (transient - не сохраняется)
+	UPROPERTY(Transient)
+	TArray<FManualSpriteVertex> PreviewVertices;
+	
+	UPROPERTY(Transient)
+	bool bShowingPreview;
 };
