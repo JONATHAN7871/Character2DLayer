@@ -724,6 +724,10 @@ void FManualSpriteEditorToolkit::OnUndo()
 		if (Viewport.IsValid())
 		{
 			Viewport->RefreshViewport();
+			if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+			{
+				ViewportClient->InvalidateIntersectionsCache();
+			}
 		}
 		
 		if (DetailsView.IsValid())
@@ -744,6 +748,10 @@ void FManualSpriteEditorToolkit::OnRedo()
 		if (Viewport.IsValid())
 		{
 			Viewport->RefreshViewport();
+			if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+			{
+				ViewportClient->InvalidateIntersectionsCache();
+			}
 		}
 		
 		if (DetailsView.IsValid())
@@ -775,6 +783,7 @@ void FManualSpriteEditorToolkit::OnDeleteSelected()
 		{
 			ViewportClient->DeleteSelectedVertices();
 			Viewport->RefreshViewport();
+			ViewportClient->InvalidateIntersectionsCache();
 		}
 	}
 }
@@ -1250,6 +1259,10 @@ void FManualSpriteEditorToolkit::ImportRenderGeometryWithTransaction()
 	if (Viewport.IsValid())
 	{
 		Viewport->RefreshViewport();
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			ViewportClient->InvalidateIntersectionsCache();
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Imported render geometry with transaction"));
