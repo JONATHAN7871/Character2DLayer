@@ -12,7 +12,6 @@ class FManualSpriteEditorCommands;
 
 /**
  * Редактор для Manual Sprite ассетов с поддержкой Undo/Redo и копирования/вставки
- * v1.1: Добавлена поддержка автоматической триангуляции
  */
 class MANUALSPRITEEDITORTOOLS_API FManualSpriteEditorToolkit : public FAssetEditorToolkit, public FNotifyHook
 {
@@ -89,29 +88,6 @@ public:
 		}
 	};
 
-	// v1.1: Структура для хранения информации о полигоне
-	struct FPolygonInfo
-	{
-		int32 VertexCount;
-		int32 TriangleCount;
-		bool bIsConvex;
-		float Area;
-		FVector2D Centroid;
-		FVector2D BoundingBoxMin;
-		FVector2D BoundingBoxMax;
-		
-		FPolygonInfo()
-			: VertexCount(0)
-			, TriangleCount(0)
-			, bIsConvex(false)
-			, Area(0.0f)
-			, Centroid(FVector2D::ZeroVector)
-			, BoundingBoxMin(FVector2D::ZeroVector)
-			, BoundingBoxMax(FVector2D::ZeroVector)
-		{
-		}
-	};
-
 	/** Получение настроек сетки */
 	const FGridSettings& GetGridSettings() const { return GridSettings; }
 
@@ -155,15 +131,6 @@ public:
 
 	/** Получение команд редактора */
 	TSharedPtr<FUICommandList> GetCommandList() const { return CommandList; }
-
-	// v1.1: Функции автоматической триангуляции
-	void AutoTriangulateWithTransaction();
-	void AutoTriangulateWithMethodAndTransaction(ETriangulationMethod Method);
-	void ClearTrianglesWithTransaction();
-	void SortVerticesByAngleWithTransaction();
-	void ReverseVertexOrderWithTransaction();
-	FPolygonInfo GetPolygonInfo() const;
-	void ShowPolygonInfoDialog();
 
 private:
 	/** Создание вкладки Viewport */
@@ -210,23 +177,6 @@ private:
 	
 	void OnClearGeometry();
 	void OnResetToDefault();
-
-	// v1.1: Команды автоматической триангуляции
-	void OnAutoTriangulate();
-	void OnClearTriangles();
-	void OnTriangulateFan();
-	void OnTriangulateDelaunay();
-	void OnTriangulateConvexHull();
-	void OnTriangulateEarClipping();
-	void OnSortVerticesByAngle();
-	void OnReverseVertexOrder();
-	void OnShowPolygonInfo();
-
-	// Проверки состояний для новых команд
-	bool CanAutoTriangulate() const;
-	bool CanClearTriangles() const;
-	bool CanSortVertices() const;
-	bool HasVertices() const;
 
 	/** Проверка состояний кнопок тулбара */
 	bool IsSelectModeActive() const;
@@ -282,4 +232,15 @@ private:
 	
 	/** Позиция превью вставки (в мировых координатах) */
 	FVector2D PastePreviewPosition;
+
+	/** Команды генерации мешей */
+	void OnGenerateMesh();
+	bool CanGenerateMesh() const;
+
+	/** Действия команд */
+	void OnImportRenderGeometry();
+	bool CanImportRenderGeometry() const;
+
+	/** Функция для транзакций */
+	void ImportRenderGeometryWithTransaction();
 };

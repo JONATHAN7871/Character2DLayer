@@ -2,11 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "ManualSprite.h"
+#include "SpriteEditorOnlyTypes.h"
 #include "Editor.h"
 
 /**
  * Базовый класс для транзакций Manual Sprite
- * v1.1: Добавлены транзакции для автоматической триангуляции
  */
 class MANUALSPRITEEDITORTOOLS_API FManualSpriteTransaction
 {
@@ -164,55 +164,69 @@ public:
 	void Execute();
 };
 
-// v1.1: Новые транзакции для автоматической триангуляции
-
 /**
- * Транзакция для автоматической триангуляции
+ * Транзакция для импорта геометрии из RenderShapes в ManualGeometry.
  */
-class MANUALSPRITEEDITORTOOLS_API FAutoTriangulateTransaction : public FManualSpriteTransaction
+class FImportGeometryTransaction : public FScopedTransaction
 {
-public:
-	FAutoTriangulateTransaction(UManualSprite* InSprite, ETriangulationMethod InMethod);
-	
-	// Выполнить операцию
-	void Execute();
-	
-private:
-	ETriangulationMethod TriangulationMethod;
-};
+public: // <-- Убедитесь, что это public
+	FTextKey LLOCTEXT_NAMESPACE;
 
-/**
- * Транзакция для очистки треугольников (оставляя вершины)
- */
-class MANUALSPRITEEDITORTOOLS_API FClearTrianglesTransaction : public FManualSpriteTransaction
-{
-public:
-	explicit FClearTrianglesTransaction(UManualSprite* InSprite);
-	
-	// Выполнить операцию
-	void Execute();
-};
+	FImportGeometryTransaction(UManualSprite* InSprite)
+		: FScopedTransaction(LOCTEXT("ImportRenderGeometryTransaction", "Import Render Geometry"))
+		, Sprite(InSprite)
+	{
+		check(Sprite);
+		OldGeometry = Sprite->ManualGeometry;
+	}
 
-/**
- * Транзакция для сортировки вершин по углу
- */
-class MANUALSPRITEEDITORTOOLS_API FSortVerticesByAngleTransaction : public FManualSpriteTransaction
-{
-public:
-	explicit FSortVerticesByAngleTransaction(UManualSprite* InSprite);
-	
-	// Выполнить операцию
-	void Execute();
-};
+	// ДЕСТРУКТОР ДОЛЖЕН БЫТЬ PUBLIC
+	virtual ~FImportGeometryTransaction()
+	{
+		if (IsOutstanding())
+		{
+			Sprite->ManualGeometry = OldGeometry;
+			Sprite->PostEditChange();
+		}
+	}
 
-/**
- * Транзакция для обращения порядка вершин
- */
-class MANUALSPRITEEDITORTOOLS_API FReverseVertexOrderTransaction : public FManualSpriteTransaction
-{
-public:
-	explicit FReverseVertexOrderTransaction(UManualSprite* InSprite);
-	
-	// Выполнить операцию
-	void Execute();
+	void Execute()
+	{
+#if WITH_EDITOR
+		Sprite->Modify();
+
+		// Явно вызываем наш метод Clear(), который очищает оба массива
+		Sprite->ManualGeometry.Clear();
+
+		const FVector2D SourceSize = Sprite->GetSourceSize();
+		if (SourceSize.IsNearlyZero())
+		{
+			// ...
+			return;
+		}
+
+		TArray<FVector2D> ImportedVertices;
+		Sprite->GetRenderGeometryVertices(ImportedVertices);
+
+		if (ImportedVertices.Num() == 0)
+		{
+			// ...
+			return;
+		}
+
+		for (const FVector2D& VertexPos : ImportedVertices)
+		{
+			const FVector2D UV = (VertexPos + SourceSize * 0.5f) / SourceSize;
+			Sprite->ManualGeometry.Vertices.Add(FManualSpriteVertex(VertexPos, UV));
+		}
+
+		// Важно! После импорта вершин массив треугольников должен быть пуст.
+		// Убедимся в этом еще раз (хотя Clear() уже должен был это сделать).
+		// Sprite->ManualGeometry.Triangles.Empty(); // Эта строка для параноиков, но не повредит
+#endif
+	}
+
+private: // <-- А вот эти поля могут быть private
+	UManualSprite* Sprite;
+	FManualSpriteGeometry OldGeometry; 
 };

@@ -13,7 +13,7 @@ public class ManualSpriteEditorTools : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"Paper2D",
-			"ManualSpriteEditor" // Зависимость от нашего Runtime модуля
+			"ManualSpriteEditor", "SkeletalMeshUtilitiesCommon", "MeshConversion" // Зависимость от нашего Runtime модуля
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
@@ -29,7 +29,9 @@ public class ManualSpriteEditorTools : ModuleRules
 			"RenderCore",
 			"RHI",
 			"AssetRegistry",
-			"EditorSubsystem"
+			"EditorSubsystem",
+			"MeshDescription",          // <--- ДОБАВИТЬ
+			"StaticMeshDescription"     // <--- ДОБАВИТЬ
 		});
 
 		// Добавляем UI модули если доступны

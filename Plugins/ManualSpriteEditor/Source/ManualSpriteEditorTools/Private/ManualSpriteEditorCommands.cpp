@@ -44,20 +44,12 @@ void FManualSpriteEditorCommands::RegisterCommands()
 	UI_COMMAND(SelectAll, "Select All", "Select all vertices", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::A));
 	UI_COMMAND(DeselectAll, "Deselect", "Clear selection", EUserInterfaceActionType::Button, FInputChord(EKeys::A, false, true, false, true)); // Shift+Ctrl+A
 
-	// v1.1: Автоматическая триангуляция с горячими клавишами
-	UI_COMMAND(AutoTriangulate, "Auto Triangulate", "Automatically triangulate using preferred method", EUserInterfaceActionType::Button, FInputChord(EKeys::T));
-	UI_COMMAND(ClearTriangles, "Clear Triangles", "Remove all triangles but keep vertices", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Shift, EKeys::T));
-	
-	// Различные методы триангуляции
-	UI_COMMAND(TriangulateFan, "Fan", "Fan triangulation from first vertex", EUserInterfaceActionType::Button, FInputChord(EKeys::F1));
-	UI_COMMAND(TriangulateDelaunay, "Delaunay", "Delaunay-like triangulation", EUserInterfaceActionType::Button, FInputChord(EKeys::F2));
-	UI_COMMAND(TriangulateConvexHull, "Convex Hull", "Triangulate convex hull only", EUserInterfaceActionType::Button, FInputChord(EKeys::F3));
-	UI_COMMAND(TriangulateEarClipping, "Ear Clipping", "Ear clipping algorithm for complex polygons", EUserInterfaceActionType::Button, FInputChord(EKeys::F4));
+	// Генерация мешей
+	UI_COMMAND(GenerateMesh, "Generate Mesh", "Generate Static or Skeletal Mesh from Manual Sprite geometry", 
+			  EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::M));
 
-	// v1.1: Утилиты для вершин
-	UI_COMMAND(SortVerticesByAngle, "Sort by Angle", "Sort vertices by angle around centroid", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Alt, EKeys::S));
-	UI_COMMAND(ReverseVertexOrder, "Reverse Order", "Reverse the order of vertices", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Alt, EKeys::R));
-	UI_COMMAND(ShowPolygonInfo, "Polygon Info", "Show information about the current polygon", EUserInterfaceActionType::Button, FInputChord(EKeys::I));
+	// Команда для импорта геометрии
+	UI_COMMAND(ImportRenderGeometry, "Import Geometry", "Imports the vertices from the sprite's render geometry, replacing the current manual geometry.", EUserInterfaceActionType::Button, FInputChord());
 }
 
 #undef LOCTEXT_NAMESPACE

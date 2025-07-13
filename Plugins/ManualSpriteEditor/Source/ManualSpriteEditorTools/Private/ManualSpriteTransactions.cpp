@@ -1,5 +1,5 @@
 #include "ManualSpriteTransactions.h"
-#include "Editor.h" // ИСПРАВЛЕНО: убираем полный путь
+#include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "ManualSpriteTransactions"
 
@@ -129,16 +129,12 @@ FMoveVertexTransaction::FMoveVertexTransaction(UManualSprite* InSprite, int32 In
 
 void FMoveVertexTransaction::Execute()
 {
-	if (!ManualSprite || VertexIndex < 0) 
-		return;
-	
-	TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-	if (VertexIndex >= Vertices.Num())
+	if (!ManualSprite || VertexIndex < 0 || VertexIndex >= ManualSprite->ManualGeometry.Vertices.Num()) 
 		return;
 	
 	BeginTransaction();
-	Vertices[VertexIndex].Position = NewVertexPosition;
-	Vertices[VertexIndex].UV = NewVertexUV;
+	ManualSprite->ManualGeometry.Vertices[VertexIndex].Position = NewVertexPosition;
+	ManualSprite->ManualGeometry.Vertices[VertexIndex].UV = NewVertexUV;
 	(void)ManualSprite->MarkPackageDirty();
 	EndTransaction();
 }
@@ -159,15 +155,14 @@ void FMoveVerticesTransaction::Execute()
 	
 	BeginTransaction();
 	
-	TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-	
+	// Update positions of all specified vertices
 	for (int32 i = 0; i < VertexIndices.Num(); i++)
 	{
 		const int32 VertexIndex = VertexIndices[i];
-		if (VertexIndex >= 0 && VertexIndex < Vertices.Num())
+		if (VertexIndex >= 0 && VertexIndex < ManualSprite->ManualGeometry.Vertices.Num())
 		{
-			Vertices[VertexIndex].Position = NewVertexPositions[i];
-			Vertices[VertexIndex].UV = NewVertexUVs[i];
+			ManualSprite->ManualGeometry.Vertices[VertexIndex].Position = NewVertexPositions[i];
+			ManualSprite->ManualGeometry.Vertices[VertexIndex].UV = NewVertexUVs[i];
 		}
 	}
 	
@@ -227,65 +222,6 @@ void FResetGeometryTransaction::Execute()
 	BeginTransaction();
 	FPropertyChangedEvent DummyEvent(nullptr);
 	ManualSprite->PostEditChangeProperty(DummyEvent);
-	EndTransaction();
-}
-
-// v1.1: New transactions for automatic triangulation
-
-FAutoTriangulateTransaction::FAutoTriangulateTransaction(UManualSprite* InSprite, ETriangulationMethod InMethod)
-	: FManualSpriteTransaction(InSprite, LOCTEXT("AutoTriangulate", "Auto Triangulate"))
-	, TriangulationMethod(InMethod)
-{
-}
-
-void FAutoTriangulateTransaction::Execute()
-{
-	if (!ManualSprite) return;
-	
-	BeginTransaction();
-	ManualSprite->AutoTriangulateWithMethod(TriangulationMethod);
-	EndTransaction();
-}
-
-FClearTrianglesTransaction::FClearTrianglesTransaction(UManualSprite* InSprite)
-	: FManualSpriteTransaction(InSprite, LOCTEXT("ClearTriangles", "Clear Triangles"))
-{
-}
-
-void FClearTrianglesTransaction::Execute()
-{
-	if (!ManualSprite) return;
-	
-	BeginTransaction();
-	ManualSprite->ClearTriangles();
-	EndTransaction();
-}
-
-FSortVerticesByAngleTransaction::FSortVerticesByAngleTransaction(UManualSprite* InSprite)
-	: FManualSpriteTransaction(InSprite, LOCTEXT("SortVerticesByAngle", "Sort Vertices by Angle"))
-{
-}
-
-void FSortVerticesByAngleTransaction::Execute()
-{
-	if (!ManualSprite) return;
-	
-	BeginTransaction();
-	ManualSprite->SortVerticesByAngle();
-	EndTransaction();
-}
-
-FReverseVertexOrderTransaction::FReverseVertexOrderTransaction(UManualSprite* InSprite)
-	: FManualSpriteTransaction(InSprite, LOCTEXT("ReverseVertexOrder", "Reverse Vertex Order"))
-{
-}
-
-void FReverseVertexOrderTransaction::Execute()
-{
-	if (!ManualSprite) return;
-	
-	BeginTransaction();
-	ManualSprite->ReverseVertexOrder();
 	EndTransaction();
 }
 

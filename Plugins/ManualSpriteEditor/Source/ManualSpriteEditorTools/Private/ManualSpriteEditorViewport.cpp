@@ -24,10 +24,11 @@ static TAutoConsoleVariable<int32> CVarDebugManualSprite(
 );
 
 // Константы для рендеринга
-const float ManualSpriteEditorViewport::VertexSize = 8.0f;
-const float ManualSpriteEditorViewport::VertexSelectSize = 12.0f;
-const FLinearColor ManualSpriteEditorViewport::VertexColor = FLinearColor::Red;
-const FLinearColor ManualSpriteEditorViewport::SelectedVertexColor = FLinearColor::Yellow;
+const float ManualSpriteEditorViewport::VertexSize = 6.0f;
+const float ManualSpriteEditorViewport::VertexSelectSize = 10.0f;
+const FLinearColor ManualSpriteEditorViewport::VertexColor = FLinearColor(1.0f, 0.3f, 0.3f, 1.0f);
+const FLinearColor ManualSpriteEditorViewport::SelectedVertexColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+const FLinearColor ManualSpriteEditorViewport::HoveredVertexColor = FLinearColor::White;
 const FLinearColor ManualSpriteEditorViewport::TriangleColor = FLinearColor(0.0f, 1.0f, 0.0f, 0.3f);
 const FLinearColor ManualSpriteEditorViewport::SelectedTriangleColor = FLinearColor(1.0f, 1.0f, 0.0f, 0.5f);
 
@@ -194,7 +195,6 @@ ManualSpriteEditorViewport::FManualSpriteStats ManualSpriteEditorViewport::GetSp
 	if (ManualSpritePtr.IsValid())
 	{
 		const UManualSprite* Sprite = ManualSpritePtr.Get();
-		// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
 		Stats.VertexCount = Sprite->ManualGeometry.Vertices.Num();
 		Stats.TriangleCount = Sprite->ManualGeometry.Triangles.Num();
 		Stats.SpriteSize = Sprite->GetSourceSize();
@@ -459,7 +459,7 @@ bool ManualSpriteEditorViewport::InputAxis(FViewport* InViewport, FInputDeviceId
 
 void ManualSpriteEditorViewport::MouseMove(FViewport* InViewport, int32 X, int32 Y)
 {
-	const FVector2D LocalMousePos(X, Y);  // ИСПРАВЛЕНО: переименовано из CurrentMousePos
+	const FVector2D LocalMousePos(X, Y);
 	const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
 
 	if (bIsPanning)
@@ -489,14 +489,25 @@ void ManualSpriteEditorViewport::MouseMove(FViewport* InViewport, int32 X, int32
 
 	LastMousePosition = LocalMousePos;
 
+	// ИСПРАВЛЕНИЕ: Точное определение hover с использованием экранных координат
 	if (!bIsDraggingVertices && !BoxSelection.bIsActive && 
 		(!Editor.IsValid() || Editor->GetEditMode() != FManualSpriteEditorToolkit::EEditMode::Paste))
 	{
-		const FVector2D WorldPos = ScreenToWorld(LocalMousePos, InViewport);
-		HoveredVertex = FindVertexAtPosition(WorldPos);
-		HoveredTriangle = FindTriangleAtPosition(WorldPos);
+		// Используем адаптивный tolerance в экранных координатах
+		const float BaseScreenTolerance = 8.0f; // Базовый размер в пикселях
 		
-		InViewport->Invalidate();
+		const int32 NewHoveredVertex = FindVertexAtScreenPosition(LocalMousePos, InViewport, BaseScreenTolerance);
+		
+		// Для треугольников используем мировые координаты (они менее критичны к точности)
+		const int32 NewHoveredTriangle = FindTriangleAtPosition(ScreenToWorld(LocalMousePos, InViewport));
+		
+		// Обновляем только если hover изменился
+		if (NewHoveredVertex != HoveredVertex || NewHoveredTriangle != HoveredTriangle)
+		{
+			HoveredVertex = NewHoveredVertex;
+			HoveredTriangle = NewHoveredTriangle;
+			InViewport->Invalidate();
+		}
 	}
 }
 
@@ -591,33 +602,56 @@ void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* 
 	if (!ManualSpritePtr.IsValid())
 		return;
 
-	// ИСПРАВЛЕНИЕ: Убеждаемся в синхронизации и используем напрямую
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 
-	for (int32 i = 0; i < Vertices.Num(); i++)
+	for (int32 i = 0; i < Geometry.Vertices.Num(); i++)
 	{
-		const FVector2D WorldPos = Vertices[i].Position;
+		const FVector2D WorldPos = Geometry.Vertices[i].Position;
 		const FVector2D ScreenPos = WorldToScreen(WorldPos, InViewport);
 
+		// Определяем цвет и размер точки в зависимости от состояния
 		FLinearColor Color = VertexColor;
 		float Size = VertexSize;
+		bool bDrawOutline = false;
+		bool bDrawHalo = false;
 
+		// Выделенные вершины
 		if (SelectedVertices.Contains(i))
 		{
 			Color = SelectedVertexColor;
 			Size = VertexSelectSize;
+			bDrawOutline = true;
+			bDrawHalo = true;
 		}
+		// Вершина под курсором (приоритет над выделением)
 		else if (i == HoveredVertex)
 		{
 			Color = FLinearColor::White;
-			Size = VertexSelectSize;
+			Size = VertexSelectSize * 1.2f; // Увеличиваем для лучшей видимости
+			bDrawOutline = true;
+			bDrawHalo = true;
 		}
+		// Вершины во время перетаскивания
 		else if (bIsDraggingVertices && SelectedVertices.Contains(i))
 		{
 			Color = FLinearColor(0.0f, 1.0f, 1.0f, 1.0f);
 			Size = VertexSelectSize;
+			bDrawOutline = true;
 		}
 
+		// Рисуем ореол для важных точек
+		if (bDrawHalo)
+		{
+			const float HaloSize = Size * 1.5f;
+			FCanvasBoxItem HaloItem(
+				ScreenPos - FVector2D(HaloSize * 0.5f),
+				FVector2D(HaloSize)
+			);
+			HaloItem.SetColor(FLinearColor(Color.R, Color.G, Color.B, 0.2f));
+			Canvas->DrawItem(HaloItem);
+		}
+
+		// Основная точка
 		FCanvasBoxItem BoxItem(
 			ScreenPos - FVector2D(Size * 0.5f),
 			FVector2D(Size)
@@ -625,36 +659,51 @@ void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* 
 		BoxItem.SetColor(Color);
 		Canvas->DrawItem(BoxItem);
 
-		const FString VertexNumber = FString::Printf(TEXT("%d"), i);
-		FCanvasTextItem TextItem(
-			ScreenPos + FVector2D(Size * 0.5f, -Size * 0.5f),
-			FText::FromString(VertexNumber),
-			GEngine->GetSmallFont(),
-			FLinearColor::White
-		);
-		Canvas->DrawItem(TextItem);
-		
-		if (i == HoveredVertex)
+		// Контур для лучшей видимости
+		if (bDrawOutline)
 		{
-			const FVector2D UV = Vertices[i].UV;
-			const FString UVText = FString::Printf(TEXT("UV: (%.3f, %.3f)"), UV.X, UV.Y);
-			const FString PosText = FString::Printf(TEXT("Pos: (%.1f, %.1f)"), WorldPos.X, WorldPos.Y);
-			
-			FCanvasTextItem UVTextItem(
-				ScreenPos + FVector2D(Size * 0.5f, Size * 0.5f),
-				FText::FromString(UVText),
-				GEngine->GetSmallFont(),
-				FLinearColor::Yellow
+			const float OutlineThickness = 1.5f;
+			FCanvasBoxItem OutlineItem(
+				ScreenPos - FVector2D((Size + OutlineThickness) * 0.5f),
+				FVector2D(Size + OutlineThickness)
 			);
-			Canvas->DrawItem(UVTextItem);
-			
-			FCanvasTextItem PosTextItem(
-				ScreenPos + FVector2D(Size * 0.5f, Size * 0.5f + 12.0f),
-				FText::FromString(PosText),
+			OutlineItem.SetColor(FLinearColor::Black);
+			OutlineItem.LineThickness = OutlineThickness;
+			Canvas->DrawItem(OutlineItem);
+		}
+
+		// Номер вершины для выделенных или под курсором
+		if (SelectedVertices.Contains(i) || i == HoveredVertex)
+		{
+			const FString VertexNumber = FString::Printf(TEXT("%d"), i);
+			FCanvasTextItem TextItem(
+				ScreenPos + FVector2D(Size * 0.5f + 2.0f, -Size * 0.5f - 2.0f),
+				FText::FromString(VertexNumber),
 				GEngine->GetSmallFont(),
-				FLinearColor::Green
+				FLinearColor::White
 			);
-			Canvas->DrawItem(PosTextItem);
+			TextItem.EnableShadow(FLinearColor::Black);
+			Canvas->DrawItem(TextItem);
+		}
+		
+		// Детальная информация только для точки под курсором
+		if (i == HoveredVertex && !bIsDraggingVertices)
+		{
+			const FVector2D UV = Geometry.Vertices[i].UV;
+			const FString InfoText = FString::Printf(TEXT("V%d: (%.1f, %.1f) UV:(%.3f, %.3f)"), 
+				i, WorldPos.X, WorldPos.Y, UV.X, UV.Y);
+			
+			// Фон для текста
+			const float TextWidth = 200.0f;
+			const float TextHeight = 16.0f;
+			const FVector2D TextPos = ScreenPos + FVector2D(Size * 0.5f + 5.0f, Size * 0.5f);
+			
+			FCanvasBoxItem BackgroundItem(TextPos - FVector2D(2.0f, 2.0f), FVector2D(TextWidth, TextHeight));
+			BackgroundItem.SetColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.8f));
+			Canvas->DrawItem(BackgroundItem);
+			
+			FCanvasTextItem InfoTextItem(TextPos, FText::FromString(InfoText), GEngine->GetSmallFont(), FLinearColor::Yellow);
+			Canvas->DrawItem(InfoTextItem);
 		}
 	}
 }
@@ -664,22 +713,20 @@ void ManualSpriteEditorViewport::DrawTriangles(FCanvas* Canvas, const FViewport*
 	if (!ManualSpritePtr.IsValid())
 		return;
 
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSpritePtr->ManualGeometry.Triangles;
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 
-	for (int32 i = 0; i < Triangles.Num(); i++)
+	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
 	{
-		const FManualSpriteTriangle& Triangle = Triangles[i];
+		const FManualSpriteTriangle& Triangle = Geometry.Triangles[i];
 
-		if (Triangle.VertexIndex0 >= Vertices.Num() ||
-			Triangle.VertexIndex1 >= Vertices.Num() ||
-			Triangle.VertexIndex2 >= Vertices.Num())
+		if (Triangle.VertexIndex0 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex1 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex2 >= Geometry.Vertices.Num())
 			continue;
 
-		const FVector2D Pos0 = WorldToScreen(Vertices[Triangle.VertexIndex0].Position, InViewport);
-		const FVector2D Pos1 = WorldToScreen(Vertices[Triangle.VertexIndex1].Position, InViewport);
-		const FVector2D Pos2 = WorldToScreen(Vertices[Triangle.VertexIndex2].Position, InViewport);
+		const FVector2D Pos0 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex0].Position, InViewport);
+		const FVector2D Pos1 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex1].Position, InViewport);
+		const FVector2D Pos2 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex2].Position, InViewport);
 
 		const FLinearColor Color = (i == HoveredTriangle) ? SelectedTriangleColor : TriangleColor;
 
@@ -754,28 +801,34 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 	if (Editor.IsValid())
 	{
 		FString ModeText;
+		FLinearColor ModeColor = FLinearColor::Yellow;
+		
 		switch (Editor->GetEditMode())
 		{
 		case FManualSpriteEditorToolkit::EEditMode::Select:
-			ModeText = TEXT("Mode: Select (Q)");
+			ModeText = TEXT("Mode: Select (Q) - Click and drag vertices");
 			break;
 		case FManualSpriteEditorToolkit::EEditMode::AddVertex:
-			ModeText = TEXT("Mode: Add Vertex (W)");
+			ModeText = TEXT("Mode: Add Vertex (W) - Click to place");
+			ModeColor = FLinearColor::Green;
 			break;
 		case FManualSpriteEditorToolkit::EEditMode::Triangle:
-			ModeText = TEXT("Mode: Triangle (E)");
+			ModeText = TEXT("Mode: Triangle (E) - Select 3 vertices");
+			ModeColor = FLinearColor::Blue;
 			break;
 		case FManualSpriteEditorToolkit::EEditMode::Delete:
-			ModeText = TEXT("Mode: Delete (R)");
+			ModeText = TEXT("Mode: Delete (R) - Click to remove");
+			ModeColor = FLinearColor::Red;
 			break;
 		case FManualSpriteEditorToolkit::EEditMode::Paste:
-			ModeText = TEXT("Mode: Paste");
+			ModeText = TEXT("Mode: Paste - Click to place copied vertices");
+			ModeColor = FColor::Cyan;
 			break;
 		}
 		
 		FCanvasTextItem TextItem(FVector2D(10, CurrentY), 
 			FText::FromString(ModeText),
-			GEngine->GetSmallFont(), FLinearColor::Yellow);
+			GEngine->GetSmallFont(), ModeColor);
 		TextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(TextItem);
 		CurrentY += LineHeight;
@@ -791,17 +844,134 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		Canvas->DrawItem(TextItem);
 		CurrentY += LineHeight;
 	}
+
+	// НОВОЕ: Информация о наведении и точности в правом верхнем углу
+	const FVector2D ViewportSize = FVector2D(InViewport->GetSizeXY().X, InViewport->GetSizeXY().Y);
 	
-	// Zoom информация в правом нижнем углу
+	if (HoveredVertex != -1)
 	{
-		const FString ZoomText = FString::Printf(TEXT("Zoom: %.0f%%"), ZoomFactor * 100.0f);
-		const FVector2D ViewportSize = FVector2D(InViewport->GetSizeXY().X, InViewport->GetSizeXY().Y);
+		const FString HoverText = FString::Printf(TEXT("Hovered: Vertex #%d"), HoveredVertex);
+		FCanvasTextItem HoverTextItem(FVector2D(ViewportSize.X - 180, 10), 
+			FText::FromString(HoverText), GEngine->GetMediumFont(), FColor::Cyan);
+		HoverTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(HoverTextItem);
 		
-		FCanvasTextItem TextItem(FVector2D(ViewportSize.X - 120, ViewportSize.Y - 30), 
-			FText::FromString(ZoomText),
-			GEngine->GetSmallFont(), FLinearColor::Gray);
-		TextItem.EnableShadow(FLinearColor::Black);
-		Canvas->DrawItem(TextItem);
+		// Показываем zoom и точность
+		const FString PrecisionText = FString::Printf(TEXT("Zoom: %.0f%% | Precision: Enhanced"), ZoomFactor * 100.0f);
+		FCanvasTextItem PrecisionTextItem(FVector2D(ViewportSize.X - 180, 30), 
+			FText::FromString(PrecisionText), GEngine->GetSmallFont(), FLinearColor::Gray);
+		PrecisionTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(PrecisionTextItem);
+	}
+	else
+	{
+		// Zoom информация когда нет hover
+		const FString ZoomText = FString::Printf(TEXT("Zoom: %.0f%%"), ZoomFactor * 100.0f);
+		FCanvasTextItem ZoomTextItem(FVector2D(ViewportSize.X - 120, ViewportSize.Y - 30), 
+			FText::FromString(ZoomText), GEngine->GetSmallFont(), FLinearColor::Gray);
+		ZoomTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(ZoomTextItem);
+	}
+
+	// Дополнительные подсказки в зависимости от режима
+	if (Editor.IsValid())
+	{
+		FString HintText;
+		bool bShowHint = false;
+		
+		switch (Editor->GetEditMode())
+		{
+		case FManualSpriteEditorToolkit::EEditMode::Select:
+			if (SelectedVertices.Num() > 0)
+			{
+				HintText = TEXT("Ctrl+C to copy, Ctrl+V to paste, Delete to remove");
+				bShowHint = true;
+			}
+			else if (HoveredVertex == -1)
+			{
+				HintText = TEXT("Click vertex to select, Drag to select multiple");
+				bShowHint = true;
+			}
+			break;
+		case FManualSpriteEditorToolkit::EEditMode::Triangle:
+			if (SelectedVertices.Num() > 0)
+			{
+				HintText = FString::Printf(TEXT("Triangle: %d/3 vertices selected"), SelectedVertices.Num());
+				bShowHint = true;
+			}
+			else
+			{
+				HintText = TEXT("Select 3 vertices to create a triangle");
+				bShowHint = true;
+			}
+			break;
+		case FManualSpriteEditorToolkit::EEditMode::AddVertex:
+			HintText = TEXT("Click anywhere to add a new vertex");
+			bShowHint = true;
+			break;
+		case FManualSpriteEditorToolkit::EEditMode::Delete:
+			HintText = TEXT("Click on vertex or triangle to delete it");
+			bShowHint = true;
+			break;
+		case FManualSpriteEditorToolkit::EEditMode::Paste:
+			if (Editor->HasCopiedVertices())
+			{
+				const int32 CopiedCount = Editor->GetPastePreviewVertices().Num();
+				HintText = FString::Printf(TEXT("Pasting %d vertices - Click to place, Right-click to cancel"), CopiedCount);
+				bShowHint = true;
+			}
+			break;
+		}
+		
+		if (bShowHint)
+		{
+			const float HintY = ViewportSize.Y - 50.0f;
+			const float HintX = (ViewportSize.X - 400.0f) * 0.5f; // Центрируем
+			
+			// Фон для подсказки
+			FCanvasBoxItem HintBackground(FVector2D(HintX - 5, HintY - 2), FVector2D(410, 20));
+			HintBackground.SetColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.6f));
+			Canvas->DrawItem(HintBackground);
+			
+			FCanvasTextItem HintTextItem(FVector2D(HintX, HintY), 
+				FText::FromString(HintText), GEngine->GetSmallFont(), FLinearColor::White);
+			Canvas->DrawItem(HintTextItem);
+		}
+	}
+
+	// Информация о сетке (если включена)
+	if (Editor.IsValid() && Editor->GetGridSettings().bShowGrid)
+	{
+		const auto& GridSettings = Editor->GetGridSettings();
+		const FString GridText = FString::Printf(TEXT("Grid: %.0fpx %s"), 
+			GridSettings.GridSize, 
+			GridSettings.bSnapToGrid ? TEXT("(Snap ON)") : TEXT("(Snap OFF)"));
+		
+		FCanvasTextItem GridTextItem(FVector2D(10, ViewportSize.Y - 30), 
+			FText::FromString(GridText), GEngine->GetSmallFont(), 
+			GridSettings.bSnapToGrid ? FLinearColor::Green : FLinearColor::Gray);
+		GridTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(GridTextItem);
+	}
+
+	// Горячие клавиши (показываем в левом нижнем углу если не заняты подсказками)
+	if (!Editor.IsValid() || Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Select)
+	{
+		const TArray<FString> Shortcuts = {
+			TEXT("Q - Select | W - Add | E - Triangle | R - Delete"),
+			TEXT("G - Grid | Ctrl+G - Snap | Mouse Wheel - Zoom"),
+			TEXT("Ctrl+C/V - Copy/Paste | Ctrl+Z/Y - Undo/Redo")
+		};
+		
+		float ShortcutY = ViewportSize.Y - 80.0f;
+		for (const FString& Shortcut : Shortcuts)
+		{
+			FCanvasTextItem ShortcutItem(FVector2D(10, ShortcutY), 
+				FText::FromString(Shortcut), GEngine->GetTinyFont(), 
+				FLinearColor(0.7f, 0.7f, 0.7f, 0.8f));
+			Canvas->DrawItem(ShortcutItem);
+			ShortcutY += 12.0f;
+		}
 	}
 }
 
@@ -818,9 +988,7 @@ void ManualSpriteEditorViewport::SelectAllVertices()
 		return;
 
 	SelectedVertices.Empty();
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
-	for (int32 i = 0; i < Vertices.Num(); i++)
+	for (int32 i = 0; i < ManualSpritePtr->ManualGeometry.Vertices.Num(); i++)
 	{
 		SelectedVertices.Add(i);
 	}
@@ -889,7 +1057,9 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 		{
 			if (Event == IE_Pressed)
 			{
-				const int32 VertexIndex = FindVertexAtPosition(WorldPos);
+				// ИСПРАВЛЕНИЕ: Используем точный поиск по экранным координатам
+				const float ClickTolerance = 10.0f; // Немного больше для удобства клика
+				const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
 				const bool bCtrlPressed = FSlateApplication::Get().GetModifierKeys().IsControlDown();
 				
 				if (VertexIndex != -1)
@@ -944,7 +1114,11 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 	case FManualSpriteEditorToolkit::EEditMode::Triangle:
 		if (Key == EKeys::LeftMouseButton && Event == IE_Pressed)
 		{
-			if (const int32 VertexIndex = FindVertexAtPosition(WorldPos); VertexIndex != -1)
+			// ИСПРАВЛЕНИЕ: Точный поиск для режима создания треугольников
+			const float ClickTolerance = 10.0f;
+			const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
+			
+			if (VertexIndex != -1)
 			{
 				if (!SelectedVertices.Contains(VertexIndex))
 				{
@@ -964,7 +1138,11 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 	case FManualSpriteEditorToolkit::EEditMode::Delete:
 		if (Key == EKeys::LeftMouseButton && Event == IE_Pressed)
 		{
-			if (const int32 VertexIndex = FindVertexAtPosition(WorldPos); VertexIndex != -1)
+			// ИСПРАВЛЕНИЕ: Точный поиск для режима удаления
+			const float ClickTolerance = 10.0f;
+			const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
+			
+			if (VertexIndex != -1)
 			{
 				Editor->RemoveVertexWithTransaction(VertexIndex);
 				SelectedVertices.Empty();
@@ -985,21 +1163,62 @@ int32 ManualSpriteEditorViewport::FindVertexAtPosition(FVector2D WorldPos, float
 	if (!ManualSpritePtr.IsValid())
 		return -1;
 
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
-	const float ToleranceSquared = Tolerance * Tolerance;
-
-	for (int32 i = 0; i < Vertices.Num(); i++)
+	// ИСПРАВЛЕНИЕ: Преобразуем в экранные координаты для точного поиска
+	if (Viewport)
 	{
-		const FVector2D VertexPos = Vertices[i].Position;
-		if (const float DistanceSquared = FVector2D::DistSquared(WorldPos, VertexPos); 
-			DistanceSquared <= ToleranceSquared)
-		{
-			return i;
-		}
+		const FVector2D ScreenPos = WorldToScreen(WorldPos, Viewport);
+		const float ScreenTolerance = VertexSelectSize * 0.8f; // Используем размер точки как tolerance
+		return FindVertexAtScreenPosition(ScreenPos, Viewport, ScreenTolerance);
 	}
 
 	return -1;
+}
+
+int32 ManualSpriteEditorViewport::FindVertexAtScreenPosition(FVector2D ScreenPos, const FViewport* InViewport, float ScreenTolerance) const
+{
+	if (!ManualSpritePtr.IsValid())
+		return -1;
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	
+	// Найдем самую близкую точку по экранным координатам
+	int32 ClosestVertexIndex = -1;
+	float ClosestDistanceSquared = FLT_MAX;
+	
+	for (int32 i = 0; i < Geometry.Vertices.Num(); i++)
+	{
+		const FVector2D VertexWorldPos = Geometry.Vertices[i].Position;
+		const FVector2D VertexScreenPos = WorldToScreen(VertexWorldPos, InViewport);
+		
+		const float DistanceSquared = FVector2D::DistSquared(ScreenPos, VertexScreenPos);
+		
+		// ИСПРАВЛЕНИЕ: Переименовываем переменную чтобы избежать конфликта с членом класса
+		const float CurrentVertexSize = GetVertexScreenSize(i);
+		const float EffectiveTolerance = FMath::Max(ScreenTolerance, CurrentVertexSize * 0.6f);
+		
+		// Проверяем, находится ли курсор в пределах области точки
+		if (DistanceSquared <= EffectiveTolerance * EffectiveTolerance)
+		{
+			// Если эта точка ближе чем предыдущая найденная, запоминаем её
+			if (DistanceSquared < ClosestDistanceSquared)
+			{
+				ClosestDistanceSquared = DistanceSquared;
+				ClosestVertexIndex = i;
+			}
+		}
+	}
+	
+	// ИСПРАВЛЕНИЕ: Добавляем return statement
+	return ClosestVertexIndex;
+}
+
+float ManualSpriteEditorViewport::GetVertexScreenSize(int32 VertexIndex) const
+{
+	if (SelectedVertices.Contains(VertexIndex) || VertexIndex == HoveredVertex)
+	{
+		return VertexSelectSize;
+	}
+	return VertexSize;
 }
 
 int32 ManualSpriteEditorViewport::FindTriangleAtPosition(FVector2D WorldPos) const
@@ -1007,22 +1226,20 @@ int32 ManualSpriteEditorViewport::FindTriangleAtPosition(FVector2D WorldPos) con
 	if (!ManualSpritePtr.IsValid())
 		return -1;
 
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSpritePtr->ManualGeometry.Triangles;
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 
-	for (int32 i = 0; i < Triangles.Num(); i++)
+	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
 	{
-		const FManualSpriteTriangle& Triangle = Triangles[i];
+		const FManualSpriteTriangle& Triangle = Geometry.Triangles[i];
 
-		if (Triangle.VertexIndex0 >= Vertices.Num() ||
-			Triangle.VertexIndex1 >= Vertices.Num() ||
-			Triangle.VertexIndex2 >= Vertices.Num())
+		if (Triangle.VertexIndex0 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex1 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex2 >= Geometry.Vertices.Num())
 			continue;
 
-		const FVector2D V0 = Vertices[Triangle.VertexIndex0].Position;
-		const FVector2D V1 = Vertices[Triangle.VertexIndex1].Position;
-		const FVector2D V2 = Vertices[Triangle.VertexIndex2].Position;
+		const FVector2D V0 = Geometry.Vertices[Triangle.VertexIndex0].Position;
+		const FVector2D V1 = Geometry.Vertices[Triangle.VertexIndex1].Position;
+		const FVector2D V2 = Geometry.Vertices[Triangle.VertexIndex2].Position;
 
 		const FVector2D V0ToV2 = V2 - V0;
 		const FVector2D V0ToV1 = V1 - V0;
@@ -1132,14 +1349,13 @@ void ManualSpriteEditorViewport::BeginVerticesDrag()
 	OriginalVertexPositions.Empty();
 	OriginalVertexUVs.Empty();
 
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 	for (int32 VertexIndex : SelectedVertices)
 	{
-		if (VertexIndex >= 0 && VertexIndex < Vertices.Num())
+		if (VertexIndex >= 0 && VertexIndex < Geometry.Vertices.Num())
 		{
-			OriginalVertexPositions.Add(Vertices[VertexIndex].Position);
-			OriginalVertexUVs.Add(Vertices[VertexIndex].UV);
+			OriginalVertexPositions.Add(Geometry.Vertices[VertexIndex].Position);
+			OriginalVertexUVs.Add(Geometry.Vertices[VertexIndex].UV);
 		}
 	}
 }
@@ -1162,24 +1378,20 @@ void ManualSpriteEditorViewport::UpdateVerticesDrag(const FVector2D& MouseDelta)
 
 	const FVector2D WorldDelta = MouseDelta / ZoomFactor;
 
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	TArray<FManualSpriteVertex>& Vertices = ManualSpritePtr->ManualGeometry.Vertices;
-
 	for (int32 i = 0; i < SelectedVertices.Num(); i++)
 	{
 		const int32 VertexIndex = SelectedVertices[i];
-		if (VertexIndex >= 0 && VertexIndex < Vertices.Num())
+		if (VertexIndex >= 0 && VertexIndex < ManualSpritePtr->ManualGeometry.Vertices.Num())
 		{
 			const FVector2D NewPosition = SnapToGrid(OriginalVertexPositions[i] + WorldDelta);
 			const FVector2D NewUV = CalculateUVFromWorldPosition(NewPosition, ManualSpritePtr.Get());
 			
-			Vertices[VertexIndex].Position = NewPosition;
-			Vertices[VertexIndex].UV = NewUV;
+			ManualSpritePtr->ManualGeometry.Vertices[VertexIndex].Position = NewPosition;
+			ManualSpritePtr->ManualGeometry.Vertices[VertexIndex].UV = NewUV;
 		}
 	}
 	
-	// КРИТИЧНО: Синхронизируем обратно с островом
-	(void)ManualSpritePtr->MarkPackageDirty();
+	ManualSpritePtr->MarkPackageDirty();
 }
 
 void ManualSpriteEditorViewport::EndVerticesDrag()

@@ -7,7 +7,6 @@
 
 /**
  * Команды для Manual Sprite Editor с поддержкой горячих клавиш и копирования/вставки
- * v1.1: Добавлены команды автоматической триангуляции
  */
 class MANUALSPRITEEDITORTOOLS_API FManualSpriteEditorCommands : public TCommands<FManualSpriteEditorCommands>
 {
@@ -48,16 +47,9 @@ public:
 	TSharedPtr<FUICommandInfo> SelectAll;
 	TSharedPtr<FUICommandInfo> DeselectAll;
 
-	// v1.1: Автоматическая триангуляция
-	TSharedPtr<FUICommandInfo> AutoTriangulate;
-	TSharedPtr<FUICommandInfo> ClearTriangles;
-	TSharedPtr<FUICommandInfo> TriangulateFan;
-	TSharedPtr<FUICommandInfo> TriangulateDelaunay;
-	TSharedPtr<FUICommandInfo> TriangulateConvexHull;
-	TSharedPtr<FUICommandInfo> TriangulateEarClipping;
+	// Генерация мешей
+	TSharedPtr<FUICommandInfo> GenerateMesh;
 
-	// v1.1: Утилиты для вершин
-	TSharedPtr<FUICommandInfo> SortVerticesByAngle;
-	TSharedPtr<FUICommandInfo> ReverseVertexOrder;
-	TSharedPtr<FUICommandInfo> ShowPolygonInfo;
+	// Команда для импорта геометрии
+	TSharedPtr<FUICommandInfo> ImportRenderGeometry;
 };

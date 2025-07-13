@@ -2,6 +2,7 @@
 #include "ManualSpriteEditorViewport.h"
 #include "ManualSpriteEditorCommands.h"
 #include "ManualSpriteTransactions.h"
+#include "PaperSprite.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "PropertyEditorModule.h"
 #include "IDetailsView.h"
@@ -11,14 +12,9 @@
 #include "Framework/Commands/UICommandList.h"
 #include "Engine/Engine.h"
 #include "Editor.h"
+#include "ManualSpriteMeshGenerator.h"
 #include "ScopedTransaction.h"
 #include "Editor/Transactor.h"
-// v1.1: Новые includes для диалогов
-#include "Widgets/SBoxPanel.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Layout/SScrollBox.h"
-#include "Framework/Notifications/NotificationManager.h"
-#include "Widgets/Notifications/SNotificationList.h"
 
 #define LOCTEXT_NAMESPACE "ManualSpriteEditorToolkit"
 
@@ -82,7 +78,7 @@ void FManualSpriteEditorToolkit::InitManualSpriteEditor(const EToolkitMode::Type
 	DetailsView->SetObject(ManualSprite);
 
 	// Настройка layout редактора
-	const TSharedRef<FTabManager::FLayout> StandaloneDefaultLayout = FTabManager::NewLayout("Standalone_ManualSpriteEditor_Layout_v5")
+	const TSharedRef<FTabManager::FLayout> StandaloneDefaultLayout = FTabManager::NewLayout("Standalone_ManualSpriteEditor_Layout_v2")
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()->SetOrientation(Orient_Vertical)
@@ -110,7 +106,7 @@ void FManualSpriteEditorToolkit::InitManualSpriteEditor(const EToolkitMode::Type
 
 	ExtendToolbar();
 	
-	UE_LOG(LogTemp, Log, TEXT("Manual Sprite Editor v1.1 initialized with Auto-Triangulation support"));
+	UE_LOG(LogTemp, Log, TEXT("Manual Sprite Editor initialized"));
 }
 
 void FManualSpriteEditorToolkit::InitializeCommands()
@@ -243,63 +239,22 @@ void FManualSpriteEditorToolkit::BindCommands()
 		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnResetToDefault)
 	);
 
-	// v1.1: Команды автоматической триангуляции
+	// Генерация мешей
 	CommandList->MapAction(
-		Commands.AutoTriangulate,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnAutoTriangulate),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
+		Commands.GenerateMesh,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnGenerateMesh),
+		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanGenerateMesh)
 	);
 
+	// Импорт геометрии
 	CommandList->MapAction(
-		Commands.ClearTriangles,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnClearTriangles),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanClearTriangles)
-	);
-
-	CommandList->MapAction(
-		Commands.TriangulateFan,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnTriangulateFan),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
-	);
-
-	CommandList->MapAction(
-		Commands.TriangulateDelaunay,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnTriangulateDelaunay),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
-	);
-
-	CommandList->MapAction(
-		Commands.TriangulateConvexHull,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnTriangulateConvexHull),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
-	);
-
-	CommandList->MapAction(
-		Commands.TriangulateEarClipping,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnTriangulateEarClipping),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
-	);
-
-	CommandList->MapAction(
-		Commands.SortVerticesByAngle,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnSortVerticesByAngle),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanSortVertices)
-	);
-
-	CommandList->MapAction(
-		Commands.ReverseVertexOrder,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnReverseVertexOrder),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::HasVertices)
-	);
-
-	CommandList->MapAction(
-		Commands.ShowPolygonInfo,
-		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnShowPolygonInfo),
-		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::HasVertices)
+		Commands.ImportRenderGeometry,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnImportRenderGeometry),
+		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanImportRenderGeometry)
 	);
 }
 
-// v1.1: Расширенный тулбар с автоматической триангуляцией
+// Упрощенный тулбар без автоматической триангуляции
 void FManualSpriteEditorToolkit::ExtendToolbar()
 {
     struct FLocal
@@ -364,53 +319,6 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
                 ToolbarBuilder.AddToolBarButton(Commands.DeleteMode, NAME_None, LOCTEXT("DeleteModeText", "Delete"),
                     LOCTEXT("DeleteModeTooltip", "Delete vertices or triangles (R)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Delete"));
-            }
-            ToolbarBuilder.EndSection();
-
-            // v1.1: Новая секция автоматической триангуляции
-            ToolbarBuilder.BeginSection("AutoTriangulation");
-            {
-                ToolbarBuilder.AddSeparator();
-
-                // Основная кнопка автотриангуляции
-                ToolbarBuilder.AddToolBarButton(Commands.AutoTriangulate, NAME_None, LOCTEXT("AutoTriangulateText", "Auto"),
-                    LOCTEXT("AutoTriangulateTooltip", "Auto triangulate using preferred method (T)"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Modes"));
-
-                // Выпадающее меню с различными методами
-                ToolbarBuilder.AddComboButton(
-                    FUIAction(),
-                    FOnGetContent::CreateLambda([Toolkit]() -> TSharedRef<SWidget>
-                    {
-                        FMenuBuilder MenuBuilder(true, Toolkit->GetCommandList());
-                        const FManualSpriteEditorCommands& Commands = FManualSpriteEditorCommands::Get();
-                        
-                        MenuBuilder.BeginSection("TriangulationMethods", LOCTEXT("TriangulationMethodsSection", "Triangulation Methods"));
-                        {
-                            MenuBuilder.AddMenuEntry(Commands.TriangulateFan);
-                            MenuBuilder.AddMenuEntry(Commands.TriangulateDelaunay);
-                            MenuBuilder.AddMenuEntry(Commands.TriangulateConvexHull);
-                            MenuBuilder.AddMenuEntry(Commands.TriangulateEarClipping);
-                        }
-                        MenuBuilder.EndSection();
-
-                        MenuBuilder.BeginSection("TriangulationUtils", LOCTEXT("TriangulationUtilsSection", "Utilities"));
-                        {
-                            MenuBuilder.AddMenuEntry(Commands.ClearTriangles);
-                            MenuBuilder.AddSeparator();
-                            MenuBuilder.AddMenuEntry(Commands.SortVerticesByAngle);
-                            MenuBuilder.AddMenuEntry(Commands.ReverseVertexOrder);
-                            MenuBuilder.AddSeparator();
-                            MenuBuilder.AddMenuEntry(Commands.ShowPolygonInfo);
-                        }
-                        MenuBuilder.EndSection();
-
-                        return MenuBuilder.MakeWidget();
-                    }),
-                    FText::GetEmpty(),
-                    LOCTEXT("TriangulationMethodsTooltip", "Choose triangulation method"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.SelectAll")
-                );
             }
             ToolbarBuilder.EndSection();
 
@@ -496,21 +404,50 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
             }
             ToolbarBuilder.EndSection();
 
-            ToolbarBuilder.BeginSection("UtilityCommands");
-            {
-                ToolbarBuilder.AddSeparator();
-                
-                // Clear All - теперь с текстом и иконкой
-                ToolbarBuilder.AddToolBarButton(Commands.ClearAll, NAME_None, LOCTEXT("ClearAllText", "Clear All"),
-                    LOCTEXT("ClearAllTooltip", "Clear all geometry"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "Cross"));
-                    
-                // Reset to Default - теперь с текстом и иконкой
-                ToolbarBuilder.AddToolBarButton(Commands.ResetToDefault, NAME_None, LOCTEXT("ResetToDefaultText", "Reset"),
-                    LOCTEXT("ResetToDefaultTooltip", "Reset to default quad"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "PropertyWindow.DiffersFromDefault"));
-            }
-            ToolbarBuilder.EndSection();
+        	// Секция утилит
+        	ToolbarBuilder.BeginSection("UtilityCommands");
+	        {
+            	ToolbarBuilder.AddSeparator();
+    
+            	// Clear All
+            	ToolbarBuilder.AddToolBarButton(Commands.ClearAll, NAME_None, LOCTEXT("ClearAllText", "Clear All"),
+					LOCTEXT("ClearAllTooltip", "Clear all geometry"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "Cross"));
+        
+            	// Reset to Default
+            	ToolbarBuilder.AddToolBarButton(Commands.ResetToDefault, NAME_None, LOCTEXT("ResetToDefaultText", "Reset"),
+					LOCTEXT("ResetToDefaultTooltip", "Reset to default quad"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "PropertyWindow.DiffersFromDefault"));
+	        }
+        	ToolbarBuilder.EndSection(); // <--- Закрываем секцию утилит
+
+        	// Секция генерации меша
+        	ToolbarBuilder.BeginSection("MeshGeneration");
+	        {
+            	ToolbarBuilder.AddSeparator();
+
+            	// Generate Mesh
+            	ToolbarBuilder.AddToolBarButton(Commands.GenerateMesh, NAME_None, LOCTEXT("GenerateMeshText", "Generate Mesh"),
+					LOCTEXT("GenerateMeshTooltip", "Generate Static or Skeletal Mesh from geometry (Ctrl+M)"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Build"));
+	        }
+        	ToolbarBuilder.EndSection();
+
+        	// Секция импорта
+        	ToolbarBuilder.BeginSection("ImportCommands");
+	        {
+            	ToolbarBuilder.AddSeparator();
+
+            	// Кнопка импорта геометрии
+            	ToolbarBuilder.AddToolBarButton(
+					Commands.ImportRenderGeometry, 
+					NAME_None, 
+					LOCTEXT("ImportRenderGeometryText", "Import Geo"),
+					LOCTEXT("ImportRenderGeometryTooltip", "Import vertices from the sprite's standard 'Edit Source Region' geometry."),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "MeshPaint.Import") // Иконка для примера
+				);
+	        }
+        	ToolbarBuilder.EndSection();
         }
     };
 
@@ -592,707 +529,8 @@ FLinearColor FManualSpriteEditorToolkit::GetWorldCentricTabColorScale() const
 	return FLinearColor(0.5f, 0.8f, 0.5f, 0.5f);
 }
 
-// v1.1: Новые функции автоматической триангуляции
+// ========== ФУНКЦИИ ТРАНЗАКЦИЙ ==========
 
-void FManualSpriteEditorToolkit::AutoTriangulateWithTransaction()
-{
-	if (!ManualSprite)
-		return;
-
-	FAutoTriangulateTransaction Transaction(ManualSprite, ManualSprite->ManualGeometry.PreferredTriangulationMethod);
-	Transaction.Execute();
-
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-
-	// ИСПРАВЛЕНИЕ: Используем простое описание вместо UEnum::GetValueAsString
-	FString MethodName;
-	switch (ManualSprite->ManualGeometry.PreferredTriangulationMethod)
-	{
-	case ETriangulationMethod::Fan:
-		MethodName = TEXT("Fan");
-		break;
-	case ETriangulationMethod::Delaunay:
-		MethodName = TEXT("Delaunay");
-		break;
-	case ETriangulationMethod::ConvexHull:
-		MethodName = TEXT("Convex Hull");
-		break;
-	case ETriangulationMethod::EarClipping:
-		MethodName = TEXT("Ear Clipping");
-		break;
-	default:
-		MethodName = TEXT("Unknown");
-		break;
-	}
-
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSprite->ManualGeometry.Triangles;
-
-	// Показываем уведомление о результате
-	const FText NotificationText = FText::Format(
-		LOCTEXT("AutoTriangulateComplete", "Auto-triangulation completed. Created {0} triangles using {1} method."),
-		FText::AsNumber(Triangles.Num()),
-		FText::FromString(MethodName)
-	);
-	
-	FNotificationInfo NotificationInfo(NotificationText);
-	NotificationInfo.ExpireDuration = 3.0f;
-	NotificationInfo.bFireAndForget = true;
-	FSlateNotificationManager::Get().AddNotification(NotificationInfo);
-
-	UE_LOG(LogTemp, Log, TEXT("Auto-triangulation completed with %d triangles"), Triangles.Num());
-}
-
-void FManualSpriteEditorToolkit::AutoTriangulateWithMethodAndTransaction(ETriangulationMethod Method)
-{
-	if (!ManualSprite)
-		return;
-
-	FAutoTriangulateTransaction Transaction(ManualSprite, Method);
-	Transaction.Execute();
-
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-
-	// ИСПРАВЛЕНИЕ: Используем простое описание вместо UEnum::GetValueAsString
-	FString MethodName;
-	switch (Method)
-	{
-	case ETriangulationMethod::Fan:
-		MethodName = TEXT("Fan");
-		break;
-	case ETriangulationMethod::Delaunay:
-		MethodName = TEXT("Delaunay");
-		break;
-	case ETriangulationMethod::ConvexHull:
-		MethodName = TEXT("Convex Hull");
-		break;
-	case ETriangulationMethod::EarClipping:
-		MethodName = TEXT("Ear Clipping");
-		break;
-	default:
-		MethodName = TEXT("Unknown");
-		break;
-	}
-
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSprite->ManualGeometry.Triangles;
-
-	// Показываем уведомление о результате
-	const FText NotificationText = FText::Format(
-		LOCTEXT("AutoTriangulateMethodComplete", "Triangulation with {0} method completed. Created {1} triangles."),
-		FText::FromString(MethodName),
-		FText::AsNumber(Triangles.Num())
-	);
-	
-	FNotificationInfo NotificationInfo(NotificationText);
-	NotificationInfo.ExpireDuration = 3.0f;
-	NotificationInfo.bFireAndForget = true;
-	FSlateNotificationManager::Get().AddNotification(NotificationInfo);
-
-	UE_LOG(LogTemp, Log, TEXT("Triangulation with method %d completed with %d triangles"), 
-		   static_cast<int32>(Method), Triangles.Num());
-}
-
-void FManualSpriteEditorToolkit::ClearTrianglesWithTransaction()
-{
-	if (!ManualSprite)
-		return;
-
-	FClearTrianglesTransaction Transaction(ManualSprite);
-	Transaction.Execute();
-
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("Cleared all triangles"));
-}
-
-void FManualSpriteEditorToolkit::SortVerticesByAngleWithTransaction()
-{
-	if (!ManualSprite)
-		return;
-
-	FSortVerticesByAngleTransaction Transaction(ManualSprite);
-	Transaction.Execute();
-
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("Sorted vertices by angle"));
-}
-
-void FManualSpriteEditorToolkit::ReverseVertexOrderWithTransaction()
-{
-	if (!ManualSprite)
-		return;
-
-	FReverseVertexOrderTransaction Transaction(ManualSprite);
-	Transaction.Execute();
-
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("Reversed vertex order"));
-}
-
-// v1.1: Функция получения информации о полигоне
-FManualSpriteEditorToolkit::FPolygonInfo FManualSpriteEditorToolkit::GetPolygonInfo() const
-{
-	FPolygonInfo Info;
-	
-	if (!ManualSprite)
-		return Info;
-
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSprite->ManualGeometry.Triangles;
-	
-	Info.VertexCount = Vertices.Num();
-	Info.TriangleCount = Triangles.Num();
-	Info.bIsConvex = ManualSprite->IsConvexPolygon();
-	
-	// ИСПРАВЛЕНИЕ: Вычисляем центроид локально
-	if (Info.VertexCount > 0)
-	{
-		FVector2D CentroidSum = FVector2D::ZeroVector;
-		for (const FManualSpriteVertex& Vertex : Vertices)
-		{
-			CentroidSum += Vertex.Position;
-		}
-		Info.Centroid = CentroidSum / static_cast<float>(Info.VertexCount);
-	}
-	else
-	{
-		Info.Centroid = FVector2D::ZeroVector;
-	}
-
-	// Вычисляем площадь и bounding box
-	if (Info.VertexCount > 0)
-	{
-		Info.BoundingBoxMin = Vertices[0].Position;
-		Info.BoundingBoxMax = Vertices[0].Position;
-		
-		float TotalArea = 0.0f;
-		
-		// Bounding box
-		for (const FManualSpriteVertex& Vertex : Vertices)
-		{
-			Info.BoundingBoxMin.X = FMath::Min(Info.BoundingBoxMin.X, Vertex.Position.X);
-			Info.BoundingBoxMin.Y = FMath::Min(Info.BoundingBoxMin.Y, Vertex.Position.Y);
-			Info.BoundingBoxMax.X = FMath::Max(Info.BoundingBoxMax.X, Vertex.Position.X);
-			Info.BoundingBoxMax.Y = FMath::Max(Info.BoundingBoxMax.Y, Vertex.Position.Y);
-		}
-		
-		// Площадь полигона (используя формулу Гаусса)
-		for (int32 i = 0; i < Info.VertexCount; i++)
-		{
-			const int32 NextIndex = (i + 1) % Info.VertexCount;
-			const FVector2D Current = Vertices[i].Position;
-			const FVector2D Next = Vertices[NextIndex].Position;
-			
-			TotalArea += (Current.X * Next.Y - Next.X * Current.Y);
-		}
-		
-		Info.Area = FMath::Abs(TotalArea) * 0.5f;
-	}
-
-	return Info;
-}
-
-void FManualSpriteEditorToolkit::ShowPolygonInfoDialog()
-{
-	const FPolygonInfo Info = GetPolygonInfo();
-	
-	// Создаём содержимое диалога
-	TSharedRef<SVerticalBox> DialogContent = SNew(SVerticalBox);
-	
-	// Заголовок
-	DialogContent->AddSlot()
-	.AutoHeight()
-	.Padding(5)
-	[
-		SNew(STextBlock)
-		.Text(LOCTEXT("PolygonInfoTitle", "Polygon Information"))
-		.Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-		.Justification(ETextJustify::Center)
-	];
-
-	// Основная информация
-	DialogContent->AddSlot()
-	.AutoHeight()
-	.Padding(5)
-	[
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.FillWidth(1.0f)
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2)
-			[
-				SNew(STextBlock)
-				.Text(FText::Format(LOCTEXT("VertexCountInfo", "Vertices: {0}"), FText::AsNumber(Info.VertexCount)))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2)
-			[
-				SNew(STextBlock)
-				.Text(FText::Format(LOCTEXT("TriangleCountInfo", "Triangles: {0}"), FText::AsNumber(Info.TriangleCount)))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2)
-			[
-				SNew(STextBlock)
-				.Text(FText::Format(LOCTEXT("ConvexInfo", "Convex: {0}"), Info.bIsConvex ? LOCTEXT("Yes", "Yes") : LOCTEXT("No", "No")))
-				.ColorAndOpacity(Info.bIsConvex ? FLinearColor::Green : FLinearColor::Yellow)
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2)
-			[
-				SNew(STextBlock)
-				.Text(FText::Format(LOCTEXT("AreaInfo", "Area: {0:0.2f} units²"), FText::AsNumber(Info.Area)))
-			]
-		]
-	];
-
-	// Геометрическая информация
-	DialogContent->AddSlot()
-	.AutoHeight()
-	.Padding(5)
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("GeometricInfoTitle", "Geometric Properties"))
-			.Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(FText::Format(LOCTEXT("CentroidInfo", "Centroid: ({0:0.1f}, {1:0.1f})"), 
-				FText::AsNumber(Info.Centroid.X), FText::AsNumber(Info.Centroid.Y)))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(FText::Format(LOCTEXT("BoundingBoxInfo", "Bounding Box: ({0:0.1f}, {1:0.1f}) to ({2:0.1f}, {3:0.1f})"), 
-				FText::AsNumber(Info.BoundingBoxMin.X), FText::AsNumber(Info.BoundingBoxMin.Y),
-				FText::AsNumber(Info.BoundingBoxMax.X), FText::AsNumber(Info.BoundingBoxMax.Y)))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(FText::Format(LOCTEXT("SizeInfo", "Size: {0:0.1f} × {1:0.1f}"), 
-				FText::AsNumber(Info.BoundingBoxMax.X - Info.BoundingBoxMin.X),
-				FText::AsNumber(Info.BoundingBoxMax.Y - Info.BoundingBoxMin.Y)))
-		]
-	];
-
-	// Рекомендации по триангуляции
-	DialogContent->AddSlot()
-	.AutoHeight()
-	.Padding(5)
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("TriangulationRecommendationsTitle", "Triangulation Recommendations"))
-			.Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(2)
-		[
-			SNew(STextBlock)
-			.Text(Info.bIsConvex ? 
-				LOCTEXT("ConvexRecommendation", "• Use Fan or Delaunay for best results\n• Convex Hull will give same result as Fan") :
-				LOCTEXT("ConcaveRecommendation", "• Use Ear Clipping for complex shapes\n• Delaunay for automatic optimization\n• Consider sorting vertices first"))
-			.AutoWrapText(true)
-		]
-	];
-
-	// Показываем диалог
-	FText DialogTitle = LOCTEXT("PolygonInfoDialogTitle", "Polygon Analysis");
-	
-	TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(DialogTitle)
-		.SizingRule(ESizingRule::Autosized)
-		.AutoCenter(EAutoCenter::PreferredWorkArea)
-		.SupportsMinimize(false)
-		.SupportsMaximize(false)
-		[
-			SNew(SBorder)
-			.Padding(10)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					DialogContent
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.HAlign(HAlign_Right)
-				.Padding(0, 10, 0, 0)
-				[
-					SNew(SButton)
-					.Text(LOCTEXT("CloseButton", "Close"))
-					.OnClicked_Lambda([Window]() -> FReply
-					{
-						Window->RequestDestroyWindow();
-						return FReply::Handled();
-					})
-				]
-			]
-		];
-
-	FSlateApplication::Get().AddWindow(Window);
-}
-
-// v1.1: Команды автоматической триангуляции
-void FManualSpriteEditorToolkit::OnAutoTriangulate()
-{
-	AutoTriangulateWithTransaction();
-}
-
-void FManualSpriteEditorToolkit::OnClearTriangles()
-{
-	ClearTrianglesWithTransaction();
-}
-
-void FManualSpriteEditorToolkit::OnTriangulateFan()
-{
-	AutoTriangulateWithMethodAndTransaction(ETriangulationMethod::Fan);
-}
-
-void FManualSpriteEditorToolkit::OnTriangulateDelaunay()
-{
-	AutoTriangulateWithMethodAndTransaction(ETriangulationMethod::Delaunay);
-}
-
-void FManualSpriteEditorToolkit::OnTriangulateConvexHull()
-{
-	AutoTriangulateWithMethodAndTransaction(ETriangulationMethod::ConvexHull);
-}
-
-void FManualSpriteEditorToolkit::OnTriangulateEarClipping()
-{
-	AutoTriangulateWithMethodAndTransaction(ETriangulationMethod::EarClipping);
-}
-
-void FManualSpriteEditorToolkit::OnSortVerticesByAngle()
-{
-	SortVerticesByAngleWithTransaction();
-}
-
-void FManualSpriteEditorToolkit::OnReverseVertexOrder()
-{
-	ReverseVertexOrderWithTransaction();
-}
-
-void FManualSpriteEditorToolkit::OnShowPolygonInfo()
-{
-	ShowPolygonInfoDialog();
-}
-
-// v1.1: Проверки состояний для новых команд
-bool FManualSpriteEditorToolkit::CanAutoTriangulate() const
-{
-	return ManualSprite && ManualSprite->CanAutoTriangulate();
-}
-
-bool FManualSpriteEditorToolkit::CanClearTriangles() const
-{
-	if (!ManualSprite)
-		return false;
-	
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteTriangle>& Triangles = ManualSprite->ManualGeometry.Triangles;
-	return Triangles.Num() > 0;
-}
-
-bool FManualSpriteEditorToolkit::CanSortVertices() const
-{
-	if (!ManualSprite)
-		return false;
-	
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-	return Vertices.Num() >= 3;
-}
-
-bool FManualSpriteEditorToolkit::HasVertices() const
-{
-	if (!ManualSprite)
-		return false;
-	
-	// ИСПРАВЛЕНИЕ: Используем напрямую синхронизированные массивы
-	const TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-	return Vertices.Num() > 0;
-}
-
-// ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СУЩЕСТВУЮЩИЕ) ==========
-
-// Функции копирования/вставки (существующий код)
-void FManualSpriteEditorToolkit::CopySelectedVertices()
-{
-	if (!Viewport.IsValid() || !ManualSprite)
-		return;
-
-	// ИСПРАВЛЕНИЕ: Мы должны привести тип к нашему классу, чтобы получить доступ к его методам
-	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
-	if (!ViewportClient.IsValid())
-		return;
-    
-	// Теперь мы можем безопасно вызывать кастомные методы
-	const TArray<int32>& SelectedVertices = ViewportClient->GetSelectedVertices();
-	if (SelectedVertices.Num() == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("No vertices selected for copying"));
-		return;
-	}
-
-	CopiedVertices.Empty();
-	CopyOrigin = CalculateCopyOrigin(SelectedVertices);
-
-	const FManualSpriteGeometry& Geometry = ManualSprite->ManualGeometry;
-	for (int32 VertexIndex : SelectedVertices)
-	{
-		if (VertexIndex >= 0 && VertexIndex < Geometry.Vertices.Num())
-		{
-			const FManualSpriteVertex& Vertex = Geometry.Vertices[VertexIndex];
-			const FVector2D RelativePosition = Vertex.Position - CopyOrigin;
-			CopiedVertices.Add(FCopiedVertexData(RelativePosition, Vertex.UV));
-		}
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("Copied %d vertices to clipboard"), CopiedVertices.Num());
-}
-
-void FManualSpriteEditorToolkit::PasteVertices(const FVector2D& PastePosition)
-{
-	if (!ManualSprite || CopiedVertices.Num() == 0)
-		return;
-
-	TArray<FVector2D> NewPositions;
-	TArray<FVector2D> NewUVs;
-
-	for (const FCopiedVertexData& CopiedVertex : CopiedVertices)
-	{
-		const FVector2D NewPosition = PastePosition + CopiedVertex.RelativePosition;
-		NewPositions.Add(NewPosition);
-		NewUVs.Add(CopiedVertex.UV);
-	}
-
-	AddVerticesWithTransaction(NewPositions, NewUVs);
-
-	if (Viewport.IsValid())
-	{
-		// ИСПРАВЛЕНИЕ: То же самое приведение типа
-		TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
-		if (ViewportClient.IsValid())
-		{
-			TArray<int32> NewSelection;
-			const int32 StartIndex = ManualSprite->ManualGeometry.Vertices.Num() - CopiedVertices.Num();
-			
-			for (int32 i = 0; i < CopiedVertices.Num(); i++)
-			{
-				NewSelection.Add(StartIndex + i);
-			}
-			
-			// Теперь вызов корректен
-			ViewportClient->SetSelectedVertices(NewSelection);
-			Viewport->RefreshViewport();
-		}
-	}
-
-	if (CurrentEditMode == EEditMode::Paste)
-	{
-		SetEditMode(EEditMode::Select);
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("Pasted %d vertices at position (%.2f, %.2f)"), 
-		   CopiedVertices.Num(), PastePosition.X, PastePosition.Y);
-}
-
-void FManualSpriteEditorToolkit::CutSelectedVertices()
-{
-	CopySelectedVertices();
-	OnDeleteSelected();
-	UE_LOG(LogTemp, Log, TEXT("Cut selected vertices"));
-}
-
-void FManualSpriteEditorToolkit::DuplicateSelectedVertices()
-{
-	if (!Viewport.IsValid())
-		return;
-
-	auto ViewportClient = Viewport->GetViewportClient();
-	if (!ViewportClient.IsValid())
-		return;
-
-	CopySelectedVertices();
-	
-	if (CopiedVertices.Num() == 0)
-		return;
-
-	const float Offset = GridSettings.GridSize * 2.0f;
-	const FVector2D DuplicatePosition = CopyOrigin + FVector2D(Offset, Offset);
-	
-	PasteVertices(DuplicatePosition);
-	
-	UE_LOG(LogTemp, Log, TEXT("Duplicated selected vertices"));
-}
-
-bool FManualSpriteEditorToolkit::CanPaste() const
-{
-	return CopiedVertices.Num() > 0;
-}
-
-bool FManualSpriteEditorToolkit::HasCopiedVertices() const
-{
-	return CopiedVertices.Num() > 0;
-}
-
-void FManualSpriteEditorToolkit::SetPastePreviewPosition(const FVector2D& Position)
-{
-	PastePreviewPosition = Position;
-}
-
-TArray<FVector2D> FManualSpriteEditorToolkit::GetPastePreviewVertices() const
-{
-	TArray<FVector2D> PreviewVertices;
-	
-	if (CurrentEditMode == EEditMode::Paste && CopiedVertices.Num() > 0)
-	{
-		for (const FCopiedVertexData& CopiedVertex : CopiedVertices)
-		{
-			const FVector2D PreviewPosition = PastePreviewPosition + CopiedVertex.RelativePosition;
-			PreviewVertices.Add(PreviewPosition);
-		}
-	}
-	
-	return PreviewVertices;
-}
-
-FVector2D FManualSpriteEditorToolkit::CalculateCopyOrigin(const TArray<int32>& VertexIndices) const
-{
-	if (!ManualSprite || VertexIndices.Num() == 0)
-		return FVector2D::ZeroVector;
-
-	const FManualSpriteGeometry& Geometry = ManualSprite->ManualGeometry;
-	FVector2D Sum = FVector2D::ZeroVector;
-	int32 ValidVertices = 0;
-
-	for (int32 VertexIndex : VertexIndices)
-	{
-		if (VertexIndex >= 0 && VertexIndex < Geometry.Vertices.Num())
-		{
-			Sum += Geometry.Vertices[VertexIndex].Position;
-			ValidVertices++;
-		}
-	}
-
-	if (ValidVertices > 0)
-	{
-		return Sum / static_cast<float>(ValidVertices);
-	}
-
-	return FVector2D::ZeroVector;
-}
-
-void FManualSpriteEditorToolkit::AddVerticesWithTransaction(const TArray<FVector2D>& Positions, const TArray<FVector2D>& UVs)
-{
-	if (!ManualSprite || Positions.Num() != UVs.Num())
-		return;
-
-	FPasteVerticesTransaction Transaction(ManualSprite, Positions, UVs);
-	Transaction.Execute();
-
-	UE_LOG(LogTemp, Log, TEXT("Added %d vertices with transaction"), Positions.Num());
-}
-
-// Команды копирования/вставки
-void FManualSpriteEditorToolkit::OnCopy()
-{
-	CopySelectedVertices();
-}
-
-void FManualSpriteEditorToolkit::OnPaste()
-{
-	if (CanPaste())
-	{
-		if (CurrentEditMode == EEditMode::Paste)
-		{
-			SetEditMode(EEditMode::Select);
-		}
-		else
-		{
-			SetEditMode(EEditMode::Paste);
-			
-			if (Viewport.IsValid())
-			{
-				SetPastePreviewPosition(FVector2D::ZeroVector);
-				Viewport->RefreshViewport();
-			}
-		}
-	}
-}
-
-void FManualSpriteEditorToolkit::OnCut()
-{
-	CutSelectedVertices();
-}
-
-void FManualSpriteEditorToolkit::OnDuplicate()
-{
-	DuplicateSelectedVertices();
-}
-
-bool FManualSpriteEditorToolkit::CanCopy() const
-{
-	if (!Viewport.IsValid())
-		return false;
-
-	// ИСПРАВЛЕНИЕ: Приведение типа
-	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
-	if (!ViewportClient.IsValid())
-		return false;
-    
-	// Вызов корректен
-	return ViewportClient->GetSelectedVertices().Num() > 0;
-}
-
-// Функции транзакций
 void FManualSpriteEditorToolkit::AddVertexWithTransaction(const FVector2D& Position, const FVector2D& UV)
 {
 	FAddVertexTransaction Transaction(ManualSprite, Position, UV);
@@ -1409,7 +647,8 @@ void FManualSpriteEditorToolkit::ResetGeometryWithTransaction()
 	UE_LOG(LogTemp, Log, TEXT("Reset geometry with transaction"));
 }
 
-// Команды Undo/Redo
+// ========== КОМАНДЫ UNDO/REDO ==========
+
 void FManualSpriteEditorToolkit::OnUndo()
 {
 	if (CanUndo())
@@ -1460,15 +699,14 @@ bool FManualSpriteEditorToolkit::CanRedo() const
 	return GEditor && GEditor->Trans && GEditor->Trans->CanRedo();
 }
 
-// Команды выделения и удаления
+// ========== КОМАНДЫ ВЫДЕЛЕНИЯ И УДАЛЕНИЯ ==========
+
 void FManualSpriteEditorToolkit::OnDeleteSelected()
 {
 	if (Viewport.IsValid())
 	{
-		// ИСПРАВЛЕНИЕ: Приведение типа
 		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
 		{
-			// Вызов корректен
 			ViewportClient->DeleteSelectedVertices();
 			Viewport->RefreshViewport();
 		}
@@ -1479,10 +717,8 @@ bool FManualSpriteEditorToolkit::CanDeleteSelected() const
 {
 	if (Viewport.IsValid())
 	{
-		// ИСПРАВЛЕНИЕ: Приведение типа
 		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
 		{
-			// Вызов корректен
 			return ViewportClient->HasSelection();
 		}
 	}
@@ -1493,10 +729,8 @@ void FManualSpriteEditorToolkit::OnSelectAll()
 {
 	if (Viewport.IsValid())
 	{
-		// ИСПРАВЛЕНИЕ: Приведение типа
 		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
 		{
-			// Вызов корректен
 			ViewportClient->SelectAllVertices();
 			Viewport->RefreshViewport();
 		}
@@ -1507,17 +741,16 @@ void FManualSpriteEditorToolkit::OnDeselectAll()
 {
 	if (Viewport.IsValid())
 	{
-		// ИСПРАВЛЕНИЕ: Приведение типа
 		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
 		{
-			// Вызов корректен
 			ViewportClient->ClearSelection();
 			Viewport->RefreshViewport();
 		}
 	}
 }
 
-// Режимы редактирования
+// ========== РЕЖИМЫ РЕДАКТИРОВАНИЯ ==========
+
 void FManualSpriteEditorToolkit::OnSelectMode()
 {
 	SetEditMode(EEditMode::Select);
@@ -1595,47 +828,7 @@ void FManualSpriteEditorToolkit::SetEditMode(EEditMode NewMode)
 	}
 }
 
-// Функции сетки
-void FManualSpriteEditorToolkit::ToggleGridDisplay()
-{
-	GridSettings.bShowGrid = !GridSettings.bShowGrid;
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-	UE_LOG(LogTemp, Log, TEXT("Grid display: %s"), GridSettings.bShowGrid ? TEXT("ON") : TEXT("OFF"));
-}
-
-void FManualSpriteEditorToolkit::ToggleGridSnap()
-{
-	GridSettings.bSnapToGrid = !GridSettings.bSnapToGrid;
-	UE_LOG(LogTemp, Log, TEXT("Grid snap: %s"), GridSettings.bSnapToGrid ? TEXT("ON") : TEXT("OFF"));
-}
-
-void FManualSpriteEditorToolkit::SetGridSize(float NewSize)
-{
-	GridSettings.GridSize = NewSize;
-	if (Viewport.IsValid())
-	{
-		Viewport->RefreshViewport();
-	}
-	UE_LOG(LogTemp, Log, TEXT("Grid size set to: %.1f"), NewSize);
-}
-
-void FManualSpriteEditorToolkit::OnToggleGrid()
-{
-	ToggleGridDisplay();
-}
-
-void FManualSpriteEditorToolkit::OnToggleSnap()
-{
-	ToggleGridSnap();
-}
-
-void FManualSpriteEditorToolkit::OnGridSize10()
-{
-	SetGridSize(10.0f);
-}
+// ========== ФУНКЦИИ КОПИРОВАНИЯ/ВСТАВКИ ==========
 
 void FManualSpriteEditorToolkit::OnGridSize25()
 {
@@ -1680,6 +873,318 @@ bool FManualSpriteEditorToolkit::IsGridSize50Active() const
 bool FManualSpriteEditorToolkit::IsGridSize100Active() const
 {
 	return FMath::IsNearlyEqual(GridSettings.GridSize, 100.0f);
+}
+
+void FManualSpriteEditorToolkit::PasteVertices(const FVector2D& PastePosition)
+{
+	if (!ManualSprite || CopiedVertices.Num() == 0)
+		return;
+
+	TArray<FVector2D> NewPositions;
+	TArray<FVector2D> NewUVs;
+
+	for (const FCopiedVertexData& CopiedVertex : CopiedVertices)
+	{
+		const FVector2D NewPosition = PastePosition + CopiedVertex.RelativePosition;
+		NewPositions.Add(NewPosition);
+		NewUVs.Add(CopiedVertex.UV);
+	}
+
+	AddVerticesWithTransaction(NewPositions, NewUVs);
+
+	if (Viewport.IsValid())
+	{
+		TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+		if (ViewportClient.IsValid())
+		{
+			TArray<int32> NewSelection;
+			const int32 StartIndex = ManualSprite->ManualGeometry.Vertices.Num() - CopiedVertices.Num();
+			
+			for (int32 i = 0; i < CopiedVertices.Num(); i++)
+			{
+				NewSelection.Add(StartIndex + i);
+			}
+			
+			ViewportClient->SetSelectedVertices(NewSelection);
+			Viewport->RefreshViewport();
+		}
+	}
+
+	if (CurrentEditMode == EEditMode::Paste)
+	{
+		SetEditMode(EEditMode::Select);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Pasted %d vertices at position (%.2f, %.2f)"), 
+		   CopiedVertices.Num(), PastePosition.X, PastePosition.Y);
+}
+
+void FManualSpriteEditorToolkit::CutSelectedVertices()
+{
+	CopySelectedVertices();
+	OnDeleteSelected();
+	UE_LOG(LogTemp, Log, TEXT("Cut selected vertices"));
+}
+
+void FManualSpriteEditorToolkit::DuplicateSelectedVertices()
+{
+	if (!Viewport.IsValid())
+		return;
+
+	auto ViewportClient = Viewport->GetViewportClient();
+	if (!ViewportClient.IsValid())
+		return;
+
+	CopySelectedVertices();
+	
+	if (CopiedVertices.Num() == 0)
+		return;
+
+	const float Offset = GridSettings.GridSize * 2.0f;
+	const FVector2D DuplicatePosition = CopyOrigin + FVector2D(Offset, Offset);
+	
+	PasteVertices(DuplicatePosition);
+	
+	UE_LOG(LogTemp, Log, TEXT("Duplicated selected vertices"));
+}
+
+bool FManualSpriteEditorToolkit::CanPaste() const
+{
+	return CopiedVertices.Num() > 0;
+}
+
+bool FManualSpriteEditorToolkit::HasCopiedVertices() const
+{
+	return CopiedVertices.Num() > 0;
+}
+
+void FManualSpriteEditorToolkit::SetPastePreviewPosition(const FVector2D& Position)
+{
+	PastePreviewPosition = Position;
+}
+
+TArray<FVector2D> FManualSpriteEditorToolkit::GetPastePreviewVertices() const
+{
+	TArray<FVector2D> PreviewVertices;
+	
+	if (CurrentEditMode == EEditMode::Paste && CopiedVertices.Num() > 0)
+	{
+		for (const FCopiedVertexData& CopiedVertex : CopiedVertices)
+		{
+			const FVector2D PreviewPosition = PastePreviewPosition + CopiedVertex.RelativePosition;
+			PreviewVertices.Add(PreviewPosition);
+		}
+	}
+	
+	return PreviewVertices;
+}
+
+FVector2D FManualSpriteEditorToolkit::CalculateCopyOrigin(const TArray<int32>& VertexIndices) const
+{
+	if (!ManualSprite || VertexIndices.Num() == 0)
+		return FVector2D::ZeroVector;
+
+	const FManualSpriteGeometry& Geometry = ManualSprite->ManualGeometry;
+	FVector2D Sum = FVector2D::ZeroVector;
+	int32 ValidVertices = 0;
+
+	for (int32 VertexIndex : VertexIndices)
+	{
+		if (VertexIndex >= 0 && VertexIndex < Geometry.Vertices.Num())
+		{
+			Sum += Geometry.Vertices[VertexIndex].Position;
+			ValidVertices++;
+		}
+	}
+
+	if (ValidVertices > 0)
+	{
+		return Sum / static_cast<float>(ValidVertices);
+	}
+
+	return FVector2D::ZeroVector;
+}
+
+void FManualSpriteEditorToolkit::AddVerticesWithTransaction(const TArray<FVector2D>& Positions, const TArray<FVector2D>& UVs)
+{
+	if (!ManualSprite || Positions.Num() != UVs.Num())
+		return;
+
+	FPasteVerticesTransaction Transaction(ManualSprite, Positions, UVs);
+	Transaction.Execute();
+
+	UE_LOG(LogTemp, Log, TEXT("Added %d vertices with transaction"), Positions.Num());
+}
+
+// ========== КОМАНДЫ КОПИРОВАНИЯ/ВСТАВКИ ==========
+
+void FManualSpriteEditorToolkit::OnCopy()
+{
+	CopySelectedVertices();
+}
+
+void FManualSpriteEditorToolkit::OnPaste()
+{
+	if (CanPaste())
+	{
+		if (CurrentEditMode == EEditMode::Paste)
+		{
+			SetEditMode(EEditMode::Select);
+		}
+		else
+		{
+			SetEditMode(EEditMode::Paste);
+			
+			if (Viewport.IsValid())
+			{
+				SetPastePreviewPosition(FVector2D::ZeroVector);
+				Viewport->RefreshViewport();
+			}
+		}
+	}
+}
+
+void FManualSpriteEditorToolkit::OnCut()
+{
+	CutSelectedVertices();
+}
+
+void FManualSpriteEditorToolkit::OnDuplicate()
+{
+	DuplicateSelectedVertices();
+}
+
+bool FManualSpriteEditorToolkit::CanCopy() const
+{
+	if (!Viewport.IsValid())
+		return false;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return false;
+    
+	return ViewportClient->GetSelectedVertices().Num() > 0;
+}
+
+// ========== ФУНКЦИИ СЕТКИ ==========
+
+void FManualSpriteEditorToolkit::ToggleGridDisplay()
+{
+	GridSettings.bShowGrid = !GridSettings.bShowGrid;
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+	UE_LOG(LogTemp, Log, TEXT("Grid display: %s"), GridSettings.bShowGrid ? TEXT("ON") : TEXT("OFF"));
+}
+
+void FManualSpriteEditorToolkit::ToggleGridSnap()
+{
+	GridSettings.bSnapToGrid = !GridSettings.bSnapToGrid;
+	UE_LOG(LogTemp, Log, TEXT("Grid snap: %s"), GridSettings.bSnapToGrid ? TEXT("ON") : TEXT("OFF"));
+}
+
+void FManualSpriteEditorToolkit::SetGridSize(float NewSize)
+{
+	GridSettings.GridSize = NewSize;
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+	UE_LOG(LogTemp, Log, TEXT("Grid size set to: %.1f"), NewSize);
+}
+
+void FManualSpriteEditorToolkit::OnToggleGrid()
+{
+	ToggleGridDisplay();
+}
+
+void FManualSpriteEditorToolkit::OnToggleSnap()
+{
+	ToggleGridSnap();
+}
+
+void FManualSpriteEditorToolkit::OnGridSize10()
+{
+	SetGridSize(10.0f);
+}
+
+void FManualSpriteEditorToolkit::CopySelectedVertices()
+{
+	if (!Viewport.IsValid() || !ManualSprite)
+		return;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return;
+    
+	const TArray<int32>& SelectedVertices = ViewportClient->GetSelectedVertices();
+	if (SelectedVertices.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No vertices selected for copying"));
+		return;
+	}
+
+	CopiedVertices.Empty();
+	CopyOrigin = CalculateCopyOrigin(SelectedVertices);
+
+	const FManualSpriteGeometry& Geometry = ManualSprite->ManualGeometry;
+	for (int32 VertexIndex : SelectedVertices)
+	{
+		if (VertexIndex >= 0 && VertexIndex < Geometry.Vertices.Num())
+		{
+			const FManualSpriteVertex& Vertex = Geometry.Vertices[VertexIndex];
+			const FVector2D RelativePosition = Vertex.Position - CopyOrigin;
+			CopiedVertices.Add(FCopiedVertexData(RelativePosition, Vertex.UV));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Copied %d vertices to clipboard"), CopiedVertices.Num());
+}
+
+void FManualSpriteEditorToolkit::OnGenerateMesh()
+{
+	if (CanGenerateMesh())
+	{
+		ManualSpriteMeshGenerator::ShowMeshGenerationDialog(ManualSprite);
+	}
+}
+
+bool FManualSpriteEditorToolkit::CanGenerateMesh() const
+{
+	return ManualSprite != nullptr 
+		&& ManualSprite->bUseManualGeometry 
+		&& ManualSprite->IsManualGeometryValid()
+		&& ManualSprite->ManualGeometry.Vertices.Num() >= 3
+		&& ManualSprite->ManualGeometry.Triangles.Num() >= 1;
+}
+
+void FManualSpriteEditorToolkit::OnImportRenderGeometry()
+{
+	ImportRenderGeometryWithTransaction();
+}
+
+bool FManualSpriteEditorToolkit::CanImportRenderGeometry() const
+{
+	return ManualSprite != nullptr;
+}
+
+void FManualSpriteEditorToolkit::ImportRenderGeometryWithTransaction()
+{
+	if (!CanImportRenderGeometry())
+	{
+		return;
+	}
+
+	FImportGeometryTransaction Transaction(ManualSprite); // <-- Объект создается здесь
+	Transaction.Execute();
+
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Imported render geometry with transaction"));
 }
 
 #undef LOCTEXT_NAMESPACE

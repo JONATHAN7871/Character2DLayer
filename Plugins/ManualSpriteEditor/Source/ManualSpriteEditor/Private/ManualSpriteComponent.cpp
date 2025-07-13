@@ -17,13 +17,14 @@ FPrimitiveSceneProxy* UManualSpriteComponent::CreateSceneProxy()
 	UManualSprite* ManualSprite = GetManualSprite();
 	if (ManualSprite && ManualSprite->bUseManualGeometry && ManualSprite->IsManualGeometryValid())
 	{
-		const TArray<FManualSpriteVertex>& Vertices = ManualSprite->ManualGeometry.Vertices;
-		const TArray<FManualSpriteTriangle>& Triangles = ManualSprite->ManualGeometry.Triangles;
-		
+		// TODO: Здесь будет наш кастомный SceneProxy когда исправим проблемы с рендерингом
+		// Пока что логируем, что мы используем ручную геометрию
 		UE_LOG(LogTemp, Warning, TEXT("ManualSprite using manual geometry with %d vertices and %d triangles"), 
-			   Vertices.Num(), Triangles.Num());
+			   ManualSprite->ManualGeometry.Vertices.Num(), 
+			   ManualSprite->ManualGeometry.Triangles.Num());
 	}
     
+	// Используем стандартный SceneProxy от родительского класса
 	return Super::CreateSceneProxy();
 }
 

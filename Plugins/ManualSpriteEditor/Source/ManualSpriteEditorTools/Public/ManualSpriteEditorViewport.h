@@ -247,6 +247,12 @@ protected:
 	/** Проверка пересечения вершины с рамкой выделения */
 	TArray<int32> GetVerticesInSelectionBox() const;
 
+	/** Улучшенный поиск вершин по экранным координатам для точного наведения */
+	int32 FindVertexAtScreenPosition(FVector2D ScreenPos, const FViewport* InViewport, float ScreenTolerance = 12.0f) const;
+
+	/** Получение размера точки в экранных координатах в зависимости от состояния */
+	float GetVertexScreenSize(int32 VertexIndex) const;
+
 private:
 	// Preview scene для корректного рендеринга
 	FPreviewScene OwnedPreviewScene;
@@ -288,10 +294,12 @@ private:
 	mutable FIntPoint LastViewportSize;
 	
 	/** Константы для рендеринга */
-	static const float VertexSize;
-	static const float VertexSelectSize;
-	static const FLinearColor VertexColor;
-	static const FLinearColor SelectedVertexColor;
+
+	static const float VertexSize;        // = 6.0f (уменьшили для меньшей загромозденности)
+	static const float VertexSelectSize;  // = 10.0f (увеличили контраст между обычными и выделенными)
+	static const FLinearColor VertexColor;         // = FLinearColor(1.0f, 0.3f, 0.3f, 1.0f) (более яркий красный)
+	static const FLinearColor SelectedVertexColor; // = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f) (ярко-желтый)
+	static const FLinearColor HoveredVertexColor;  // = FLinearColor::White
 	static const FLinearColor TriangleColor;
 	static const FLinearColor SelectedTriangleColor;
 };
