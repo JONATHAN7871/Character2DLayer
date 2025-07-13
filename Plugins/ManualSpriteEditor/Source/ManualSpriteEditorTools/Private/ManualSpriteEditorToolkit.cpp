@@ -252,6 +252,13 @@ void FManualSpriteEditorToolkit::BindCommands()
 		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnImportRenderGeometry),
 		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanImportRenderGeometry)
 	);
+
+	CommandList->MapAction(
+		Commands.AutoTriangulate,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnAutoTriangulate),
+		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
+	);
+	
 }
 
 // Упрощенный тулбар без автоматической триангуляции
@@ -408,18 +415,23 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
         	ToolbarBuilder.BeginSection("UtilityCommands");
 	        {
             	ToolbarBuilder.AddSeparator();
-    
+
             	// Clear All
             	ToolbarBuilder.AddToolBarButton(Commands.ClearAll, NAME_None, LOCTEXT("ClearAllText", "Clear All"),
 					LOCTEXT("ClearAllTooltip", "Clear all geometry"),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), "Cross"));
-        
+
             	// Reset to Default
             	ToolbarBuilder.AddToolBarButton(Commands.ResetToDefault, NAME_None, LOCTEXT("ResetToDefaultText", "Reset"),
 					LOCTEXT("ResetToDefaultTooltip", "Reset to default quad"),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), "PropertyWindow.DiffersFromDefault"));
+
+            	// НОВОЕ: Auto Triangulate
+            	ToolbarBuilder.AddToolBarButton(Commands.AutoTriangulate, NAME_None, LOCTEXT("AutoTriangulateText", "Auto Triangulate"),
+					LOCTEXT("AutoTriangulateTooltip", "Automatically triangulate selected vertices (F1)"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Modes"));
 	        }
-        	ToolbarBuilder.EndSection(); // <--- Закрываем секцию утилит
+        	ToolbarBuilder.EndSection();
 
         	// Секция генерации меша
         	ToolbarBuilder.BeginSection("MeshGeneration");
@@ -1169,6 +1181,7 @@ bool FManualSpriteEditorToolkit::CanImportRenderGeometry() const
 	return ManualSprite != nullptr;
 }
 
+
 void FManualSpriteEditorToolkit::ImportRenderGeometryWithTransaction()
 {
 	if (!CanImportRenderGeometry())
@@ -1176,7 +1189,8 @@ void FManualSpriteEditorToolkit::ImportRenderGeometryWithTransaction()
 		return;
 	}
 
-	FImportGeometryTransaction Transaction(ManualSprite); // <-- Объект создается здесь
+	// ИСПРАВЛЕНИЕ: Используем правильный класс транзакции
+	FImportGeometryRenderTransaction Transaction(ManualSprite);
 	Transaction.Execute();
 
 	if (Viewport.IsValid())
@@ -1185,6 +1199,213 @@ void FManualSpriteEditorToolkit::ImportRenderGeometryWithTransaction()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Imported render geometry with transaction"));
+}
+
+
+void FManualSpriteEditorToolkit::OnAutoTriangulate()
+{
+	AutoTriangulateWithTransaction();
+}
+
+bool FManualSpriteEditorToolkit::CanAutoTriangulate() const
+{
+	if (!Viewport.IsValid())
+		return false;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return false;
+    
+	// Нужно минимум 3 выделенные вершины для триангуляции
+	return ViewportClient->GetSelectedVertices().Num() >= 3;
+}
+
+void FManualSpriteEditorToolkit::AutoTriangulateWithTransaction()
+{
+	if (!CanAutoTriangulate() || !ManualSprite)
+		return;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return;
+
+	const TArray<int32>& SelectedVertices = ViewportClient->GetSelectedVertices();
+	
+	// Создаем транзакцию для Undo/Redo
+	FScopedTransaction Transaction(LOCTEXT("AutoTriangulate", "Auto Triangulate Selected Vertices"));
+	ManualSprite->Modify();
+
+	// Получаем позиции выделенных вершин
+	TArray<FVector2D> SelectedPositions;
+	for (int32 VertexIndex : SelectedVertices)
+	{
+		if (VertexIndex >= 0 && VertexIndex < ManualSprite->ManualGeometry.Vertices.Num())
+		{
+			SelectedPositions.Add(ManualSprite->ManualGeometry.Vertices[VertexIndex].Position);
+		}
+	}
+
+	// Выполняем триангуляцию Делоне
+	TArray<FIntVector> Triangles;
+	if (DelaunayTriangulation(SelectedPositions, Triangles))
+	{
+		// Добавляем новые треугольники
+		for (const FIntVector& Triangle : Triangles)
+		{
+			// Преобразуем локальные индексы обратно в глобальные
+			const int32 GlobalIndex0 = SelectedVertices[Triangle.X];
+			const int32 GlobalIndex1 = SelectedVertices[Triangle.Y];
+			const int32 GlobalIndex2 = SelectedVertices[Triangle.Z];
+			
+			// Проверяем, что такого треугольника еще нет
+			if (!TriangleExists(GlobalIndex0, GlobalIndex1, GlobalIndex2))
+			{
+				ManualSprite->AddTriangle(GlobalIndex0, GlobalIndex1, GlobalIndex2);
+			}
+		}
+
+		(void)ManualSprite->MarkPackageDirty();
+
+		if (Viewport.IsValid())
+		{
+			Viewport->RefreshViewport();
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("Auto-triangulated %d vertices into %d triangles"), 
+			   SelectedVertices.Num(), Triangles.Num());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to triangulate selected vertices"));
+	}
+}
+
+bool FManualSpriteEditorToolkit::TriangleExists(int32 Index0, int32 Index1, int32 Index2) const
+{
+	if (!ManualSprite)
+		return false;
+
+	// Проверяем все существующие треугольники
+	for (const FManualSpriteTriangle& ExistingTriangle : ManualSprite->ManualGeometry.Triangles)
+	{
+		// Проверяем все возможные комбинации индексов (порядок может отличаться)
+		TArray<int32> ExistingIndices = {ExistingTriangle.VertexIndex0, ExistingTriangle.VertexIndex1, ExistingTriangle.VertexIndex2};
+		TArray<int32> NewIndices = {Index0, Index1, Index2};
+		
+		ExistingIndices.Sort();
+		NewIndices.Sort();
+		
+		if (ExistingIndices[0] == NewIndices[0] && 
+			ExistingIndices[1] == NewIndices[1] && 
+			ExistingIndices[2] == NewIndices[2])
+		{
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+bool FManualSpriteEditorToolkit::DelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const
+{
+	OutTriangles.Empty();
+	
+	if (Points.Num() < 3)
+		return false;
+
+	if (Points.Num() == 3)
+	{
+		OutTriangles.Add(FIntVector(0, 1, 2));
+		return true;
+	}
+
+	// Используем простую триангуляцию Делоне
+	return SimpleDelaunayTriangulation(Points, OutTriangles);
+}
+
+bool FManualSpriteEditorToolkit::SimpleDelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const
+{
+	OutTriangles.Empty();
+	
+	// Создаем все возможные треугольники и выбираем лучшие
+	for (int32 i = 0; i < Points.Num(); i++)
+	{
+		for (int32 j = i + 1; j < Points.Num(); j++)
+		{
+			for (int32 k = j + 1; k < Points.Num(); k++)
+			{
+				// Проверяем, что треугольник валиден (не вырожденный)
+				if (IsValidTriangle(Points[i], Points[j], Points[k]))
+				{
+					// Проверяем Delaunay условие - нет других точек внутри окружности
+					if (IsDelaunayTriangle(Points, i, j, k))
+					{
+						OutTriangles.Add(FIntVector(i, j, k));
+					}
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Delaunay triangulation: %d points -> %d triangles"), Points.Num(), OutTriangles.Num());
+	return OutTriangles.Num() > 0;
+}
+
+bool FManualSpriteEditorToolkit::IsValidTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C) const
+{
+	// Проверяем площадь треугольника (не должен быть вырожденным)
+	const float Area = FMath::Abs((B.X - A.X) * (C.Y - A.Y) - (C.X - A.X) * (B.Y - A.Y));
+	return Area > 1.0f; // Минимальная площадь
+}
+
+bool FManualSpriteEditorToolkit::IsDelaunayTriangle(const TArray<FVector2D>& Points, int32 A, int32 B, int32 C) const
+{
+	const FVector2D& PA = Points[A];
+	const FVector2D& PB = Points[B]; 
+	const FVector2D& PC = Points[C];
+
+	// Вычисляем центр и радиус описанной окружности
+	FVector2D CircumCenter;
+	float CircumRadiusSquared;
+	if (!GetCircumcircle(PA, PB, PC, CircumCenter, CircumRadiusSquared))
+	{
+		return false; // Вырожденный треугольник
+	}
+
+	// Проверяем, что никакая другая точка не лежит внутри окружности
+	for (int32 i = 0; i < Points.Num(); i++)
+	{
+		if (i == A || i == B || i == C)
+			continue;
+
+		const float DistSquared = FVector2D::DistSquared(Points[i], CircumCenter);
+		if (DistSquared < CircumRadiusSquared - 1.0f) // Небольшой tolerance
+		{
+			return false; // Точка внутри окружности
+		}
+	}
+
+	return true;
+}
+
+bool FManualSpriteEditorToolkit::GetCircumcircle(const FVector2D& A, const FVector2D& B, const FVector2D& C, FVector2D& OutCenter, float& OutRadiusSquared) const
+{
+	const float D = 2.0f * (A.X * (B.Y - C.Y) + B.X * (C.Y - A.Y) + C.X * (A.Y - B.Y));
+	
+	if (FMath::Abs(D) < 1e-6f)
+	{
+		return false; // Коллинеарные точки
+	}
+
+	const float ASq = A.X * A.X + A.Y * A.Y;
+	const float BSq = B.X * B.X + B.Y * B.Y;
+	const float CSq = C.X * C.X + C.Y * C.Y;
+
+	OutCenter.X = (ASq * (B.Y - C.Y) + BSq * (C.Y - A.Y) + CSq * (A.Y - B.Y)) / D;
+	OutCenter.Y = (ASq * (C.X - B.X) + BSq * (A.X - C.X) + CSq * (B.X - A.X)) / D;
+
+	OutRadiusSquared = FVector2D::DistSquared(A, OutCenter);
+	return true;
 }
 
 #undef LOCTEXT_NAMESPACE

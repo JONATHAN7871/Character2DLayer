@@ -48,6 +48,10 @@ void FManualSpriteEditorCommands::RegisterCommands()
 	UI_COMMAND(GenerateMesh, "Generate Mesh", "Generate Static or Skeletal Mesh from Manual Sprite geometry", 
 			  EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::M));
 
+	// НОВОЕ: Автоматическая триангуляция
+	UI_COMMAND(AutoTriangulate, "Auto Triangulate", "Automatically triangulate selected vertices using Delaunay triangulation", 
+			  EUserInterfaceActionType::Button, FInputChord(EKeys::F1));
+
 	// Команда для импорта геометрии
 	UI_COMMAND(ImportRenderGeometry, "Import Geometry", "Import vertices and triangles from the sprite's Edit Source Region geometry", EUserInterfaceActionType::Button, FInputChord());
 }

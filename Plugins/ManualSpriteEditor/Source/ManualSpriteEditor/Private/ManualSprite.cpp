@@ -57,7 +57,7 @@ bool UManualSprite::ImportRenderGeometry(TArray<FManualSpriteVertex>& OutVertice
 					// Конвертируем обратно в текстурное пространство
 					// BakedVert.X и BakedVert.Y - это позиция в pivot space в UU
 					const FVector2D PivotSpacePos(BakedVert.X / UnitsPerPixel, BakedVert.Y / UnitsPerPixel);
-					const FVector2D TextureSpacePos = ConvertPivotSpaceToTextureSpace(PivotSpacePos);
+					const FVector2D TextureSpacePos = PivotSpacePos + HalfSize;
 					
 					// Ищем существующую близкую вершину
 					int32 ExistingIndex = INDEX_NONE;
@@ -93,6 +93,14 @@ bool UManualSprite::ImportRenderGeometry(TArray<FManualSpriteVertex>& OutVertice
 					}
 					
 					OutVertices.Add(FManualSpriteVertex(VertexPos, UV));
+				}
+
+				// ОТЛАДКА: Логируем первые несколько результирующих вершин
+				for (int32 i = 0; i < FMath::Min(OutVertices.Num(), 5); i++)
+				{
+					const FManualSpriteVertex& Vertex = OutVertices[i];
+					UE_LOG(LogTemp, Warning, TEXT("DEBUG: Final vertex %d = (%.2f, %.2f), UV = (%.3f, %.3f)"), 
+						   i, Vertex.Position.X, Vertex.Position.Y, Vertex.UV.X, Vertex.UV.Y);
 				}
 				
 				// Создаем треугольники
@@ -173,25 +181,48 @@ bool UManualSprite::ImportRenderGeometry(TArray<FManualSpriteVertex>& OutVertice
 
 	// Конвертируем вершины в наш формат с UV
 	const FVector2D SpriteSize = GetSourceSize();
-	const FVector2D HalfSize = SpriteSize * 0.5f;
+
+	// ОТЛАДКА: Логируем размер спрайта и первые несколько вершин
+	UE_LOG(LogTemp, Warning, TEXT("DEBUG: SpriteSize = (%.2f, %.2f)"), SpriteSize.X, SpriteSize.Y);
+
+	for (int32 i = 0; i < FMath::Min(UniqueVertices.Num(), 5); i++)
+	{
+		const FVector2D& VertexPos = UniqueVertices[i];
+		UE_LOG(LogTemp, Warning, TEXT("DEBUG: Original vertex %d = (%.2f, %.2f)"), i, VertexPos.X, VertexPos.Y);
+	}
 
 	for (const FVector2D& VertexPos : UniqueVertices)
 	{
+		// ИСПРАВЛЕНИЕ: VertexPos находится в абсолютных координатах текстуры
+		// Преобразуем в локальные координаты нашего редактора
+		const FVector2D LocalPos = FVector2D(
+			VertexPos.X - SpriteSize.X * 0.5f,  // Центрируем X
+			VertexPos.Y - SpriteSize.Y * 0.5f   // Центрируем Y
+		);
+	
 		FVector2D UV;
 		if (!SpriteSize.IsNearlyZero())
 		{
-			// Преобразуем локальные координаты спрайта в UV [0,1]
-			UV.X = (VertexPos.X + HalfSize.X) / SpriteSize.X;
-			UV.Y = 1.0f - ((VertexPos.Y + HalfSize.Y) / SpriteSize.Y); // Инвертируем Y для UV
+			// Вычисляем UV из абсолютных координат
+			UV.X = VertexPos.X / SpriteSize.X;
+			UV.Y = 1.0f - (VertexPos.Y / SpriteSize.Y); // Инвертируем Y
 		}
 		else
 		{
 			UV = FVector2D(0.5f, 0.5f);
 		}
 
-		OutVertices.Add(FManualSpriteVertex(VertexPos, UV));
+		OutVertices.Add(FManualSpriteVertex(LocalPos, UV));
 	}
 
+	// ОТЛАДКА: Логируем первые несколько результирующих вершин
+	for (int32 i = 0; i < FMath::Min(OutVertices.Num(), 5); i++)
+	{
+		const FManualSpriteVertex& Vertex = OutVertices[i];
+		UE_LOG(LogTemp, Warning, TEXT("DEBUG: Final vertex %d = (%.2f, %.2f), UV = (%.3f, %.3f)"), 
+			   i, Vertex.Position.X, Vertex.Position.Y, Vertex.UV.X, Vertex.UV.Y);
+	}
+	
 	// Создаем треугольники из индексов
 	for (int32 i = 0; i < VertexIndices.Num(); i += 3)
 	{

@@ -243,4 +243,28 @@ private:
 
 	/** Функция для транзакций */
 	void ImportRenderGeometryWithTransaction();
+
+public:
+	/** Структуры для триангуляции */
+	struct FEdge
+	{
+		int32 A, B;
+		FEdge(int32 InA, int32 InB) : A(InA), B(InB) {}
+	};
+
+	/** Автоматическая триангуляция */
+	void OnAutoTriangulate();
+	bool CanAutoTriangulate() const;
+	void AutoTriangulateWithTransaction();
+
+private:
+	/** Основные методы триангуляции */
+	bool TriangleExists(int32 Index0, int32 Index1, int32 Index2) const;
+	bool DelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const;
+	bool SimpleDelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const;
+	
+	/** Вспомогательные геометрические методы */
+	bool IsValidTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C) const;
+	bool IsDelaunayTriangle(const TArray<FVector2D>& Points, int32 A, int32 B, int32 C) const;
+	bool GetCircumcircle(const FVector2D& A, const FVector2D& B, const FVector2D& C, FVector2D& OutCenter, float& OutRadiusSquared) const;
 };

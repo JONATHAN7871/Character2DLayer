@@ -50,6 +50,9 @@ public:
 	// Генерация мешей
 	TSharedPtr<FUICommandInfo> GenerateMesh;
 
+	// НОВОЕ: Автоматическая триангуляция
+	TSharedPtr<FUICommandInfo> AutoTriangulate;
+
 	// Команда для импорта геометрии
 	TSharedPtr<FUICommandInfo> ImportRenderGeometry;
 };
