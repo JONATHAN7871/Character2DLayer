@@ -122,6 +122,14 @@ public:
 	 * @param OutVertices - Массив, в который будут записаны позиции вершин.
 	 */
 	void GetRenderGeometryVertices(TArray<FVector2D>& OutVertices) const;
+
+	/**
+	 * НОВЫЙ МЕТОД: Импортирует полную геометрию (вершины + треугольники) из RenderGeometry
+	 * @param OutVertices - Массив вершин
+	 * @param OutTriangles - Массив треугольников (индексы вершин)
+	 * @return true если импорт успешен
+	 */
+	bool ImportRenderGeometry(TArray<FManualSpriteVertex>& OutVertices, TArray<FManualSpriteTriangle>& OutTriangles) const;
 #endif
 	
 public:

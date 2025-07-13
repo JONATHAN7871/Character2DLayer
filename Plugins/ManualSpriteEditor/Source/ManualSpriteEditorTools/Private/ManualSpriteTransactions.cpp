@@ -223,6 +223,75 @@ void FResetGeometryTransaction::Execute()
 	FPropertyChangedEvent DummyEvent(nullptr);
 	ManualSprite->PostEditChangeProperty(DummyEvent);
 	EndTransaction();
+}// Import geometry transaction
+FImportGeometryRenderTransaction::FImportGeometryRenderTransaction(UManualSprite* InSprite)
+	: FManualSpriteTransaction(InSprite, LOCTEXT("ImportGeometry", "Import Render Geometry"))
+{
 }
 
-#undef LOCTEXT_NAMESPACE
+void FImportGeometryRenderTransaction::Execute()
+{
+	if (!ManualSprite) return;
+	
+#if WITH_EDITOR
+	UE_LOG(LogTemp, Warning, TEXT("=== FImportGeometryRenderTransaction::Execute START ==="));
+	
+	BeginTransaction();
+	
+	// Проверяем, есть ли RenderGeometry для импорта
+	const FSpriteGeometryCollection& GeomCollection = ManualSprite->GetRenderGeometry();
+	UE_LOG(LogTemp, Warning, TEXT("GeomCollection.Shapes.Num() = %d"), GeomCollection.Shapes.Num());
+	
+	if (GeomCollection.Shapes.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("❌ No RenderGeometry found. Create geometry first using 'Edit Source Region' in the standard sprite editor."));
+		EndTransaction();
+		return;
+	}
+	
+	UE_LOG(LogTemp, Warning, TEXT("Found %d shapes in RenderGeometry, importing..."), GeomCollection.Shapes.Num());
+	
+	// Очищаем текущую геометрию
+	ManualSprite->ClearManualGeometry();
+	
+	// Импортируем геометрию из RenderGeometry
+	TArray<FManualSpriteVertex> ImportedVertices;
+	TArray<FManualSpriteTriangle> ImportedTriangles;
+	
+	UE_LOG(LogTemp, Warning, TEXT("Calling ImportRenderGeometry..."));
+	bool bImportSuccess = ManualSprite->ImportRenderGeometry(ImportedVertices, ImportedTriangles);
+	UE_LOG(LogTemp, Warning, TEXT("ImportRenderGeometry returned: %s"), bImportSuccess ? TEXT("SUCCESS") : TEXT("FAILED"));
+	
+	if (bImportSuccess)
+	{
+		// Заменяем геометрию на импортированную
+		ManualSprite->ManualGeometry.Vertices = ImportedVertices;
+		ManualSprite->ManualGeometry.Triangles = ImportedTriangles;
+		
+		// Включаем ручную геометрию если она была выключена
+		if (!ManualSprite->bUseManualGeometry)
+		{
+			ManualSprite->bUseManualGeometry = true;
+		}
+		
+		(void)ManualSprite->MarkPackageDirty();
+		
+		UE_LOG(LogTemp, Warning, TEXT("✅ Successfully imported %d vertices and %d triangles from RenderGeometry!"), 
+			   ImportedVertices.Num(), ImportedTriangles.Num());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("❌ Failed to import geometry from RenderGeometry. Creating default geometry instead."));
+		
+		// Восстанавливаем базовую геометрию если импорт не удался
+		FPropertyChangedEvent DummyEvent(nullptr);
+		ManualSprite->PostEditChangeProperty(DummyEvent);
+		
+		UE_LOG(LogTemp, Warning, TEXT("Default geometry created with %d vertices and %d triangles"), 
+			   ManualSprite->ManualGeometry.Vertices.Num(), ManualSprite->ManualGeometry.Triangles.Num());
+	}
+	
+	EndTransaction();
+	UE_LOG(LogTemp, Warning, TEXT("=== FImportGeometryRenderTransaction::Execute END ==="));
+#endif
+}

@@ -442,9 +442,9 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
             	ToolbarBuilder.AddToolBarButton(
 					Commands.ImportRenderGeometry, 
 					NAME_None, 
-					LOCTEXT("ImportRenderGeometryText", "Import Geo"),
-					LOCTEXT("ImportRenderGeometryTooltip", "Import vertices from the sprite's standard 'Edit Source Region' geometry."),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "MeshPaint.Import") // Иконка для примера
+					LOCTEXT("ImportRenderGeometryText", "Import From Sprite"),
+					LOCTEXT("ImportRenderGeometryTooltip", "Import full geometry (vertices + triangles) from the sprite's Edit Source Region"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "MeshPaint.Import")
 				);
 	        }
         	ToolbarBuilder.EndSection();

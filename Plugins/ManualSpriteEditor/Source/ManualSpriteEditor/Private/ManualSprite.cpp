@@ -14,6 +14,210 @@ const FSpriteGeometryCollection& UManualSprite::GetRenderGeometry() const
 	// и этот код компилируется только в редакторе, мы имеем доступ к RenderGeometry.
 	return RenderGeometry;
 }
+
+bool UManualSprite::ImportRenderGeometry(TArray<FManualSpriteVertex>& OutVertices, TArray<FManualSpriteTriangle>& OutTriangles) const
+{
+	OutVertices.Empty();
+	OutTriangles.Empty();
+
+#if WITH_EDITOR
+	UE_LOG(LogTemp, Warning, TEXT("=== ImportRenderGeometry DEBUG ==="));
+	
+	// Убеждаемся, что данные актуальны
+	const_cast<UManualSprite*>(this)->RebuildRenderData();
+
+	const FSpriteGeometryCollection& GeomCollection = GetRenderGeometry();
+	
+	UE_LOG(LogTemp, Warning, TEXT("RenderGeometry has %d shapes"), GeomCollection.Shapes.Num());
+	UE_LOG(LogTemp, Warning, TEXT("GeometryType: %d"), (int32)GeomCollection.GeometryType);
+	
+	if (GeomCollection.Shapes.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No shapes in RenderGeometry. Trying to access BakedRenderData..."));
+		
+		// Попробуем взять данные из BakedRenderData напрямую
+		if (BakedRenderData.Num() > 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Found %d points in BakedRenderData"), BakedRenderData.Num());
+			
+			// BakedRenderData содержит готовые треугольники в формате XY UV
+			if ((BakedRenderData.Num() % 3) == 0)
+			{
+				// Собираем уникальные вершины
+				TArray<FVector2D> UniqueVertices;
+				TArray<int32> VertexIndices;
+				const float MergeTolerance = 0.1f;
+				
+				const FVector2D SpriteSize = GetSourceSize();
+				const FVector2D HalfSize = SpriteSize * 0.5f;
+				const float UnitsPerPixel = GetUnrealUnitsPerPixel();
+				
+				for (const FVector4& BakedVert : BakedRenderData)
+				{
+					// Конвертируем обратно в текстурное пространство
+					// BakedVert.X и BakedVert.Y - это позиция в pivot space в UU
+					const FVector2D PivotSpacePos(BakedVert.X / UnitsPerPixel, BakedVert.Y / UnitsPerPixel);
+					const FVector2D TextureSpacePos = ConvertPivotSpaceToTextureSpace(PivotSpacePos);
+					
+					// Ищем существующую близкую вершину
+					int32 ExistingIndex = INDEX_NONE;
+					for (int32 i = 0; i < UniqueVertices.Num(); i++)
+					{
+						if (FVector2D::DistSquared(UniqueVertices[i], TextureSpacePos) < MergeTolerance * MergeTolerance)
+						{
+							ExistingIndex = i;
+							break;
+						}
+					}
+					
+					if (ExistingIndex == INDEX_NONE)
+					{
+						ExistingIndex = UniqueVertices.Add(TextureSpacePos);
+					}
+					
+					VertexIndices.Add(ExistingIndex);
+				}
+				
+				// Создаем вершины с UV
+				for (const FVector2D& VertexPos : UniqueVertices)
+				{
+					FVector2D UV;
+					if (!SpriteSize.IsNearlyZero())
+					{
+						UV.X = (VertexPos.X - GetSourceUV().X) / SpriteSize.X;
+						UV.Y = 1.0f - ((VertexPos.Y - GetSourceUV().Y) / SpriteSize.Y);
+					}
+					else
+					{
+						UV = FVector2D(0.5f, 0.5f);
+					}
+					
+					OutVertices.Add(FManualSpriteVertex(VertexPos, UV));
+				}
+				
+				// Создаем треугольники
+				for (int32 i = 0; i < VertexIndices.Num(); i += 3)
+				{
+					if (i + 2 < VertexIndices.Num())
+					{
+						const int32 Index0 = VertexIndices[i];
+						const int32 Index1 = VertexIndices[i + 1];
+						const int32 Index2 = VertexIndices[i + 2];
+						
+						if (Index0 < OutVertices.Num() && Index1 < OutVertices.Num() && Index2 < OutVertices.Num() &&
+							Index0 != Index1 && Index1 != Index2 && Index0 != Index2)
+						{
+							OutTriangles.Add(FManualSpriteTriangle(Index0, Index1, Index2));
+						}
+					}
+				}
+				
+				UE_LOG(LogTemp, Warning, TEXT("✅ Imported from BakedRenderData: %d vertices, %d triangles"), 
+					   OutVertices.Num(), OutTriangles.Num());
+				
+				return OutVertices.Num() > 0 && OutTriangles.Num() > 0;
+			}
+		}
+		
+		UE_LOG(LogTemp, Warning, TEXT("❌ No usable geometry found in RenderGeometry or BakedRenderData"));
+		return false;
+	}
+
+	// Отладочная информация о шейпах
+	for (int32 i = 0; i < GeomCollection.Shapes.Num(); i++)
+	{
+		const FSpriteGeometryShape& Shape = GeomCollection.Shapes[i];
+		UE_LOG(LogTemp, Warning, TEXT("Shape %d: Type=%d, Vertices=%d, BoxSize=(%.2f,%.2f)"), 
+			   i, (int32)Shape.ShapeType, Shape.Vertices.Num(), Shape.BoxSize.X, Shape.BoxSize.Y);
+	}
+
+	// Триангулируем геометрию для получения треугольников
+	TArray<FVector2D> TriangulatedPoints;
+	GeomCollection.Triangulate(TriangulatedPoints, true); // включаем боксы
+
+	UE_LOG(LogTemp, Warning, TEXT("Triangulation produced %d points"), TriangulatedPoints.Num());
+
+	if (TriangulatedPoints.Num() < 3 || (TriangulatedPoints.Num() % 3) != 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("❌ Invalid triangulated data: %d points"), TriangulatedPoints.Num());
+		return false;
+	}
+
+	// Собираем уникальные вершины
+	TArray<FVector2D> UniqueVertices;
+	TArray<int32> VertexIndices;
+	
+	const float VertexMergeTolerance = 0.1f; // Порог для слияния близких вершин
+	
+	for (const FVector2D& Point : TriangulatedPoints)
+	{
+		// Ищем существующую близкую вершину
+		int32 ExistingIndex = INDEX_NONE;
+		for (int32 i = 0; i < UniqueVertices.Num(); i++)
+		{
+			if (FVector2D::DistSquared(UniqueVertices[i], Point) < VertexMergeTolerance * VertexMergeTolerance)
+			{
+				ExistingIndex = i;
+				break;
+			}
+		}
+		
+		if (ExistingIndex == INDEX_NONE)
+		{
+			// Добавляем новую уникальную вершину
+			ExistingIndex = UniqueVertices.Add(Point);
+		}
+		
+		VertexIndices.Add(ExistingIndex);
+	}
+
+	// Конвертируем вершины в наш формат с UV
+	const FVector2D SpriteSize = GetSourceSize();
+	const FVector2D HalfSize = SpriteSize * 0.5f;
+
+	for (const FVector2D& VertexPos : UniqueVertices)
+	{
+		FVector2D UV;
+		if (!SpriteSize.IsNearlyZero())
+		{
+			// Преобразуем локальные координаты спрайта в UV [0,1]
+			UV.X = (VertexPos.X + HalfSize.X) / SpriteSize.X;
+			UV.Y = 1.0f - ((VertexPos.Y + HalfSize.Y) / SpriteSize.Y); // Инвертируем Y для UV
+		}
+		else
+		{
+			UV = FVector2D(0.5f, 0.5f);
+		}
+
+		OutVertices.Add(FManualSpriteVertex(VertexPos, UV));
+	}
+
+	// Создаем треугольники из индексов
+	for (int32 i = 0; i < VertexIndices.Num(); i += 3)
+	{
+		if (i + 2 < VertexIndices.Num())
+		{
+			const int32 Index0 = VertexIndices[i];
+			const int32 Index1 = VertexIndices[i + 1];
+			const int32 Index2 = VertexIndices[i + 2];
+
+			// Проверяем валидность индексов
+			if (Index0 < OutVertices.Num() && Index1 < OutVertices.Num() && Index2 < OutVertices.Num() &&
+				Index0 != Index1 && Index1 != Index2 && Index0 != Index2)
+			{
+				OutTriangles.Add(FManualSpriteTriangle(Index0, Index1, Index2));
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("✅ Final result: %d vertices, %d triangles from %d triangulated points"), 
+		   OutVertices.Num(), OutTriangles.Num(), TriangulatedPoints.Num());
+
+	return OutVertices.Num() > 0 && OutTriangles.Num() > 0;
+#else
+	return false;
+#endif
+}
 #endif
 
 void UManualSprite::AddVertex(const FVector2D& Position, const FVector2D& UV)

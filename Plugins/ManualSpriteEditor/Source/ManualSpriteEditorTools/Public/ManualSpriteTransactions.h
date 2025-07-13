@@ -230,3 +230,15 @@ private: // <-- А вот эти поля могут быть private
 	UManualSprite* Sprite;
 	FManualSpriteGeometry OldGeometry; 
 };
+
+/**
+ * Транзакция для импорта ПОЛНОЙ геометрии (вершины + треугольники) из RenderGeometry
+ */
+class MANUALSPRITEEDITORTOOLS_API FImportGeometryRenderTransaction : public FManualSpriteTransaction
+{
+public:
+	explicit FImportGeometryRenderTransaction(UManualSprite* InSprite);
+	
+	// Выполнить операцию импорта
+	void Execute();
+};

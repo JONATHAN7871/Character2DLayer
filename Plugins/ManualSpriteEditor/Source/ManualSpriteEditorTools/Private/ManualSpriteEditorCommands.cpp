@@ -49,7 +49,7 @@ void FManualSpriteEditorCommands::RegisterCommands()
 			  EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::M));
 
 	// Команда для импорта геометрии
-	UI_COMMAND(ImportRenderGeometry, "Import Geometry", "Imports the vertices from the sprite's render geometry, replacing the current manual geometry.", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(ImportRenderGeometry, "Import Geometry", "Import vertices and triangles from the sprite's Edit Source Region geometry", EUserInterfaceActionType::Button, FInputChord());
 }
 
 #undef LOCTEXT_NAMESPACE
