@@ -253,10 +253,24 @@ void FManualSpriteEditorToolkit::BindCommands()
 		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanImportRenderGeometry)
 	);
 
+	// Валидация триангуляции
+	CommandList->MapAction(
+		Commands.ValidateTriangulation,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnValidateTriangulation),
+		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanValidateTriangulation)
+	);
+	
 	CommandList->MapAction(
 		Commands.AutoTriangulate,
 		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnAutoTriangulate),
 		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanAutoTriangulate)
+	);
+
+	// Удаление треугольников
+	CommandList->MapAction(
+		Commands.DeleteTriangles,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnDeleteTriangles),
+		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanDeleteTriangles)
 	);
 	
 }
@@ -426,10 +440,20 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
 					LOCTEXT("ResetToDefaultTooltip", "Reset to default quad"),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), "PropertyWindow.DiffersFromDefault"));
 
+            	// НОВОЕ: Кнопка валидации пересечений
+            	ToolbarBuilder.AddToolBarButton(Commands.ValidateTriangulation, NAME_None, LOCTEXT("ValidateText", "Validate"),
+					LOCTEXT("ValidateTooltip", "Check triangulation for intersecting edges (V)"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "Automation.Success"));
+
             	// НОВОЕ: Auto Triangulate
             	ToolbarBuilder.AddToolBarButton(Commands.AutoTriangulate, NAME_None, LOCTEXT("AutoTriangulateText", "Auto Triangulate"),
-					LOCTEXT("AutoTriangulateTooltip", "Automatically triangulate selected vertices (F1)"),
+					LOCTEXT("AutoTriangulateTooltip", "Automatically triangulate selected vertices (3)"),
 					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Modes"));
+
+            	// Delete Triangles
+            	ToolbarBuilder.AddToolBarButton(Commands.DeleteTriangles, NAME_None, LOCTEXT("DeleteTrianglesText", "Delete Triangles"),
+					LOCTEXT("DeleteTrianglesTooltip", "Delete all triangles connected to selected vertices (4)"),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Delete"));
 	        }
         	ToolbarBuilder.EndSection();
 
@@ -566,6 +590,11 @@ void FManualSpriteEditorToolkit::RemoveVertexWithTransaction(int32 VertexIndex)
 		if (Viewport.IsValid())
 		{
 			Viewport->RefreshViewport();
+			// Инвалидируем кэш пересечений
+			if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+			{
+				ViewportClient->InvalidateIntersectionsCache();
+			}
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("Removed vertex %d with transaction"), VertexIndex);
@@ -580,6 +609,11 @@ void FManualSpriteEditorToolkit::AddTriangleWithTransaction(int32 Index0, int32 
 	if (Viewport.IsValid())
 	{
 		Viewport->RefreshViewport();
+		// Инвалидируем кэш пересечений
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			ViewportClient->InvalidateIntersectionsCache();
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Added triangle with transaction (%d, %d, %d)"), Index0, Index1, Index2);
@@ -595,6 +629,11 @@ void FManualSpriteEditorToolkit::RemoveTriangleWithTransaction(int32 TriangleInd
 		if (Viewport.IsValid())
 		{
 			Viewport->RefreshViewport();
+			// Инвалидируем кэш пересечений
+			if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+			{
+				ViewportClient->InvalidateIntersectionsCache();
+			}
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("Removed triangle %d with transaction"), TriangleIndex);
@@ -628,6 +667,11 @@ void FManualSpriteEditorToolkit::MoveVerticesWithTransaction(const TArray<int32>
 	if (Viewport.IsValid())
 	{
 		Viewport->RefreshViewport();
+		// Инвалидируем кэш пересечений при перемещении вершин
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			ViewportClient->InvalidateIntersectionsCache();
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Moved %d vertices with transaction"), VertexIndices.Num());
@@ -641,6 +685,11 @@ void FManualSpriteEditorToolkit::ClearGeometryWithTransaction()
 	if (Viewport.IsValid())
 	{
 		Viewport->RefreshViewport();
+		// Инвалидируем кэш пересечений при очистке
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			ViewportClient->InvalidateIntersectionsCache();
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Cleared geometry with transaction"));
@@ -654,6 +703,11 @@ void FManualSpriteEditorToolkit::ResetGeometryWithTransaction()
 	if (Viewport.IsValid())
 	{
 		Viewport->RefreshViewport();
+		// Инвалидируем кэш пересечений при сбросе
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			ViewportClient->InvalidateIntersectionsCache();
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Reset geometry with transaction"));
@@ -1245,11 +1299,14 @@ void FManualSpriteEditorToolkit::AutoTriangulateWithTransaction()
 		}
 	}
 
-	// Выполняем триангуляцию Делоне
+	// Выполняем улучшенную триангуляцию Делоне с проверкой пересечений
 	TArray<FIntVector> Triangles;
-	if (DelaunayTriangulation(SelectedPositions, Triangles))
+	if (ImprovedDelaunayTriangulation(SelectedPositions, Triangles))
 	{
-		// Добавляем новые треугольники
+		int32 AddedTriangles = 0;
+		int32 SkippedTriangles = 0;
+
+		// Добавляем новые треугольники с проверкой пересечений
 		for (const FIntVector& Triangle : Triangles)
 		{
 			// Преобразуем локальные индексы обратно в глобальные
@@ -1260,7 +1317,17 @@ void FManualSpriteEditorToolkit::AutoTriangulateWithTransaction()
 			// Проверяем, что такого треугольника еще нет
 			if (!TriangleExists(GlobalIndex0, GlobalIndex1, GlobalIndex2))
 			{
+				// НОВАЯ ПРОВЕРКА: Проверяем, не создадим ли мы пересекающиеся рёбра
+				if (WillTriangleCreateIntersections(GlobalIndex0, GlobalIndex1, GlobalIndex2))
+				{
+					SkippedTriangles++;
+					UE_LOG(LogTemp, Warning, TEXT("⚠ Skipped triangle (%d,%d,%d) - would create intersections"), 
+						   GlobalIndex0, GlobalIndex1, GlobalIndex2);
+					continue;
+				}
+
 				ManualSprite->AddTriangle(GlobalIndex0, GlobalIndex1, GlobalIndex2);
+				AddedTriangles++;
 			}
 		}
 
@@ -1268,11 +1335,17 @@ void FManualSpriteEditorToolkit::AutoTriangulateWithTransaction()
 
 		if (Viewport.IsValid())
 		{
+			ViewportClient->InvalidateIntersectionsCache();
 			Viewport->RefreshViewport();
 		}
 
-		UE_LOG(LogTemp, Log, TEXT("Auto-triangulated %d vertices into %d triangles"), 
-			   SelectedVertices.Num(), Triangles.Num());
+		UE_LOG(LogTemp, Log, TEXT("✅ Smart triangulation: %d triangles added, %d skipped to avoid intersections"), 
+			   AddedTriangles, SkippedTriangles);
+
+		if (SkippedTriangles > 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("💡 Consider manual triangulation for complex areas"));
+		}
 	}
 	else
 	{
@@ -1406,6 +1479,381 @@ bool FManualSpriteEditorToolkit::GetCircumcircle(const FVector2D& A, const FVect
 
 	OutRadiusSquared = FVector2D::DistSquared(A, OutCenter);
 	return true;
+}
+
+void FManualSpriteEditorToolkit::OnValidateTriangulation()
+{
+	if (!CanValidateTriangulation())
+		return;
+
+	if (Viewport.IsValid())
+	{
+		if (TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient())
+		{
+			// Принудительно обновляем кэш пересечений
+			ViewportClient->InvalidateIntersectionsCache();
+			
+			// Получаем результаты валидации
+			const auto& IntersectingEdges = ViewportClient->GetCachedIntersectingEdges();
+			
+			// Показываем результаты в логе и UI
+			if (IntersectingEdges.Num() > 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("🔴 VALIDATION FAILED: Found %d intersecting edges in triangulation!"), 
+					   IntersectingEdges.Num());
+			}
+			else if (ManualSprite && ManualSprite->ManualGeometry.Triangles.Num() > 0)
+			{
+				UE_LOG(LogTemp, Log, TEXT("✅ VALIDATION PASSED: No intersecting edges found. Triangulation is clean!"));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("⚠ No triangles to validate."));
+			}
+			
+			Viewport->RefreshViewport();
+		}
+	}
+}
+
+bool FManualSpriteEditorToolkit::CanValidateTriangulation() const
+{
+	return ManualSprite != nullptr 
+		&& ManualSprite->bUseManualGeometry 
+		&& ManualSprite->ManualGeometry.Vertices.Num() >= 3;
+}
+
+bool FManualSpriteEditorToolkit::ImprovedDelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const
+{
+	OutTriangles.Empty();
+	
+	if (Points.Num() < 3)
+		return false;
+
+	if (Points.Num() == 3)
+	{
+		OutTriangles.Add(FIntVector(0, 1, 2));
+		return true;
+	}
+
+	// Создаем кандидатов на треугольники и проверяем их качество
+	TArray<FIntVector> CandidateTriangles;
+	TArray<float> TriangleQualities;
+
+	// Генерируем все возможные треугольники
+	for (int32 i = 0; i < Points.Num(); i++)
+	{
+		for (int32 j = i + 1; j < Points.Num(); j++)
+		{
+			for (int32 k = j + 1; k < Points.Num(); k++)
+			{
+				// Проверяем, что треугольник валиден
+				if (IsValidTriangle(Points[i], Points[j], Points[k]))
+				{
+					// Вычисляем качество треугольника (больше = лучше)
+					float Quality = CalculateTriangleQuality(Points[i], Points[j], Points[k]);
+					
+					// Проверяем Delaunay условие
+					if (IsDelaunayTriangle(Points, i, j, k))
+					{
+						Quality += 10.0f; // Бонус за соответствие Delaunay
+					}
+
+					CandidateTriangles.Add(FIntVector(i, j, k));
+					TriangleQualities.Add(Quality);
+				}
+			}
+		}
+	}
+
+	// Сортируем треугольники по качеству (лучшие первыми)
+	for (int32 i = 0; i < CandidateTriangles.Num() - 1; i++)
+	{
+		for (int32 j = i + 1; j < CandidateTriangles.Num(); j++)
+		{
+			if (TriangleQualities[i] < TriangleQualities[j])
+			{
+				CandidateTriangles.Swap(i, j);
+				TriangleQualities.Swap(i, j);
+			}
+		}
+	}
+
+	// Добавляем треугольники, избегая пересечений
+	TSet<TPair<int32, int32>> UsedEdges;
+	
+	for (int32 i = 0; i < CandidateTriangles.Num(); i++)
+	{
+		const FIntVector& Triangle = CandidateTriangles[i];
+		
+		// Проверяем рёбра треугольника
+		TArray<TPair<int32, int32>> TriangleEdges = {
+			TPair<int32, int32>(FMath::Min(Triangle.X, Triangle.Y), FMath::Max(Triangle.X, Triangle.Y)),
+			TPair<int32, int32>(FMath::Min(Triangle.Y, Triangle.Z), FMath::Max(Triangle.Y, Triangle.Z)),
+			TPair<int32, int32>(FMath::Min(Triangle.Z, Triangle.X), FMath::Max(Triangle.Z, Triangle.X))
+		};
+		
+		// Проверяем, не пересекутся ли новые рёбра с существующими
+		bool bWillIntersect = false;
+		for (const auto& NewEdge : TriangleEdges)
+		{
+			if (WillEdgeIntersectWithUsedEdges(Points, NewEdge, UsedEdges))
+			{
+				bWillIntersect = true;
+				break;
+			}
+		}
+		
+		if (!bWillIntersect)
+		{
+			OutTriangles.Add(Triangle);
+			
+			// Добавляем рёбра в список использованных
+			for (const auto& Edge : TriangleEdges)
+			{
+				UsedEdges.Add(Edge);
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Improved Delaunay: %d points -> %d quality triangles (from %d candidates)"), 
+		   Points.Num(), OutTriangles.Num(), CandidateTriangles.Num());
+	
+	return OutTriangles.Num() > 0;
+}
+
+bool FManualSpriteEditorToolkit::WillTriangleCreateIntersections(int32 Index0, int32 Index1, int32 Index2) const
+{
+	if (!ManualSprite)
+		return true;
+
+	// Проверяем каждое ребро нового треугольника
+	return WillEdgeIntersectExisting(Index0, Index1) ||
+		   WillEdgeIntersectExisting(Index1, Index2) ||
+		   WillEdgeIntersectExisting(Index2, Index0);
+}
+
+bool FManualSpriteEditorToolkit::WillEdgeIntersectExisting(int32 VertexA, int32 VertexB) const
+{
+	if (!ManualSprite)
+		return true;
+
+	const FManualSpriteGeometry& Geometry = ManualSprite->ManualGeometry;
+	
+	// Получаем позиции вершин нового ребра
+	if (VertexA >= Geometry.Vertices.Num() || VertexB >= Geometry.Vertices.Num())
+		return true;
+		
+	const FVector2D PosA = Geometry.Vertices[VertexA].Position;
+	const FVector2D PosB = Geometry.Vertices[VertexB].Position;
+
+	// Проверяем пересечение с каждым существующим ребром
+	for (const FManualSpriteTriangle& Triangle : Geometry.Triangles)
+	{
+		// Проверяем все три ребра треугольника
+		TArray<TPair<int32, int32>> ExistingEdges = {
+			TPair<int32, int32>(Triangle.VertexIndex0, Triangle.VertexIndex1),
+			TPair<int32, int32>(Triangle.VertexIndex1, Triangle.VertexIndex2),
+			TPair<int32, int32>(Triangle.VertexIndex2, Triangle.VertexIndex0)
+		};
+
+		for (const auto& ExistingEdge : ExistingEdges)
+		{
+			// Пропускаем рёбра, которые имеют общие вершины
+			if (ExistingEdge.Key == VertexA || ExistingEdge.Key == VertexB ||
+				ExistingEdge.Value == VertexA || ExistingEdge.Value == VertexB)
+			{
+				continue;
+			}
+
+			// Проверяем валидность индексов
+			if (ExistingEdge.Key >= Geometry.Vertices.Num() || ExistingEdge.Value >= Geometry.Vertices.Num())
+				continue;
+
+			const FVector2D ExistingPosA = Geometry.Vertices[ExistingEdge.Key].Position;
+			const FVector2D ExistingPosB = Geometry.Vertices[ExistingEdge.Value].Position;
+
+			// Проверяем пересечение отрезков
+			if (DoSegmentsIntersect(PosA, PosB, ExistingPosA, ExistingPosB))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+float FManualSpriteEditorToolkit::CalculateTriangleQuality(const FVector2D& A, const FVector2D& B, const FVector2D& C) const
+{
+	// Вычисляем качество треугольника на основе соотношения сторон
+	const float SideA = FVector2D::Distance(B, C);
+	const float SideB = FVector2D::Distance(A, C);
+	const float SideC = FVector2D::Distance(A, B);
+	
+	const float Perimeter = SideA + SideB + SideC;
+	const float Area = FMath::Abs((B.X - A.X) * (C.Y - A.Y) - (C.X - A.X) * (B.Y - A.Y)) * 0.5f;
+	
+	if (Perimeter <= 0.0f || Area <= 0.0f)
+		return 0.0f;
+	
+	// Коэффициент качества (больше = лучше для равносторонних треугольников)
+	return (4.0f * Area) / (Perimeter * Perimeter);
+}
+
+bool FManualSpriteEditorToolkit::WillEdgeIntersectWithUsedEdges(const TArray<FVector2D>& Points, 
+																const TPair<int32, int32>& NewEdge, 
+																const TSet<TPair<int32, int32>>& UsedEdges) const
+{
+	const FVector2D NewEdgeStart = Points[NewEdge.Key];
+	const FVector2D NewEdgeEnd = Points[NewEdge.Value];
+
+	for (const auto& UsedEdge : UsedEdges)
+	{
+		// Пропускаем рёбра с общими вершинами
+		if (UsedEdge.Key == NewEdge.Key || UsedEdge.Key == NewEdge.Value ||
+			UsedEdge.Value == NewEdge.Key || UsedEdge.Value == NewEdge.Value)
+		{
+			continue;
+		}
+
+		const FVector2D UsedEdgeStart = Points[UsedEdge.Key];
+		const FVector2D UsedEdgeEnd = Points[UsedEdge.Value];
+
+		if (DoSegmentsIntersect(NewEdgeStart, NewEdgeEnd, UsedEdgeStart, UsedEdgeEnd))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FManualSpriteEditorToolkit::DoSegmentsIntersect(const FVector2D& A1, const FVector2D& A2, 
+													const FVector2D& B1, const FVector2D& B2) const
+{
+	// Используем тот же алгоритм, что и в viewport
+	auto Orientation = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R) -> int32
+	{
+		const float Val = (Q.Y - P.Y) * (R.X - Q.X) - (Q.X - P.X) * (R.Y - Q.Y);
+		if (FMath::Abs(Val) < 1e-6f) return 0;
+		return (Val > 0) ? 1 : 2;
+	};
+	
+	auto OnSegment = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R) -> bool
+	{
+		return Q.X <= FMath::Max(P.X, R.X) && Q.X >= FMath::Min(P.X, R.X) &&
+		       Q.Y <= FMath::Max(P.Y, R.Y) && Q.Y >= FMath::Min(P.Y, R.Y);
+	};
+	
+	const int32 O1 = Orientation(A1, A2, B1);
+	const int32 O2 = Orientation(A1, A2, B2);
+	const int32 O3 = Orientation(B1, B2, A1);
+	const int32 O4 = Orientation(B1, B2, A2);
+	
+	if (O1 != O2 && O3 != O4)
+		return true;
+	
+	if (O1 == 0 && OnSegment(A1, B1, A2)) return true;
+	if (O2 == 0 && OnSegment(A1, B2, A2)) return true;
+	if (O3 == 0 && OnSegment(B1, A1, B2)) return true;
+	if (O4 == 0 && OnSegment(B1, A2, B2)) return true;
+	
+	return false;
+}
+
+void FManualSpriteEditorToolkit::OnDeleteTriangles()
+{
+	if (!CanDeleteTriangles())
+		return;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return;
+
+	const TArray<int32>& SelectedVertices = ViewportClient->GetSelectedVertices();
+	if (SelectedVertices.Num() == 0)
+		return;
+
+	// Создаем транзакцию для Undo/Redo
+	FScopedTransaction Transaction(LOCTEXT("DeleteTriangles", "Delete Connected Triangles"));
+	ManualSprite->Modify();
+
+	// Находим все треугольники, которые используют выделенные вершины
+	TArray<int32> TrianglesToDelete;
+	
+	for (int32 TriangleIndex = 0; TriangleIndex < ManualSprite->ManualGeometry.Triangles.Num(); TriangleIndex++)
+	{
+		const FManualSpriteTriangle& Triangle = ManualSprite->ManualGeometry.Triangles[TriangleIndex];
+		
+		// Проверяем, использует ли треугольник хотя бы одну из выделенных вершин
+		bool bUsesSelectedVertex = false;
+		for (int32 SelectedVertex : SelectedVertices)
+		{
+			if (Triangle.VertexIndex0 == SelectedVertex ||
+				Triangle.VertexIndex1 == SelectedVertex ||
+				Triangle.VertexIndex2 == SelectedVertex)
+			{
+				bUsesSelectedVertex = true;
+				break;
+			}
+		}
+		
+		if (bUsesSelectedVertex)
+		{
+			TrianglesToDelete.Add(TriangleIndex);
+		}
+	}
+
+	if (TrianglesToDelete.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("⚠ No triangles connected to selected vertices"));
+		return;
+	}
+
+	// Удаляем треугольники в обратном порядке (чтобы индексы оставались валидными)
+	TrianglesToDelete.Sort([](const int32& A, const int32& B) {
+		return A > B; // Сортируем по убыванию
+	});
+
+	int32 DeletedCount = 0;
+	for (int32 TriangleIndex : TrianglesToDelete)
+	{
+		if (TriangleIndex >= 0 && TriangleIndex < ManualSprite->ManualGeometry.Triangles.Num())
+		{
+			ManualSprite->ManualGeometry.Triangles.RemoveAt(TriangleIndex);
+			DeletedCount++;
+		}
+	}
+
+	(void)ManualSprite->MarkPackageDirty();
+
+	if (Viewport.IsValid())
+	{
+		// Инвалидируем кэш пересечений
+		ViewportClient->InvalidateIntersectionsCache();
+		Viewport->RefreshViewport();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("✅ Deleted %d triangles connected to %d selected vertices"), 
+		   DeletedCount, SelectedVertices.Num());
+}
+
+bool FManualSpriteEditorToolkit::CanDeleteTriangles() const
+{
+	if (!ManualSprite || !ManualSprite->bUseManualGeometry)
+		return false;
+
+	if (!Viewport.IsValid())
+		return false;
+
+	TSharedPtr<ManualSpriteEditorViewport> ViewportClient = Viewport->GetManualSpriteViewportClient();
+	if (!ViewportClient.IsValid())
+		return false;
+
+	// Можно удалять треугольники если есть выделенные вершины и есть треугольники
+	return ViewportClient->GetSelectedVertices().Num() > 0 && 
+		   ManualSprite->ManualGeometry.Triangles.Num() > 0;
 }
 
 #undef LOCTEXT_NAMESPACE

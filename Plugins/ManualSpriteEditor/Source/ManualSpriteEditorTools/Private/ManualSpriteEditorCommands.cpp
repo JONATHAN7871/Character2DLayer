@@ -50,10 +50,18 @@ void FManualSpriteEditorCommands::RegisterCommands()
 
 	// НОВОЕ: Автоматическая триангуляция
 	UI_COMMAND(AutoTriangulate, "Auto Triangulate", "Automatically triangulate selected vertices using Delaunay triangulation", 
-			  EUserInterfaceActionType::Button, FInputChord(EKeys::A));
+			  EUserInterfaceActionType::Button, FInputChord(EKeys::Three));
 
 	// Команда для импорта геометрии
 	UI_COMMAND(ImportRenderGeometry, "Import Geometry", "Import vertices and triangles from the sprite's Edit Source Region geometry", EUserInterfaceActionType::Button, FInputChord());
+
+	// НОВОЕ: Валидация триангуляции
+	UI_COMMAND(ValidateTriangulation, "Validate", "Check triangulation for intersecting edges", 
+			  EUserInterfaceActionType::Button, FInputChord(EKeys::V));
+
+	// Удаление треугольников
+	UI_COMMAND(DeleteTriangles, "Delete Triangles", "Delete all triangles connected to selected vertices", 
+			  EUserInterfaceActionType::Button, FInputChord(EKeys::Four));
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -55,4 +55,10 @@ public:
 
 	// Команда для импорта геометрии
 	TSharedPtr<FUICommandInfo> ImportRenderGeometry;
+
+	// Команда валидации пересечений
+	TSharedPtr<FUICommandInfo> ValidateTriangulation;
+
+	// Команда удаления треугольников
+	TSharedPtr<FUICommandInfo> DeleteTriangles;
 };

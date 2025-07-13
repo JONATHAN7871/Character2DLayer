@@ -96,6 +96,7 @@ ManualSpriteEditorViewport::ManualSpriteEditorViewport(TWeakPtr<FManualSpriteEdi
 	, bDragTransactionStarted(false)
 	, bSpriteZoomed(false)
 	, LastViewportSize(FIntPoint::ZeroValue)
+	, bIntersectionsCacheValid(false)
 {
 	// ИСПРАВЛЕНИЕ: Минимальная инициализация для 2D редактора
 	PreviewScene = &OwnedPreviewScene;
@@ -124,6 +125,8 @@ void ManualSpriteEditorViewport::SetManualSprite(UManualSprite* InManualSprite)
 	
 	// Сброс флага масштабирования для пересчёта
 	bSpriteZoomed = false;
+	// Инвалидируем кэш при смене спрайта
+	InvalidateIntersectionsCache();
 	
 	if (ManualSpritePtr.IsValid())
 	{
@@ -715,6 +718,9 @@ void ManualSpriteEditorViewport::DrawTriangles(FCanvas* Canvas, const FViewport*
 
 	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 
+	// Обновляем кэш пересечений
+	UpdateIntersectingEdges();
+
 	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
 	{
 		const FManualSpriteTriangle& Triangle = Geometry.Triangles[i];
@@ -728,19 +734,14 @@ void ManualSpriteEditorViewport::DrawTriangles(FCanvas* Canvas, const FViewport*
 		const FVector2D Pos1 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex1].Position, InViewport);
 		const FVector2D Pos2 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex2].Position, InViewport);
 
-		const FLinearColor Color = (i == HoveredTriangle) ? SelectedTriangleColor : TriangleColor;
+		// Базовый цвет треугольника
+		const bool bIsHovered = (i == HoveredTriangle);
+		const FLinearColor BaseColor = bIsHovered ? SelectedTriangleColor : TriangleColor;
 
-		FCanvasLineItem LineItem0(Pos0, Pos1);
-		LineItem0.SetColor(Color);
-		Canvas->DrawItem(LineItem0);
-
-		FCanvasLineItem LineItem1(Pos1, Pos2);
-		LineItem1.SetColor(Color);
-		Canvas->DrawItem(LineItem1);
-
-		FCanvasLineItem LineItem2(Pos2, Pos0);
-		LineItem2.SetColor(Color);
-		Canvas->DrawItem(LineItem2);
+		// Рисуем три ребра треугольника с проверкой пересечений
+		DrawTriangleEdge(Canvas, Pos0, Pos1, Triangle.VertexIndex0, Triangle.VertexIndex1, BaseColor);
+		DrawTriangleEdge(Canvas, Pos1, Pos2, Triangle.VertexIndex1, Triangle.VertexIndex2, BaseColor);
+		DrawTriangleEdge(Canvas, Pos2, Pos0, Triangle.VertexIndex2, Triangle.VertexIndex0, BaseColor);
 	}
 }
 
@@ -765,11 +766,28 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		CurrentY += LineHeight;
 	}
 	
-	// Статистика геометрии
+	// Статистика геометрии с проверкой пересечений
 	{
+		// Обновляем кэш пересечений для подсчёта
+		UpdateIntersectingEdges();
+		const int32 IntersectionCount = CachedIntersectingEdges.Num();
+		
+		FLinearColor StatsColor = Stats.bIsValid ? FLinearColor::Green : FLinearColor::Red;
+		FString StatsText = FString::Printf(TEXT("Vertices: %d, Triangles: %d"), Stats.VertexCount, Stats.TriangleCount);
+		
+		// Добавляем информацию о пересечениях
+		if (IntersectionCount > 0)
+		{
+			StatsColor = FLinearColor::Red; // Красный если есть пересечения
+			StatsText += FString::Printf(TEXT(" | ⚠ %d intersecting edges"), IntersectionCount);
+		}
+		else if (Stats.TriangleCount > 0)
+		{
+			StatsText += TEXT(" | ✓ Clean triangulation");
+		}
+		
 		FCanvasTextItem TextItem(FVector2D(10, CurrentY), 
-			FText::FromString(FString::Printf(TEXT("Vertices: %d, Triangles: %d"), Stats.VertexCount, Stats.TriangleCount)),
-			GEngine->GetSmallFont(), Stats.bIsValid ? FLinearColor::Green : FLinearColor::Red);
+			FText::FromString(StatsText), GEngine->GetSmallFont(), StatsColor);
 		TextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(TextItem);
 		CurrentY += LineHeight;
@@ -795,6 +813,45 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		TextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(TextItem);
 		CurrentY += LineHeight;
+	}
+
+	// НОВОЕ: Предупреждение о пересечениях (если есть)
+	UpdateIntersectingEdges();
+	if (CachedIntersectingEdges.Num() > 0)
+	{
+		CurrentY += 5; // Небольшой отступ
+		
+		// Фон для предупреждения
+		const FString WarningText = FString::Printf(TEXT("⚠ TRIANGULATION ISSUES: %d intersecting edges detected!"), 
+			CachedIntersectingEdges.Num());
+		const float WarningWidth = 450.0f;
+		const float WarningHeight = 18.0f;
+		
+		FCanvasBoxItem WarningBackground(FVector2D(8, CurrentY - 2), FVector2D(WarningWidth, WarningHeight));
+		WarningBackground.SetColor(FLinearColor(1.0f, 0.0f, 0.0f, 0.2f)); // Полупрозрачный красный фон
+		Canvas->DrawItem(WarningBackground);
+		
+		// Мигающий текст предупреждения
+		const float Time = FApp::GetCurrentTime();
+		const float BlinkAlpha = 0.7f + 0.3f * FMath::Sin(Time * 6.0f); // Медленное мигание
+		
+		FCanvasTextItem WarningTextItem(FVector2D(10, CurrentY), 
+			FText::FromString(WarningText),
+			GEngine->GetSmallFont(), 
+			FLinearColor(1.0f, 1.0f, 1.0f, BlinkAlpha));
+		WarningTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(WarningTextItem);
+		CurrentY += LineHeight + 5;
+		
+		// Советы по исправлению
+		const FString AdviceText = TEXT("Tip: Manually fix overlapping triangles");
+		FCanvasTextItem AdviceTextItem(FVector2D(10, CurrentY), 
+			FText::FromString(AdviceText),
+			GEngine->GetTinyFont(), 
+			FLinearColor(1.0f, 1.0f, 0.0f, 0.8f)); // Жёлтый цвет для совета
+		AdviceTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(AdviceTextItem);
+		CurrentY += 12;
 	}
 	
 	// Режим редактирования
@@ -837,8 +894,49 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 	// Информация о выделении
 	if (SelectedVertices.Num() > 0)
 	{
+		FString SelectionText = FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num());
+		
+		// Подсчитываем количество связанных треугольников
+		if (ManualSpritePtr.IsValid())
+		{
+			int32 ConnectedTriangles = 0;
+			for (const FManualSpriteTriangle& Triangle : ManualSpritePtr->ManualGeometry.Triangles)
+			{
+				bool bIsConnected = false;
+				for (int32 SelectedVertex : SelectedVertices)
+				{
+					if (Triangle.VertexIndex0 == SelectedVertex ||
+						Triangle.VertexIndex1 == SelectedVertex ||
+						Triangle.VertexIndex2 == SelectedVertex)
+					{
+						bIsConnected = true;
+						break;
+					}
+				}
+				if (bIsConnected)
+				{
+					ConnectedTriangles++;
+				}
+			}
+			
+			if (ConnectedTriangles > 0)
+			{
+				SelectionText += FString::Printf(TEXT(" (%d connected triangles)"), ConnectedTriangles);
+			}
+		}
+		
+		// Добавляем информацию о возможных действиях
+		if (SelectedVertices.Num() >= 3)
+		{
+			SelectionText += TEXT(" | 3 - Auto Triangulate, 4 - Delete Triangles");
+		}
+		else if (SelectedVertices.Num() > 0)
+		{
+			SelectionText += TEXT(" | 4 - Delete Connected Triangles");
+		}
+		
 		FCanvasTextItem TextItem(FVector2D(10, CurrentY), 
-			FText::FromString(FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num())),
+			FText::FromString(SelectionText),
 			GEngine->GetSmallFont(), FLinearColor::FromSRGBColor(FColor::Cyan));
 		TextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(TextItem);
@@ -954,21 +1052,22 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		Canvas->DrawItem(GridTextItem);
 	}
 
-	// Горячие клавиши (показываем в левом нижнем углу если не заняты подсказками)
-	if (!Editor.IsValid() || Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Select)
+	// Горячие клавиши (показываем в левом нижнем углу, поднимаем выше осей координат)
 	{
 		const TArray<FString> Shortcuts = {
 			TEXT("Q - Select | W - Add | E - Triangle | R - Delete"),
 			TEXT("G - Grid | Ctrl+G - Snap | Mouse Wheel - Zoom"),
-			TEXT("Ctrl+C/V - Copy/Paste | Ctrl+Z/Y - Undo/Redo")
-		};
-		
-		float ShortcutY = ViewportSize.Y - 80.0f;
+			TEXT("Ctrl+C/V - Copy/Paste | Ctrl+Z/Y - Undo/Redo"),
+			TEXT("3 - Auto Triangulate | 4 - Delete Triangles | V - Validate")
+			TEXT("Ctrl+A - Select All")
+		 };
+    
+		float ShortcutY = ViewportSize.Y - 100.0f; // Поднимаем выше чтобы не перекрывать оси
 		for (const FString& Shortcut : Shortcuts)
 		{
 			FCanvasTextItem ShortcutItem(FVector2D(10, ShortcutY), 
-				FText::FromString(Shortcut), GEngine->GetTinyFont(), 
-				FLinearColor(0.7f, 0.7f, 0.7f, 0.8f));
+			   FText::FromString(Shortcut), GEngine->GetTinyFont(), 
+			   FLinearColor(0.7f, 0.7f, 0.7f, 0.8f));
 			Canvas->DrawItem(ShortcutItem);
 			ShortcutY += 12.0f;
 		}
@@ -1390,8 +1489,9 @@ void ManualSpriteEditorViewport::UpdateVerticesDrag(const FVector2D& MouseDelta)
 			ManualSpritePtr->ManualGeometry.Vertices[VertexIndex].UV = NewUV;
 		}
 	}
-	
-	ManualSpritePtr->MarkPackageDirty();
+	// Инвалидируем кэш пересечений при перетаскивании (для live обновления)
+	InvalidateIntersectionsCache();
+	(void)ManualSpritePtr->MarkPackageDirty();
 }
 
 void ManualSpriteEditorViewport::EndVerticesDrag()
@@ -1600,4 +1700,170 @@ void ManualSpriteEditorViewport::DrawPastePreview(FCanvas* Canvas, const FViewpo
 		FLinearColor::Yellow
 	);
 	Canvas->DrawItem(HintTextItem);
+}
+
+bool ManualSpriteEditorViewport::DoSegmentsIntersect(const FVector2D& A1, const FVector2D& A2, 
+                                                   const FVector2D& B1, const FVector2D& B2) const
+{
+	auto Orientation = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R) -> int32
+	{
+		const float Val = (Q.Y - P.Y) * (R.X - Q.X) - (Q.X - P.X) * (R.Y - Q.Y);
+		if (FMath::Abs(Val) < 1e-6f) return 0;
+		return (Val > 0) ? 1 : 2;
+	};
+	
+	auto OnSegment = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R) -> bool
+	{
+		return Q.X <= FMath::Max(P.X, R.X) && Q.X >= FMath::Min(P.X, R.X) &&
+		       Q.Y <= FMath::Max(P.Y, R.Y) && Q.Y >= FMath::Min(P.Y, R.Y);
+	};
+	
+	const int32 O1 = Orientation(A1, A2, B1);
+	const int32 O2 = Orientation(A1, A2, B2);
+	const int32 O3 = Orientation(B1, B2, A1);
+	const int32 O4 = Orientation(B1, B2, A2);
+	
+	if (O1 != O2 && O3 != O4)
+		return true;
+	
+	if (O1 == 0 && OnSegment(A1, B1, A2)) return true;
+	if (O2 == 0 && OnSegment(A1, B2, A2)) return true;
+	if (O3 == 0 && OnSegment(B1, A1, B2)) return true;
+	if (O4 == 0 && OnSegment(B1, A2, B2)) return true;
+	
+	return false;
+}
+
+TArray<ManualSpriteEditorViewport::FTriangleEdge> ManualSpriteEditorViewport::GetAllTriangleEdges() const
+{
+	TArray<FTriangleEdge> Edges;
+	
+	if (!ManualSpritePtr.IsValid())
+		return Edges;
+		
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	
+	for (int32 TriIndex = 0; TriIndex < Geometry.Triangles.Num(); TriIndex++)
+	{
+		const FManualSpriteTriangle& Triangle = Geometry.Triangles[TriIndex];
+		
+		if (Triangle.VertexIndex0 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex1 >= Geometry.Vertices.Num() ||
+			Triangle.VertexIndex2 >= Geometry.Vertices.Num())
+		{
+			continue;
+		}
+		
+		Edges.Add(FTriangleEdge(Triangle.VertexIndex0, Triangle.VertexIndex1, TriIndex));
+		Edges.Add(FTriangleEdge(Triangle.VertexIndex1, Triangle.VertexIndex2, TriIndex));
+		Edges.Add(FTriangleEdge(Triangle.VertexIndex2, Triangle.VertexIndex0, TriIndex));
+	}
+	
+	return Edges;
+}
+
+void ManualSpriteEditorViewport::UpdateIntersectingEdges() const
+{
+	if (bIntersectionsCacheValid)
+		return;
+		
+	CachedIntersectingEdges.Empty();
+	
+	if (!ManualSpritePtr.IsValid())
+	{
+		bIntersectionsCacheValid = true;
+		return;
+	}
+	
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	const TArray<FTriangleEdge> AllEdges = GetAllTriangleEdges();
+	
+	for (int32 i = 0; i < AllEdges.Num(); i++)
+	{
+		for (int32 j = i + 1; j < AllEdges.Num(); j++)
+		{
+			const FTriangleEdge& EdgeA = AllEdges[i];
+			const FTriangleEdge& EdgeB = AllEdges[j];
+			
+			if (EdgeA.TriangleIndex == EdgeB.TriangleIndex)
+				continue;
+				
+			if (EdgeA.VertexA == EdgeB.VertexA || EdgeA.VertexA == EdgeB.VertexB ||
+				EdgeA.VertexB == EdgeB.VertexA || EdgeA.VertexB == EdgeB.VertexB)
+			{
+				continue;
+			}
+			
+			const FVector2D PosA1 = Geometry.Vertices[EdgeA.VertexA].Position;
+			const FVector2D PosA2 = Geometry.Vertices[EdgeA.VertexB].Position;
+			const FVector2D PosB1 = Geometry.Vertices[EdgeB.VertexA].Position;
+			const FVector2D PosB2 = Geometry.Vertices[EdgeB.VertexB].Position;
+			
+			if (DoSegmentsIntersect(PosA1, PosA2, PosB1, PosB2))
+			{
+				CachedIntersectingEdges.Add(TPair<int32, int32>(EdgeA.VertexA, EdgeA.VertexB));
+				CachedIntersectingEdges.Add(TPair<int32, int32>(EdgeB.VertexA, EdgeB.VertexB));
+			}
+		}
+	}
+	
+	bIntersectionsCacheValid = true;
+	
+	if (CachedIntersectingEdges.Num() > 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("🔴 Found %d intersecting edges!"), CachedIntersectingEdges.Num());
+	}
+}
+
+bool ManualSpriteEditorViewport::IsEdgeIntersecting(int32 VertexA, int32 VertexB) const
+{
+	UpdateIntersectingEdges();
+	
+	const int32 MinIndex = FMath::Min(VertexA, VertexB);
+	const int32 MaxIndex = FMath::Max(VertexA, VertexB);
+	
+	return CachedIntersectingEdges.Contains(TPair<int32, int32>(MinIndex, MaxIndex));
+}
+
+void ManualSpriteEditorViewport::DrawTriangleEdge(FCanvas* Canvas, const FVector2D& StartPos, const FVector2D& EndPos, 
+                                                 int32 VertexA, int32 VertexB, const FLinearColor& BaseColor) const
+{
+	FLinearColor EdgeColor = BaseColor;
+	float LineThickness = 1.0f;
+	
+	if (IsEdgeIntersecting(VertexA, VertexB))
+	{
+		const float Time = FApp::GetCurrentTime();
+		const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(Time * 8.0f);
+		
+		EdgeColor = FLinearColor(1.0f, 0.0f, 0.0f, FMath::Lerp(0.7f, 1.0f, PulseAlpha));
+		LineThickness = 2.5f;
+	}
+	
+	FCanvasLineItem LineItem(StartPos, EndPos);
+	LineItem.SetColor(EdgeColor);
+	LineItem.LineThickness = LineThickness;
+	Canvas->DrawItem(LineItem);
+	
+	if (IsEdgeIntersecting(VertexA, VertexB))
+	{
+		const FVector2D MidPoint = (StartPos + EndPos) * 0.5f;
+		const float SymbolSize = 8.0f;
+		
+		FCanvasLineItem CrossH(
+			MidPoint - FVector2D(SymbolSize * 0.5f, 0), 
+			MidPoint + FVector2D(SymbolSize * 0.5f, 0)
+		);
+		CrossH.SetColor(FLinearColor::Yellow);
+		CrossH.LineThickness = 2.0f;
+		Canvas->DrawItem(CrossH);
+		
+		FCanvasLineItem CrossV(
+			MidPoint - FVector2D(0, SymbolSize * 0.5f), 
+			MidPoint + FVector2D(0, SymbolSize * 0.5f)
+		);
+		CrossV.SetColor(FLinearColor::Yellow);
+		CrossV.LineThickness = 2.0f;
+		Canvas->DrawItem(CrossV);
+	}
 }

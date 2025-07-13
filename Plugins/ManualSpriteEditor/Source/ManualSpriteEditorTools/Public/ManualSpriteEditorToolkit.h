@@ -61,8 +61,8 @@ public:
 		FLinearColor GridColor;
 		
 		FGridSettings()
-			: bShowGrid(true)
-			, bSnapToGrid(true)
+			: bShowGrid(false)
+			, bSnapToGrid(false)
 			, GridSize(25.0f)
 			, GridColor(FLinearColor(0.5f, 0.5f, 0.5f, 0.3f))
 		{
@@ -256,6 +256,14 @@ public:
 	void OnAutoTriangulate();
 	bool CanAutoTriangulate() const;
 	void AutoTriangulateWithTransaction();
+	
+	/** Команды валидации */
+	void OnValidateTriangulation();
+	bool CanValidateTriangulation() const;
+
+	/** Команды удаления треугольников */
+	void OnDeleteTriangles();
+	bool CanDeleteTriangles() const;
 
 private:
 	/** Основные методы триангуляции */
@@ -267,4 +275,25 @@ private:
 	bool IsValidTriangle(const FVector2D& A, const FVector2D& B, const FVector2D& C) const;
 	bool IsDelaunayTriangle(const TArray<FVector2D>& Points, int32 A, int32 B, int32 C) const;
 	bool GetCircumcircle(const FVector2D& A, const FVector2D& B, const FVector2D& C, FVector2D& OutCenter, float& OutRadiusSquared) const;
+	
+	/** Улучшенная триангуляция Делоне с проверкой пересечений */
+	bool ImprovedDelaunayTriangulation(const TArray<FVector2D>& Points, TArray<FIntVector>& OutTriangles) const;
+	
+	/** Проверка, создаст ли треугольник пересекающиеся рёбра */
+	bool WillTriangleCreateIntersections(int32 Index0, int32 Index1, int32 Index2) const;
+	
+	/** Проверка пересечения ребра с существующими рёбрами */
+	bool WillEdgeIntersectExisting(int32 VertexA, int32 VertexB) const;
+
+	/** Вычисление качества треугольника */
+	float CalculateTriangleQuality(const FVector2D& A, const FVector2D& B, const FVector2D& C) const;
+	
+	/** Проверка пересечения нового ребра с использованными рёбрами */
+	bool WillEdgeIntersectWithUsedEdges(const TArray<FVector2D>& Points, 
+									   const TPair<int32, int32>& NewEdge, 
+									   const TSet<TPair<int32, int32>>& UsedEdges) const;
+	
+	/** Проверка пересечения отрезков (дублирует viewport метод) */
+	bool DoSegmentsIntersect(const FVector2D& A1, const FVector2D& A2, 
+							const FVector2D& B1, const FVector2D& B2) const;
 };

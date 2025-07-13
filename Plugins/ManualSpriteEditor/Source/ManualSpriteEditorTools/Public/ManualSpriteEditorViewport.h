@@ -302,4 +302,55 @@ private:
 	static const FLinearColor HoveredVertexColor;  // = FLinearColor::White
 	static const FLinearColor TriangleColor;
 	static const FLinearColor SelectedTriangleColor;
+
+public:
+	/** Принудительное обновление кэша пересечений */
+	void InvalidateIntersectionsCache() const
+	{
+		bIntersectionsCacheValid = false;
+	}
+
+	/** Публичные методы для доступа к кэшу пересечений */
+	const TSet<TPair<int32, int32>>& GetCachedIntersectingEdges() const 
+	{ 
+		UpdateIntersectingEdges(); 
+		return CachedIntersectingEdges; 
+	}
+	
+private:
+	/** Структура для представления ребра треугольника */
+	struct FTriangleEdge
+	{
+		int32 VertexA;
+		int32 VertexB;
+		int32 TriangleIndex;
+		
+		FTriangleEdge(int32 A, int32 B, int32 TriIndex)
+			: VertexA(FMath::Min(A, B))
+			, VertexB(FMath::Max(A, B))
+			, TriangleIndex(TriIndex)
+		{
+		}
+	};
+
+	/** Кэш пересекающихся рёбер для оптимизации */
+	mutable TSet<TPair<int32, int32>> CachedIntersectingEdges;
+	mutable bool bIntersectionsCacheValid;
+
+	/** Проверка пересечения двух отрезков в 2D */
+	bool DoSegmentsIntersect(const FVector2D& A1, const FVector2D& A2, 
+							const FVector2D& B1, const FVector2D& B2) const;
+
+	/** Получение всех рёбер треугольников */
+	TArray<FTriangleEdge> GetAllTriangleEdges() const;
+
+	/** Поиск всех пересекающихся рёбер */
+	void UpdateIntersectingEdges() const;
+
+	/** Проверка, является ли ребро пересекающимся */
+	bool IsEdgeIntersecting(int32 VertexA, int32 VertexB) const;
+
+	/** Отрисовка одного ребра треугольника с проверкой пересечения */
+	void DrawTriangleEdge(FCanvas* Canvas, const FVector2D& StartPos, const FVector2D& EndPos, 
+						 int32 VertexA, int32 VertexB, const FLinearColor& BaseColor) const;
 };
