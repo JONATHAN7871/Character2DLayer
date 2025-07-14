@@ -236,6 +236,14 @@ protected:
    /** Обработка транзакций перемещения вершин */
    void BeginVerticesDrag();
    void UpdateVerticesDrag(const FVector2D& MouseDelta);
+	/** Поиск зеркальных вершин для выделенных */
+	TArray<int32> FindMirroredVertices(const TArray<int32>& OriginalVertices) const;
+
+	/** Проверка, является ли вершина зеркальной для другой */
+	bool IsVertexMirroredPair(int32 VertexA, int32 VertexB) const;
+
+	/** Добавление зеркальных вершин к выделению */
+	void AddMirroredVerticesToSelection();
    void EndVerticesDrag();
    void CancelVerticesDrag();
 
@@ -253,6 +261,15 @@ protected:
 
    /** Отрисовка сетки - ИСПРАВЛЕННАЯ ВЕРСИЯ */
    void DrawGrid(FCanvas* Canvas, const FViewport* InViewport) const;
+
+	/** Отрисовка осей зеркального редактирования */
+	void DrawMirrorAxes(FCanvas* Canvas, const FViewport* InViewport) const;
+
+	/** Вычисление зеркальной позиции */
+	FVector2D GetMirroredPosition(const FVector2D& Position) const;
+
+	/** Проверка, нужно ли создавать зеркальные вершины */
+	bool ShouldCreateMirroredVertex(const FVector2D& Position) const;
 
    /** Рендеринг HUD с информацией */
    void DrawHUD(FCanvas* Canvas, const FViewport* InViewport) const;

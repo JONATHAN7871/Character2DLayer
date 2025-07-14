@@ -272,10 +272,32 @@ void FManualSpriteEditorToolkit::BindCommands()
 		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnDeleteTriangles),
 		FCanExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::CanDeleteTriangles)
 	);
+
+	// Зеркальное редактирование
+	CommandList->MapAction(
+		Commands.ToggleMirrorX,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnToggleMirrorX),
+		FCanExecuteAction(),
+		FIsActionChecked::CreateSP(this, &FManualSpriteEditorToolkit::IsMirrorXEnabled)
+	);
+
+	CommandList->MapAction(
+		Commands.ToggleMirrorY,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnToggleMirrorY),
+		FCanExecuteAction(),
+		FIsActionChecked::CreateSP(this, &FManualSpriteEditorToolkit::IsMirrorYEnabled)
+	);
+
+	CommandList->MapAction(
+		Commands.ToggleMirrorBoth,
+		FExecuteAction::CreateSP(this, &FManualSpriteEditorToolkit::OnToggleMirrorBoth),
+		FCanExecuteAction(),
+		FIsActionChecked::CreateSP(this, &FManualSpriteEditorToolkit::IsMirrorBothEnabled)
+	);
 	
 }
 
-// Упрощенный тулбар без автоматической триангуляции
+// Упрощенный тулбар
 void FManualSpriteEditorToolkit::ExtendToolbar()
 {
     struct FLocal
@@ -284,77 +306,72 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
         {
             const FManualSpriteEditorCommands& Commands = FManualSpriteEditorCommands::Get();
             
-            // Секция Undo/Redo - только иконки
+            // ========== ГРУППА 1: UNDO/REDO (компактно) ==========
             ToolbarBuilder.BeginSection("UndoRedo");
             {
                 ToolbarBuilder.AddToolBarButton(Commands.Undo, NAME_None, FText::GetEmpty(), 
-                    LOCTEXT("UndoTooltip", "Undo the last operation"),
+                    LOCTEXT("UndoTooltip", "Undo (Ctrl+Z)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Undo"));
                     
                 ToolbarBuilder.AddToolBarButton(Commands.Redo, NAME_None, FText::GetEmpty(),
-                    LOCTEXT("RedoTooltip", "Redo the last undone operation"), 
+                    LOCTEXT("RedoTooltip", "Redo (Ctrl+Y)"), 
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Redo"));
             }
             ToolbarBuilder.EndSection();
 
-            // Секция копирования/вставки - только иконки
-            ToolbarBuilder.BeginSection("CopyPaste");
-            {
-                ToolbarBuilder.AddSeparator();
-                
-                ToolbarBuilder.AddToolBarButton(Commands.Copy, NAME_None, FText::GetEmpty(),
-                    LOCTEXT("CopyTooltip", "Copy selected vertices"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Copy"));
-                    
-                ToolbarBuilder.AddToolBarButton(Commands.Paste, NAME_None, FText::GetEmpty(),
-                    LOCTEXT("PasteTooltip", "Paste vertices from clipboard"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Paste"));
-                    
-                ToolbarBuilder.AddToolBarButton(Commands.Cut, NAME_None, FText::GetEmpty(),
-                    LOCTEXT("CutTooltip", "Cut selected vertices"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Cut"));
-                    
-                ToolbarBuilder.AddToolBarButton(Commands.Duplicate, NAME_None, FText::GetEmpty(),
-                    LOCTEXT("DuplicateTooltip", "Duplicate selected vertices"),
-                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Duplicate"));
-            }
-            ToolbarBuilder.EndSection();
-
+            // ========== ГРУППА 2: РЕЖИМЫ РЕДАКТИРОВАНИЯ (основные) ==========
             ToolbarBuilder.BeginSection("EditModes");
             {
                 ToolbarBuilder.AddSeparator();
 
-                // Режимы редактирования - с текстом и иконками
-                ToolbarBuilder.AddToolBarButton(Commands.SelectMode, NAME_None, LOCTEXT("SelectModeText", "Select"),
-                    LOCTEXT("SelectModeTooltip", "Select and move vertices (Q)"),
+                ToolbarBuilder.AddToolBarButton(Commands.SelectMode, NAME_None, LOCTEXT("SelectText", "Select"),
+                    LOCTEXT("SelectTooltip", "Select and move vertices (Q)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.SelectMode"));
                     
-                ToolbarBuilder.AddToolBarButton(Commands.AddVertexMode, NAME_None, LOCTEXT("AddVertexModeText", "Add"),
-                    LOCTEXT("AddVertexModeTooltip", "Add new vertices (W)"),
+                ToolbarBuilder.AddToolBarButton(Commands.AddVertexMode, NAME_None, LOCTEXT("AddText", "Add"),
+                    LOCTEXT("AddTooltip", "Add new vertices (W)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "Plus"));
                     
-                ToolbarBuilder.AddToolBarButton(Commands.TriangleMode, NAME_None, LOCTEXT("TriangleModeText", "Triangle"),
-                    LOCTEXT("TriangleModeTooltip", "Create triangles (E)"),
+                ToolbarBuilder.AddToolBarButton(Commands.TriangleMode, NAME_None, LOCTEXT("TriangleText", "Triangle"),
+                    LOCTEXT("TriangleTooltip", "Create triangles (E)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Modes"));
                     
-                ToolbarBuilder.AddToolBarButton(Commands.DeleteMode, NAME_None, LOCTEXT("DeleteModeText", "Delete"),
-                    LOCTEXT("DeleteModeTooltip", "Delete vertices or triangles (R)"),
+                ToolbarBuilder.AddToolBarButton(Commands.DeleteMode, NAME_None, LOCTEXT("DeleteText", "Delete"),
+                    LOCTEXT("DeleteTooltip", "Delete vertices or triangles (R)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Delete"));
             }
             ToolbarBuilder.EndSection();
 
-            // Секция сетки - текст + иконки
-            ToolbarBuilder.BeginSection("GridCommands");
+            // ========== ГРУППА 3: ЗЕРКАЛЬНОЕ РЕДАКТИРОВАНИЕ ==========
+            ToolbarBuilder.BeginSection("MirrorModes");
             {
                 ToolbarBuilder.AddSeparator();
 
-                // Grid и Snap с текстом и одинаковой иконкой
-                ToolbarBuilder.AddToolBarButton(Commands.ToggleGrid, NAME_None, LOCTEXT("ToggleGridText", "Grid"),
-                    LOCTEXT("ToggleGridTooltip", "Show/Hide grid (G)"),
+                ToolbarBuilder.AddToolBarButton(Commands.ToggleMirrorX, NAME_None, LOCTEXT("MirrorXText", "X"),
+                    LOCTEXT("MirrorXTooltip", "Mirror X axis (X)"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.RotateMode"));
+
+                ToolbarBuilder.AddToolBarButton(Commands.ToggleMirrorY, NAME_None, LOCTEXT("MirrorYText", "Y"),
+                    LOCTEXT("MirrorYTooltip", "Mirror Y axis (Y)"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.RotateMode"));
+
+                ToolbarBuilder.AddToolBarButton(Commands.ToggleMirrorBoth, NAME_None, LOCTEXT("MirrorBothText", "XY"),
+                    LOCTEXT("MirrorBothTooltip", "Mirror both axes (Shift+X)"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.RotateMode"));
+            }
+            ToolbarBuilder.EndSection();
+
+            // ========== ГРУППА 4: СЕТКА И ПРИВЯЗКА ==========
+            ToolbarBuilder.BeginSection("GridTools");
+            {
+                ToolbarBuilder.AddSeparator();
+
+                ToolbarBuilder.AddToolBarButton(Commands.ToggleGrid, NAME_None, LOCTEXT("GridText", "Grid"),
+                    LOCTEXT("GridTooltip", "Show/Hide grid (G)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.LocationGridSnap"));
                     
-                ToolbarBuilder.AddToolBarButton(Commands.ToggleSnap, NAME_None, LOCTEXT("ToggleSnapText", "Snap"),
-                    LOCTEXT("ToggleSnapTooltip", "Snap to grid (Ctrl+G)"),
+                ToolbarBuilder.AddToolBarButton(Commands.ToggleSnap, NAME_None, LOCTEXT("SnapText", "Snap"),
+                    LOCTEXT("SnapTooltip", "Snap to grid (Ctrl+G)"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.LocationGridSnap"));
 
                 // Компактное меню размеров сетки
@@ -419,71 +436,68 @@ void FManualSpriteEditorToolkit::ExtendToolbar()
                         return MenuBuilder.MakeWidget();
                     }),
                     FText::GetEmpty(),
-                    LOCTEXT("GridSizeTooltip", "Select grid size"),
+                    LOCTEXT("GridSizeTooltip", "Grid size"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "EditorViewport.TranslateMode")
                 );
             }
             ToolbarBuilder.EndSection();
 
-        	// Секция утилит
-        	ToolbarBuilder.BeginSection("UtilityCommands");
-	        {
-            	ToolbarBuilder.AddSeparator();
+            // ========== ГРУППА 5: ОСНОВНЫЕ ИНСТРУМЕНТЫ (выпадающее меню) ==========
+            ToolbarBuilder.BeginSection("MainTools");
+            {
+                ToolbarBuilder.AddSeparator();
 
-            	// Clear All
-            	ToolbarBuilder.AddToolBarButton(Commands.ClearAll, NAME_None, LOCTEXT("ClearAllText", "Clear All"),
-					LOCTEXT("ClearAllTooltip", "Clear all geometry"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "Cross"));
+                // Основные команды в выпадающем меню
+                ToolbarBuilder.AddComboButton(
+                    FUIAction(),
+                    FOnGetContent::CreateLambda([Commands, Toolkit]() -> TSharedRef<SWidget>
+                    {
+                        FMenuBuilder MenuBuilder(true, Toolkit->GetCommandList());
+                        
+                        MenuBuilder.BeginSection("CopyPaste", LOCTEXT("CopyPasteSection", "Copy & Paste"));
+                        MenuBuilder.AddMenuEntry(Commands.Copy);
+                        MenuBuilder.AddMenuEntry(Commands.Paste);
+                        MenuBuilder.AddMenuEntry(Commands.Cut);
+                        MenuBuilder.AddMenuEntry(Commands.Duplicate);
+                        MenuBuilder.EndSection();
 
-            	// Reset to Default
-            	ToolbarBuilder.AddToolBarButton(Commands.ResetToDefault, NAME_None, LOCTEXT("ResetToDefaultText", "Reset"),
-					LOCTEXT("ResetToDefaultTooltip", "Reset to default quad"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "PropertyWindow.DiffersFromDefault"));
+                        MenuBuilder.BeginSection("Selection", LOCTEXT("SelectionSection", "Selection"));
+                        MenuBuilder.AddMenuEntry(Commands.SelectAll);
+                        MenuBuilder.AddMenuEntry(Commands.DeselectAll);
+                        MenuBuilder.AddMenuEntry(Commands.DeleteSelected);
+                        MenuBuilder.EndSection();
 
-            	// НОВОЕ: Кнопка валидации пересечений
-            	ToolbarBuilder.AddToolBarButton(Commands.ValidateTriangulation, NAME_None, LOCTEXT("ValidateText", "Validate"),
-					LOCTEXT("ValidateTooltip", "Check triangulation for intersecting edges (V)"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "Automation.Success"));
+                        MenuBuilder.BeginSection("Geometry", LOCTEXT("GeometrySection", "Geometry"));
+                        MenuBuilder.AddMenuEntry(Commands.ClearAll);
+                        MenuBuilder.AddMenuEntry(Commands.ResetToDefault);
+                        MenuBuilder.AddMenuEntry(Commands.ImportRenderGeometry);
+                        MenuBuilder.EndSection();
 
-            	// НОВОЕ: Auto Triangulate
-            	ToolbarBuilder.AddToolBarButton(Commands.AutoTriangulate, NAME_None, LOCTEXT("AutoTriangulateText", "Auto Triangulate"),
-					LOCTEXT("AutoTriangulateTooltip", "Automatically triangulate selected vertices (3)"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Modes"));
+                        MenuBuilder.BeginSection("Advanced", LOCTEXT("AdvancedSection", "Advanced"));
+                        MenuBuilder.AddMenuEntry(Commands.AutoTriangulate);
+                        MenuBuilder.AddMenuEntry(Commands.ValidateTriangulation);
+                        MenuBuilder.AddMenuEntry(Commands.DeleteTriangles);
+                        MenuBuilder.EndSection();
 
-            	// Delete Triangles
-            	ToolbarBuilder.AddToolBarButton(Commands.DeleteTriangles, NAME_None, LOCTEXT("DeleteTrianglesText", "Delete Triangles"),
-					LOCTEXT("DeleteTrianglesTooltip", "Delete all triangles connected to selected vertices (4)"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Delete"));
-	        }
-        	ToolbarBuilder.EndSection();
+                        return MenuBuilder.MakeWidget();
+                    }),
+                    LOCTEXT("ToolsText", "Tools"),
+                    LOCTEXT("ToolsTooltip", "Additional editing tools"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details")
+                );
+            }
+            ToolbarBuilder.EndSection();
 
-        	// Секция генерации меша
-        	ToolbarBuilder.BeginSection("MeshGeneration");
-	        {
-            	ToolbarBuilder.AddSeparator();
+            // ========== ГРУППА 6: ГЕНЕРАЦИЯ МЕША (важная кнопка) ==========
+            ToolbarBuilder.BeginSection("MeshGeneration");
+            {
+                ToolbarBuilder.AddSeparator();
 
-            	// Generate Mesh
-            	ToolbarBuilder.AddToolBarButton(Commands.GenerateMesh, NAME_None, LOCTEXT("GenerateMeshText", "Generate Mesh"),
-					LOCTEXT("GenerateMeshTooltip", "Generate Static or Skeletal Mesh from geometry (Ctrl+M)"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Build"));
-	        }
-        	ToolbarBuilder.EndSection();
-
-        	// Секция импорта
-        	ToolbarBuilder.BeginSection("ImportCommands");
-	        {
-            	ToolbarBuilder.AddSeparator();
-
-            	// Кнопка импорта геометрии
-            	ToolbarBuilder.AddToolBarButton(
-					Commands.ImportRenderGeometry, 
-					NAME_None, 
-					LOCTEXT("ImportRenderGeometryText", "Import From Sprite"),
-					LOCTEXT("ImportRenderGeometryTooltip", "Import full geometry (vertices + triangles) from the sprite's Edit Source Region"),
-					FSlateIcon(FAppStyle::GetAppStyleSetName(), "MeshPaint.Import")
-				);
-	        }
-        	ToolbarBuilder.EndSection();
+                ToolbarBuilder.AddToolBarButton(Commands.GenerateMesh, NAME_None, LOCTEXT("GenerateMeshText", "Generate"),
+                    LOCTEXT("GenerateMeshTooltip", "Generate Static/Skeletal Mesh (Ctrl+M)"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Build"));
+            }
+            ToolbarBuilder.EndSection();
         }
     };
 
@@ -1867,6 +1881,70 @@ bool FManualSpriteEditorToolkit::CanDeleteTriangles() const
 	// Можно удалять треугольники если есть выделенные вершины и есть треугольники
 	return ViewportClient->GetSelectedVertices().Num() > 0 && 
 		   ManualSprite->ManualGeometry.Triangles.Num() > 0;
+}
+
+// ========== ЗЕРКАЛЬНОЕ РЕДАКТИРОВАНИЕ ==========
+
+void FManualSpriteEditorToolkit::ToggleMirrorX()
+{
+	MirrorSettings.bMirrorX = !MirrorSettings.bMirrorX;
+	UE_LOG(LogTemp, Log, TEXT("Mirror X: %s"), MirrorSettings.bMirrorX ? TEXT("ON") : TEXT("OFF"));
+}
+
+void FManualSpriteEditorToolkit::ToggleMirrorY()
+{
+	MirrorSettings.bMirrorY = !MirrorSettings.bMirrorY;
+	UE_LOG(LogTemp, Log, TEXT("Mirror Y: %s"), MirrorSettings.bMirrorY ? TEXT("ON") : TEXT("OFF"));
+}
+
+void FManualSpriteEditorToolkit::ToggleMirrorBoth()
+{
+	const bool bNewState = !(MirrorSettings.bMirrorX && MirrorSettings.bMirrorY);
+	MirrorSettings.bMirrorX = bNewState;
+	MirrorSettings.bMirrorY = bNewState;
+	UE_LOG(LogTemp, Log, TEXT("Mirror Both: %s"), bNewState ? TEXT("ON") : TEXT("OFF"));
+}
+
+void FManualSpriteEditorToolkit::OnToggleMirrorX()
+{
+	ToggleMirrorX();
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+}
+
+void FManualSpriteEditorToolkit::OnToggleMirrorY()
+{
+	ToggleMirrorY();
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+}
+
+void FManualSpriteEditorToolkit::OnToggleMirrorBoth()
+{
+	ToggleMirrorBoth();
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshViewport();
+	}
+}
+
+bool FManualSpriteEditorToolkit::IsMirrorXEnabled() const
+{
+	return MirrorSettings.bMirrorX;
+}
+
+bool FManualSpriteEditorToolkit::IsMirrorYEnabled() const
+{
+	return MirrorSettings.bMirrorY;
+}
+
+bool FManualSpriteEditorToolkit::IsMirrorBothEnabled() const
+{
+	return MirrorSettings.bMirrorX && MirrorSettings.bMirrorY;
 }
 
 #undef LOCTEXT_NAMESPACE

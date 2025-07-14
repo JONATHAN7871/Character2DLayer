@@ -69,6 +69,23 @@ public:
 		}
 	};
 
+	/** Настройки зеркального редактирования */
+	struct FMirrorSettings
+	{
+		bool bMirrorX;
+		bool bMirrorY;
+		FVector2D MirrorOrigin;
+		FLinearColor MirrorLineColor;
+    
+		FMirrorSettings()
+			: bMirrorX(false)
+			, bMirrorY(false)
+			, MirrorOrigin(FVector2D::ZeroVector)
+			, MirrorLineColor(FLinearColor(1.0f, 0.0f, 1.0f, 0.8f)) // Магента
+		{
+		}
+	};
+
 	/** Структура для хранения скопированной геометрии */
 	struct FCopiedVertexData
 	{
@@ -90,6 +107,25 @@ public:
 
 	/** Получение настроек сетки */
 	const FGridSettings& GetGridSettings() const { return GridSettings; }
+
+	/** Получение настроек зеркала */
+	const FMirrorSettings& GetMirrorSettings() const { return MirrorSettings; }
+
+	/** Управление зеркальным режимом */
+	void ToggleMirrorX();
+	void ToggleMirrorY();
+	void ToggleMirrorBoth();
+	bool IsMirrorXActive() const { return MirrorSettings.bMirrorX; }
+	bool IsMirrorYActive() const { return MirrorSettings.bMirrorY; }
+	bool IsMirrorBothActive() const { return MirrorSettings.bMirrorX && MirrorSettings.bMirrorY; }
+
+	// Команды зеркального редактирования
+	void OnToggleMirrorX();
+	void OnToggleMirrorY();
+	void OnToggleMirrorBoth();
+	bool IsMirrorXEnabled() const;
+	bool IsMirrorYEnabled() const;
+	bool IsMirrorBothEnabled() const;
 
 	/** Переключение отображения сетки */
 	void ToggleGridDisplay();
@@ -187,6 +223,9 @@ private:
 
 	/** Настройки сетки */
 	FGridSettings GridSettings;
+
+	/** Настройки зеркального редактирования */
+	FMirrorSettings MirrorSettings;
 
 	/** Действия для сетки */
 	void OnGridSize10();

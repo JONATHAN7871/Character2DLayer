@@ -19,6 +19,11 @@ void FManualSpriteEditorCommands::RegisterCommands()
 	UI_COMMAND(TriangleMode, "Triangle", "Select 3 vertices to create a triangle", EUserInterfaceActionType::RadioButton, FInputChord(EKeys::E));
 	UI_COMMAND(DeleteMode, "Delete", "Click to delete vertices or triangles", EUserInterfaceActionType::RadioButton, FInputChord(EKeys::R));
 
+	// Зеркальное редактирование с горячими клавишами
+	UI_COMMAND(ToggleMirrorX, "Mirror X", "Enable/disable horizontal mirroring", EUserInterfaceActionType::ToggleButton, FInputChord(EKeys::X));
+	UI_COMMAND(ToggleMirrorY, "Mirror Y", "Enable/disable vertical mirroring", EUserInterfaceActionType::ToggleButton, FInputChord(EKeys::Y));
+	UI_COMMAND(ToggleMirrorBoth, "Mirror XY", "Enable/disable both axis mirroring", EUserInterfaceActionType::ToggleButton, FInputChord(EModifierKey::Shift, EKeys::X));
+
 	// Undo/Redo с стандартными горячими клавишами
 	UI_COMMAND(Undo, "Undo", "Undo the last operation", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::Z));
 	UI_COMMAND(Redo, "Redo", "Redo the last undone operation", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Control, EKeys::Y));

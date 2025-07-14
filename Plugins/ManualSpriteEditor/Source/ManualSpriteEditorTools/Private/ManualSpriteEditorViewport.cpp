@@ -594,18 +594,143 @@ void ManualSpriteEditorViewport::DrawDebugGeometry(FCanvas* Canvas, const FViewp
 		DrawVertices(Canvas, InViewport);
 	}
 
+	// НОВОЕ: Отрисовка осей зеркального редактирования
+	DrawMirrorAxes(Canvas, InViewport);
+
 	const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
 	if (Editor.IsValid() && Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Paste)
 	{
 		DrawPastePreview(Canvas, InViewport);
 	}
-	
-	// НОВОЕ: Отрисовка превью пивота
+    
+	// Отрисовка превью пивота
 	if (ManualSpritePtr->bShowPivotPreview)
 	{
 		DrawPivotPreview(Canvas, InViewport);
 	}
-	
+}
+
+void ManualSpriteEditorViewport::DrawMirrorAxes(FCanvas* Canvas, const FViewport* InViewport) const
+{
+    const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+    if (!Editor.IsValid())
+        return;
+
+    const auto& MirrorSettings = Editor->GetMirrorSettings();
+    if (!MirrorSettings.bMirrorX && !MirrorSettings.bMirrorY)
+        return;
+
+    const FVector2D ViewportSize = FVector2D(InViewport->GetSizeXY().X, InViewport->GetSizeXY().Y);
+    const FVector2D MirrorOriginScreen = WorldToScreen(MirrorSettings.MirrorOrigin, InViewport);
+
+    // Рисуем горизонтальную ось зеркала (для MirrorY)
+    if (MirrorSettings.bMirrorY)
+    {
+        FCanvasLineItem HorizontalLine(
+            FVector2D(0, MirrorOriginScreen.Y),
+            FVector2D(ViewportSize.X, MirrorOriginScreen.Y)
+        );
+        HorizontalLine.SetColor(MirrorSettings.MirrorLineColor);
+        HorizontalLine.LineThickness = 2.0f;
+        Canvas->DrawItem(HorizontalLine);
+
+        // Подпись оси
+        FCanvasTextItem TextItem(
+            FVector2D(10, MirrorOriginScreen.Y - 15),
+            FText::FromString(TEXT("MIRROR Y")),
+            GEngine->GetSmallFont(),
+            MirrorSettings.MirrorLineColor
+        );
+        TextItem.EnableShadow(FLinearColor::Black);
+        Canvas->DrawItem(TextItem);
+    }
+
+    // Рисуем вертикальную ось зеркала (для MirrorX)
+    if (MirrorSettings.bMirrorX)
+    {
+        FCanvasLineItem VerticalLine(
+            FVector2D(MirrorOriginScreen.X, 0),
+            FVector2D(MirrorOriginScreen.X, ViewportSize.Y)
+        );
+        VerticalLine.SetColor(MirrorSettings.MirrorLineColor);
+        VerticalLine.LineThickness = 2.0f;
+        Canvas->DrawItem(VerticalLine);
+
+        // Подпись оси
+        FCanvasTextItem TextItem(
+            FVector2D(MirrorOriginScreen.X + 10, 10),
+            FText::FromString(TEXT("MIRROR X")),
+            GEngine->GetSmallFont(),
+            MirrorSettings.MirrorLineColor
+        );
+        TextItem.EnableShadow(FLinearColor::Black);
+        Canvas->DrawItem(TextItem);
+    }
+
+    // Центральная точка пересечения осей
+    if (MirrorSettings.bMirrorX && MirrorSettings.bMirrorY)
+    {
+        const float CrossSize = 8.0f;
+        
+        // Горизонтальная линия креста
+        FCanvasLineItem CrossH(
+            MirrorOriginScreen - FVector2D(CrossSize, 0),
+            MirrorOriginScreen + FVector2D(CrossSize, 0)
+        );
+        CrossH.SetColor(FLinearColor::White);
+        CrossH.LineThickness = 3.0f;
+        Canvas->DrawItem(CrossH);
+
+        // Вертикальная линия креста
+        FCanvasLineItem CrossV(
+            MirrorOriginScreen - FVector2D(0, CrossSize),
+            MirrorOriginScreen + FVector2D(0, CrossSize)
+        );
+        CrossV.SetColor(FLinearColor::White);
+        CrossV.LineThickness = 3.0f;
+        Canvas->DrawItem(CrossV);
+    }
+}
+
+FVector2D ManualSpriteEditorViewport::GetMirroredPosition(const FVector2D& Position) const
+{
+    const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+    if (!Editor.IsValid())
+        return Position;
+
+    const auto& MirrorSettings = Editor->GetMirrorSettings();
+    const FVector2D& Origin = MirrorSettings.MirrorOrigin;
+    
+    FVector2D MirroredPos = Position;
+    
+    if (MirrorSettings.bMirrorX)
+    {
+        MirroredPos.X = Origin.X - (Position.X - Origin.X);
+    }
+    
+    if (MirrorSettings.bMirrorY)
+    {
+        MirroredPos.Y = Origin.Y - (Position.Y - Origin.Y);
+    }
+    
+    return MirroredPos;
+}
+
+bool ManualSpriteEditorViewport::ShouldCreateMirroredVertex(const FVector2D& Position) const
+{
+    const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+    if (!Editor.IsValid())
+        return false;
+
+    const auto& MirrorSettings = Editor->GetMirrorSettings();
+    if (!MirrorSettings.bMirrorX && !MirrorSettings.bMirrorY)
+        return false;
+
+    const FVector2D MirroredPos = GetMirroredPosition(Position);
+    const float Tolerance = 5.0f; // Пиксели
+
+    // Проверяем, что зеркальная позиция не совпадает с исходной
+    return FVector2D::DistSquared(Position, MirroredPos) > Tolerance * Tolerance;
 }
 
 void ManualSpriteEditorViewport::DrawPivotPreview(FCanvas* Canvas, const FViewport* InViewport) const
@@ -689,6 +814,28 @@ void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* 
 		float Size = VertexSize;
 		bool bDrawOutline = false;
 		bool bDrawHalo = false;
+		// НОВОЕ: Специальная подсветка для зеркальных пар
+		bool bIsMirroredPair = false;
+		if (SelectedVertices.Contains(i))
+		{
+			const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+			if (Editor.IsValid())
+			{
+				const auto& MirrorSettings = Editor->GetMirrorSettings();
+				if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+				{
+					// Проверяем, есть ли в выделении зеркальная пара для этой вершины
+					for (int32 OtherIndex : SelectedVertices)
+					{
+						if (OtherIndex != i && IsVertexMirroredPair(i, OtherIndex))
+						{
+							bIsMirroredPair = true;
+							break;
+						}
+					}
+				}
+			}
+		}
 
 		// Проверяем режим редактирования
 		const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
@@ -701,6 +848,11 @@ void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* 
 			{
 				// В режиме треугольника используем специальный цвет
 				Color = FLinearColor(1.0f, 0.5f, 0.0f, 1.0f); // Оранжевый для режима треугольника
+			}
+			else if (bIsMirroredPair)
+			{
+				// НОВОЕ: Специальный цвет для зеркальных пар
+				Color = FLinearColor(1.0f, 0.0f, 1.0f, 1.0f); // Магента для зеркальных пар
 			}
 			else
 			{
@@ -975,7 +1127,7 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 	}
 
 	// НОВОЕ: Отображение информации о пивоте
-	if (ManualSpritePtr->bShowPivotPreview)
+	if (ManualSpritePtr.IsValid() && ManualSpritePtr->bShowPivotPreview)
 	{
 		CurrentY += 5; // Отступ
 	
@@ -1006,6 +1158,35 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		PlacementTextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(PlacementTextItem);
 		CurrentY += LineHeight;
+	}
+
+	// НОВОЕ: Информация о зеркальном режиме
+	if (Editor.IsValid())
+	{
+		const auto& MirrorSettings = Editor->GetMirrorSettings();
+		if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+		{
+			FString MirrorText = TEXT("Mirror: ");
+			if (MirrorSettings.bMirrorX && MirrorSettings.bMirrorY)
+			{
+				MirrorText += TEXT("X & Y axes");
+			}
+			else if (MirrorSettings.bMirrorX)
+			{
+				MirrorText += TEXT("X axis");
+			}
+			else if (MirrorSettings.bMirrorY)
+			{
+				MirrorText += TEXT("Y axis");
+			}
+			
+			FCanvasTextItem MirrorTextItem(FVector2D(10, CurrentY), 
+				FText::FromString(MirrorText),
+				GEngine->GetSmallFont(), MirrorSettings.MirrorLineColor);
+			MirrorTextItem.EnableShadow(FLinearColor::Black);
+			Canvas->DrawItem(MirrorTextItem);
+			CurrentY += LineHeight;
+		}
 	}
 
 	// НОВОЕ: Предупреждение о пересечениях (если есть)
@@ -1084,86 +1265,118 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		CurrentY += LineHeight;
 	}
 	
-	// Информация о выделении
-// Информация о выделении
-if (SelectedVertices.Num() > 0 || SelectedTriangles.Num() > 0)
-{
-    FString SelectionText;
-    
-    // Проверяем режим редактирования
-    const bool bInTriangleMode = Editor.IsValid() && Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Triangle;
-    
-    if (SelectedVertices.Num() > 0)
-    {
-        if (bInTriangleMode)
-        {
-            // Специальное отображение для режима треугольника
-            SelectionText = FString::Printf(TEXT("Triangle Mode: %d/3 vertices selected"), SelectedVertices.Num());
-            if (SelectedVertices.Num() == 3)
-            {
-                SelectionText += TEXT(" | Ready to create triangle!");
-            }
-        }
-        else
-        {
-            SelectionText = FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num());
-            
-            // Подсчитываем количество связанных треугольников (только вне режима Triangle)
-            if (ManualSpritePtr.IsValid())
-            {
-                int32 ConnectedTriangles = 0;
-                for (const FManualSpriteTriangle& Triangle : ManualSpritePtr->ManualGeometry.Triangles)
-                {
-                    bool bIsConnected = false;
-                    for (int32 SelectedVertex : SelectedVertices)
-                    {
-                        if (Triangle.VertexIndex0 == SelectedVertex ||
-                            Triangle.VertexIndex1 == SelectedVertex ||
-                            Triangle.VertexIndex2 == SelectedVertex)
-                        {
-                            bIsConnected = true;
-                            break;
-                        }
-                    }
-                    if (bIsConnected)
-                    {
-                        ConnectedTriangles++;
-                    }
-                }
-                
-                if (ConnectedTriangles > 0)
-                {
-                    SelectionText += FString::Printf(TEXT(" (%d connected triangles)"), ConnectedTriangles);
-                }
-            }
-        }
-    }
-    else if (SelectedTriangles.Num() > 0)
-    {
-        SelectionText = FString::Printf(TEXT("Selected: %d triangles"), SelectedTriangles.Num());
-        
-        // Подсчитываем количество уникальных вершин
-        TSet<int32> UniqueVertices;
-        if (ManualSpritePtr.IsValid())
-        {
-            for (int32 TriangleIndex : SelectedTriangles)
-            {
-                if (TriangleIndex >= 0 && TriangleIndex < ManualSpritePtr->ManualGeometry.Triangles.Num())
-                {
-                    const FManualSpriteTriangle& Triangle = ManualSpritePtr->ManualGeometry.Triangles[TriangleIndex];
-                    UniqueVertices.Add(Triangle.VertexIndex0);
-                    UniqueVertices.Add(Triangle.VertexIndex1);
-                    UniqueVertices.Add(Triangle.VertexIndex2);
-                }
-            }
-            
-            if (UniqueVertices.Num() > 0)
-            {
-                SelectionText += FString::Printf(TEXT(" (%d unique vertices)"), UniqueVertices.Num());
-            }
-        }
-    }
+	// НОВАЯ РЕАЛИЗАЦИЯ: Информация о выделении с поддержкой зеркальных пар
+	if (SelectedVertices.Num() > 0 || SelectedTriangles.Num() > 0)
+	{
+		FString SelectionText;
 		
+		// Проверяем режим редактирования
+		const bool bInTriangleMode = Editor.IsValid() && Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Triangle;
+		
+		if (SelectedVertices.Num() > 0)
+		{
+			if (bInTriangleMode)
+			{
+				// Специальное отображение для режима треугольника
+				SelectionText = FString::Printf(TEXT("Triangle Mode: %d/3 vertices selected"), SelectedVertices.Num());
+				if (SelectedVertices.Num() == 3)
+				{
+					SelectionText += TEXT(" | Ready to create triangle!");
+				}
+			}
+			else
+			{
+				SelectionText = FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num());
+				
+				// НОВОЕ: Показываем информацию о зеркальных парах
+				if (Editor.IsValid())
+				{
+					const auto& MirrorSettings = Editor->GetMirrorSettings();
+					if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+					{
+						int32 MirroredPairs = 0;
+						TSet<int32> CountedVertices;
+						
+						for (int32 VertexA : SelectedVertices)
+						{
+							if (CountedVertices.Contains(VertexA))
+								continue;
+								
+							for (int32 VertexB : SelectedVertices)
+							{
+								if (VertexA != VertexB && !CountedVertices.Contains(VertexB) && IsVertexMirroredPair(VertexA, VertexB))
+								{
+									MirroredPairs++;
+									CountedVertices.Add(VertexA);
+									CountedVertices.Add(VertexB);
+									break;
+								}
+							}
+						}
+						
+						if (MirroredPairs > 0)
+						{
+							SelectionText += FString::Printf(TEXT(" (%d mirrored pairs)"), MirroredPairs);
+						}
+					}
+				}
+				
+				// Подсчитываем количество связанных треугольников (только вне режима Triangle)
+				if (ManualSpritePtr.IsValid())
+				{
+					int32 ConnectedTriangles = 0;
+					for (const FManualSpriteTriangle& Triangle : ManualSpritePtr->ManualGeometry.Triangles)
+					{
+						bool bIsConnected = false;
+						for (int32 SelectedVertex : SelectedVertices)
+						{
+							if (Triangle.VertexIndex0 == SelectedVertex ||
+								Triangle.VertexIndex1 == SelectedVertex ||
+								Triangle.VertexIndex2 == SelectedVertex)
+							{
+								bIsConnected = true;
+								break;
+							}
+						}
+						if (bIsConnected)
+						{
+							ConnectedTriangles++;
+						}
+					}
+					
+					if (ConnectedTriangles > 0)
+					{
+						SelectionText += FString::Printf(TEXT(" (%d connected triangles)"), ConnectedTriangles);
+					}
+				}
+			}
+		}
+		else if (SelectedTriangles.Num() > 0)
+		{
+			SelectionText = FString::Printf(TEXT("Selected: %d triangles"), SelectedTriangles.Num());
+			
+			// Подсчитываем количество уникальных вершин
+			TSet<int32> UniqueVertices;
+			if (ManualSpritePtr.IsValid())
+			{
+				for (int32 TriangleIndex : SelectedTriangles)
+				{
+					if (TriangleIndex >= 0 && TriangleIndex < ManualSpritePtr->ManualGeometry.Triangles.Num())
+					{
+						const FManualSpriteTriangle& Triangle = ManualSpritePtr->ManualGeometry.Triangles[TriangleIndex];
+						UniqueVertices.Add(Triangle.VertexIndex0);
+						UniqueVertices.Add(Triangle.VertexIndex1);
+						UniqueVertices.Add(Triangle.VertexIndex2);
+					}
+				}
+				
+				if (UniqueVertices.Num() > 0)
+				{
+					SelectionText += FString::Printf(TEXT(" (%d unique vertices)"), UniqueVertices.Num());
+				}
+			}
+		}
+			
 		// Добавляем информацию о возможных действиях
 		if (SelectedVertices.Num() >= 3)
 		{
@@ -1295,14 +1508,14 @@ if (SelectedVertices.Num() > 0 || SelectedTriangles.Num() > 0)
 		Canvas->DrawItem(GridTextItem);
 	}
 
-	// Горячие клавиши (показываем в левом нижнем углу, поднимаем выше осей координат)
+	// ОБНОВЛЁННЫЕ горячие клавиши с зеркальным редактированием
 	{
 		const TArray<FString> Shortcuts = {
-			TEXT("Q - Select | W - Add | E - Triangle | R - Delete"),
+			TEXT("Q - Select | W - Add | E - Triangle | R - Delete | X - Mirror X | Y - Mirror Y"),
 			TEXT("G - Grid | Ctrl+G - Snap | Mouse Wheel - Zoom"),
 			TEXT("Ctrl+C/V - Copy/Paste | Ctrl+Z/Y - Undo/Redo"),
-			TEXT("3 - Auto Triangulate | 4 - Delete Triangles | V - Validate")
-			TEXT("Ctrl+A - Select All")
+			TEXT("3 - Auto Triangulate | 4 - Delete Triangles | V - Validate"),
+			TEXT("Ctrl+A - Select All | Shift+X - Mirror Both")
 		 };
     
 		float ShortcutY = ViewportSize.Y - 100.0f; // Поднимаем выше чтобы не перекрывать оси
@@ -1366,6 +1579,26 @@ void ManualSpriteEditorViewport::ToggleVertexSelection(int32 VertexIndex, bool b
 		if (!SelectedVertices.Contains(VertexIndex))
 		{
 			SelectedVertices.Add(VertexIndex);
+			// НОВОЕ: Автоматически выделяем зеркальную вершину при выделении основной
+			const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+			if (Editor.IsValid())
+			{
+				const auto& MirrorSettings = Editor->GetMirrorSettings();
+				if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+				{
+					TArray<int32> SingleVertex = {VertexIndex};
+					TArray<int32> MirroredVertices = FindMirroredVertices(SingleVertex);
+		
+					for (int32 MirroredIndex : MirroredVertices)
+					{
+						if (!SelectedVertices.Contains(MirroredIndex))
+						{
+							SelectedVertices.Add(MirroredIndex);
+							UE_LOG(LogTemp, VeryVerbose, TEXT("Auto-selected mirrored vertex %d"), MirroredIndex);
+						}
+					}
+				}
+			}
 		}
 	}
 	else
@@ -1380,6 +1613,26 @@ void ManualSpriteEditorViewport::ToggleVertexSelection(int32 VertexIndex, bool b
 		{
 			SelectedVertices.Empty();
 			SelectedVertices.Add(VertexIndex);
+			// НОВОЕ: Автоматически выделяем зеркальную вершину при выделении основной
+			const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+			if (Editor.IsValid())
+			{
+				const auto& MirrorSettings = Editor->GetMirrorSettings();
+				if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+				{
+					TArray<int32> SingleVertex = {VertexIndex};
+					TArray<int32> MirroredVertices = FindMirroredVertices(SingleVertex);
+		
+					for (int32 MirroredIndex : MirroredVertices)
+					{
+						if (!SelectedVertices.Contains(MirroredIndex))
+						{
+							SelectedVertices.Add(MirroredIndex);
+							UE_LOG(LogTemp, VeryVerbose, TEXT("Auto-selected mirrored vertex %d"), MirroredIndex);
+						}
+					}
+				}
+			}
 		}
 	}
 	
@@ -1735,8 +1988,22 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 		{
 			const FVector2D SnappedWorldPos = SnapToGrid(WorldPos);
 			const FVector2D UV = CalculateUVFromWorldPosition(SnappedWorldPos, ManualSpritePtr.Get());
-			
+        
 			Editor->AddVertexWithTransaction(SnappedWorldPos, UV);
+        
+			// НОВОЕ: Создание зеркальной вершины если включен зеркальный режим
+			if (ShouldCreateMirroredVertex(SnappedWorldPos))
+			{
+				const FVector2D MirroredPos = GetMirroredPosition(SnappedWorldPos);
+				const FVector2D MirroredSnappedPos = SnapToGrid(MirroredPos);
+				const FVector2D MirroredUV = CalculateUVFromWorldPosition(MirroredSnappedPos, ManualSpritePtr.Get());
+            
+				Editor->AddVertexWithTransaction(MirroredSnappedPos, MirroredUV);
+            
+				UE_LOG(LogTemp, Log, TEXT("Created mirrored vertex at (%.2f, %.2f)"), 
+					   MirroredSnappedPos.X, MirroredSnappedPos.Y);
+			}
+        
 			InViewport->Invalidate();
 		}
 		break;
@@ -2125,6 +2392,13 @@ void ManualSpriteEditorViewport::BeginVerticesDrag()
 		SelectVerticesOfSelectedTriangles();
 	}
 
+	// НОВОЕ: Автоматически добавляем зеркальные вершины к выделению если включен зеркальный режим
+	const auto& MirrorSettings = Editor->GetMirrorSettings();
+	if (MirrorSettings.bMirrorX || MirrorSettings.bMirrorY)
+	{
+		AddMirroredVerticesToSelection();
+	}
+
 	// Проверяем, есть ли выделенные вершины для перетаскивания
 	if (SelectedVertices.Num() == 0)
 		return;
@@ -2145,6 +2419,97 @@ void ManualSpriteEditorViewport::BeginVerticesDrag()
 			OriginalVertexUVs.Add(Geometry.Vertices[VertexIndex].UV);
 		}
 	}
+	
+	UE_LOG(LogTemp, Log, TEXT("Started dragging %d vertices (including mirrored)"), SelectedVertices.Num());
+}
+
+TArray<int32> ManualSpriteEditorViewport::FindMirroredVertices(const TArray<int32>& OriginalVertices) const
+{
+	TArray<int32> MirroredVertices;
+	
+	const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+	if (!Editor.IsValid() || !ManualSpritePtr.IsValid())
+		return MirroredVertices;
+
+	const auto& MirrorSettings = Editor->GetMirrorSettings();
+	if (!MirrorSettings.bMirrorX && !MirrorSettings.bMirrorY)
+		return MirroredVertices;
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	const float MirrorTolerance = 5.0f; // Пиксели
+
+	for (int32 OriginalIndex : OriginalVertices)
+	{
+		if (OriginalIndex < 0 || OriginalIndex >= Geometry.Vertices.Num())
+			continue;
+
+		const FVector2D OriginalPos = Geometry.Vertices[OriginalIndex].Position;
+		const FVector2D ExpectedMirroredPos = GetMirroredPosition(OriginalPos);
+
+		// Ищем вершину в ожидаемой зеркальной позиции
+		for (int32 i = 0; i < Geometry.Vertices.Num(); i++)
+		{
+			if (i == OriginalIndex) // Пропускаем саму себя
+				continue;
+				
+			if (OriginalVertices.Contains(i)) // Пропускаем уже выделенные
+				continue;
+
+			const FVector2D& CurrentPos = Geometry.Vertices[i].Position;
+			const float DistSquared = FVector2D::DistSquared(CurrentPos, ExpectedMirroredPos);
+
+			if (DistSquared < MirrorTolerance * MirrorTolerance)
+			{
+				MirroredVertices.AddUnique(i);
+				UE_LOG(LogTemp, VeryVerbose, TEXT("Found mirrored vertex %d for original %d"), i, OriginalIndex);
+				break; // Берём только первую найденную (самую близкую)
+			}
+		}
+	}
+
+	return MirroredVertices;
+}
+
+bool ManualSpriteEditorViewport::IsVertexMirroredPair(int32 VertexA, int32 VertexB) const
+{
+	if (!ManualSpritePtr.IsValid() || VertexA == VertexB)
+		return false;
+
+	if (VertexA < 0 || VertexA >= ManualSpritePtr->ManualGeometry.Vertices.Num() ||
+		VertexB < 0 || VertexB >= ManualSpritePtr->ManualGeometry.Vertices.Num())
+		return false;
+
+	const FVector2D PosA = ManualSpritePtr->ManualGeometry.Vertices[VertexA].Position;
+	const FVector2D PosB = ManualSpritePtr->ManualGeometry.Vertices[VertexB].Position;
+	const FVector2D ExpectedMirroredPos = GetMirroredPosition(PosA);
+
+	const float MirrorTolerance = 5.0f;
+	return FVector2D::DistSquared(PosB, ExpectedMirroredPos) < MirrorTolerance * MirrorTolerance;
+}
+
+void ManualSpriteEditorViewport::AddMirroredVerticesToSelection()
+{
+	if (SelectedVertices.Num() == 0)
+		return;
+
+	TArray<int32> MirroredVertices = FindMirroredVertices(SelectedVertices);
+	
+	if (MirroredVertices.Num() > 0)
+	{
+		// Добавляем зеркальные вершины к выделению
+		for (int32 MirroredIndex : MirroredVertices)
+		{
+			if (!SelectedVertices.Contains(MirroredIndex))
+			{
+				SelectedVertices.Add(MirroredIndex);
+			}
+		}
+		
+		// Обновляем связанные треугольники
+		UpdateConnectedTrianglesSelection();
+		
+		UE_LOG(LogTemp, Log, TEXT("Added %d mirrored vertices to selection"), MirroredVertices.Num());
+	}
 }
 
 void ManualSpriteEditorViewport::UpdateVerticesDrag(const FVector2D& MouseDelta)
@@ -2164,19 +2529,84 @@ void ManualSpriteEditorViewport::UpdateVerticesDrag(const FVector2D& MouseDelta)
 	}
 
 	const FVector2D WorldDelta = MouseDelta / ZoomFactor;
+	const auto& MirrorSettings = Editor->GetMirrorSettings();
+	const bool bHasMirroring = MirrorSettings.bMirrorX || MirrorSettings.bMirrorY;
 
+	// Собираем все вершины которые нужно обновить
+	TSet<int32> ProcessedVertices;
+	
 	for (int32 i = 0; i < SelectedVertices.Num(); i++)
 	{
 		const int32 VertexIndex = SelectedVertices[i];
 		if (VertexIndex >= 0 && VertexIndex < ManualSpritePtr->ManualGeometry.Vertices.Num())
 		{
+			if (ProcessedVertices.Contains(VertexIndex))
+				continue; // Уже обработали эту вершину
+				
+			// Обновляем основную вершину
 			const FVector2D NewPosition = SnapToGrid(OriginalVertexPositions[i] + WorldDelta);
 			const FVector2D NewUV = CalculateUVFromWorldPosition(NewPosition, ManualSpritePtr.Get());
 			
 			ManualSpritePtr->ManualGeometry.Vertices[VertexIndex].Position = NewPosition;
 			ManualSpritePtr->ManualGeometry.Vertices[VertexIndex].UV = NewUV;
+			ProcessedVertices.Add(VertexIndex);
+			
+			// ИСПРАВЛЕНИЕ: Правильная зеркальная логика
+			if (bHasMirroring)
+			{
+				// Ищем зеркальную вершину для текущей (используем ОРИГИНАЛЬНЫЕ позиции)
+				int32 MirroredVertexIndex = -1;
+				int32 MirroredOriginalIndex = -1;
+				const FVector2D ExpectedMirroredPos = GetMirroredPosition(OriginalVertexPositions[i]);
+				const float MirrorTolerance = 5.0f;
+				
+				// Ищем среди выделенных вершин
+				for (int32 j = 0; j < SelectedVertices.Num(); j++)
+				{
+					const int32 OtherVertexIndex = SelectedVertices[j];
+					if (OtherVertexIndex == VertexIndex || ProcessedVertices.Contains(OtherVertexIndex))
+						continue;
+						
+					const FVector2D& OtherOriginalPos = OriginalVertexPositions[j];
+					if (FVector2D::DistSquared(OtherOriginalPos, ExpectedMirroredPos) < MirrorTolerance * MirrorTolerance)
+					{
+						MirroredVertexIndex = OtherVertexIndex;
+						MirroredOriginalIndex = j;
+						break;
+					}
+				}
+				
+				// Если нашли зеркальную вершину - обновляем её ЗЕРКАЛЬНО
+				if (MirroredVertexIndex != -1 && MirroredOriginalIndex != -1)
+				{
+					// КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Вычисляем зеркальную дельту
+					FVector2D MirroredDelta = WorldDelta;
+					
+					// Инвертируем дельту по активным осям зеркала
+					if (MirrorSettings.bMirrorX)
+					{
+						MirroredDelta.X = -MirroredDelta.X;
+					}
+					if (MirrorSettings.bMirrorY)
+					{
+						MirroredDelta.Y = -MirroredDelta.Y;
+					}
+					
+					// Применяем зеркальную дельту к оригинальной позиции зеркальной вершины
+					const FVector2D MirroredNewPosition = SnapToGrid(OriginalVertexPositions[MirroredOriginalIndex] + MirroredDelta);
+					const FVector2D MirroredNewUV = CalculateUVFromWorldPosition(MirroredNewPosition, ManualSpritePtr.Get());
+					
+					ManualSpritePtr->ManualGeometry.Vertices[MirroredVertexIndex].Position = MirroredNewPosition;
+					ManualSpritePtr->ManualGeometry.Vertices[MirroredVertexIndex].UV = MirroredNewUV;
+					ProcessedVertices.Add(MirroredVertexIndex);
+					
+					UE_LOG(LogTemp, VeryVerbose, TEXT("Updated mirrored vertex %d: original delta (%.2f, %.2f) -> mirrored delta (%.2f, %.2f)"), 
+						   MirroredVertexIndex, WorldDelta.X, WorldDelta.Y, MirroredDelta.X, MirroredDelta.Y);
+				}
+			}
 		}
 	}
+	
 	// Инвалидируем кэш пересечений при перетаскивании (для live обновления)
 	InvalidateIntersectionsCache();
 	(void)ManualSpritePtr->MarkPackageDirty();

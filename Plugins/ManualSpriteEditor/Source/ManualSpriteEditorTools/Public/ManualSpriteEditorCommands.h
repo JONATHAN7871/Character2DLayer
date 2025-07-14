@@ -22,6 +22,11 @@ public:
 	TSharedPtr<FUICommandInfo> TriangleMode;
 	TSharedPtr<FUICommandInfo> DeleteMode;
 
+	// Зеркальное редактирование
+	TSharedPtr<FUICommandInfo> ToggleMirrorX;
+	TSharedPtr<FUICommandInfo> ToggleMirrorY;
+	TSharedPtr<FUICommandInfo> ToggleMirrorBoth;
+
 	// Undo/Redo
 	TSharedPtr<FUICommandInfo> Undo;
 	TSharedPtr<FUICommandInfo> Redo;
