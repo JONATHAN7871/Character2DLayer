@@ -23,14 +23,17 @@ static TAutoConsoleVariable<int32> CVarDebugManualSprite(
 	ECVF_Default
 );
 
-// Константы для рендеринга
-const float ManualSpriteEditorViewport::VertexSize = 6.0f;
-const float ManualSpriteEditorViewport::VertexSelectSize = 10.0f;
-const FLinearColor ManualSpriteEditorViewport::VertexColor = FLinearColor(1.0f, 0.3f, 0.3f, 1.0f);
-const FLinearColor ManualSpriteEditorViewport::SelectedVertexColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+// Константы для рендеринга - улучшенные контрастные цвета
+const float ManualSpriteEditorViewport::VertexSize = 5.0f;
+const float ManualSpriteEditorViewport::VertexSelectSize = 8.0f;
+const FLinearColor ManualSpriteEditorViewport::VertexColor = FLinearColor(0.2f, 0.5f, 1.0f, 1.0f); // Синий
+const FLinearColor ManualSpriteEditorViewport::SelectedVertexColor = FLinearColor(0.0f, 1.0f, 0.0f, 1.0f); // Ярко-зеленый
 const FLinearColor ManualSpriteEditorViewport::HoveredVertexColor = FLinearColor::White;
-const FLinearColor ManualSpriteEditorViewport::TriangleColor = FLinearColor(0.0f, 1.0f, 0.0f, 0.3f);
-const FLinearColor ManualSpriteEditorViewport::SelectedTriangleColor = FLinearColor(1.0f, 1.0f, 0.0f, 0.5f);
+const FLinearColor ManualSpriteEditorViewport::TriangleColor = FLinearColor(0.0f, 1.0f, 0.0f, 0.15f); // Полупрозрачный зеленый
+const FLinearColor ManualSpriteEditorViewport::SelectedTriangleColor = FLinearColor(0.0f, 1.0f, 0.0f, 0.4f); // Ярко-зеленый полупрозрачный
+const FLinearColor ManualSpriteEditorViewport::HoveredTriangleColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.3f); // Белый полупрозрачный
+const FLinearColor ManualSpriteEditorViewport::EdgeLineColor = FLinearColor(0.0f, 0.8f, 0.0f, 0.8f); // Зеленый для рёбер
+const FLinearColor ManualSpriteEditorViewport::SelectedEdgeColor = FLinearColor(0.0f, 1.0f, 0.0f, 1.0f); // Ярко-зеленый для выделенных рёбер
 
 //////////////////////////////////////////////////////////////////////////
 // SManualSpriteEditorViewport
@@ -96,7 +99,7 @@ ManualSpriteEditorViewport::ManualSpriteEditorViewport(TWeakPtr<FManualSpriteEdi
 	, bDragTransactionStarted(false)
 	, bSpriteZoomed(false)
 	, LastViewportSize(FIntPoint::ZeroValue)
-	, bIntersectionsCacheValid(false)
+	, bIntersectionsCacheValid(false)  // ПЕРЕМЕСТИТЬ ПЕРЕД SelectedTriangles
 {
 	// ИСПРАВЛЕНИЕ: Минимальная инициализация для 2D редактора
 	PreviewScene = &OwnedPreviewScene;
@@ -618,14 +621,27 @@ void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* 
 		bool bDrawOutline = false;
 		bool bDrawHalo = false;
 
+		// Проверяем режим редактирования
+		const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+		const bool bInTriangleMode = Editor.IsValid() && Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Triangle;
+
 		// Выделенные вершины
 		if (SelectedVertices.Contains(i))
 		{
-			Color = SelectedVertexColor;
+			if (bInTriangleMode)
+			{
+				// В режиме треугольника используем специальный цвет
+				Color = FLinearColor(1.0f, 0.5f, 0.0f, 1.0f); // Оранжевый для режима треугольника
+			}
+			else
+			{
+				Color = SelectedVertexColor;
+			}
 			Size = VertexSelectSize;
 			bDrawOutline = true;
 			bDrawHalo = true;
 		}
+		
 		// Вершина под курсором (приоритет над выделением)
 		else if (i == HoveredVertex)
 		{
@@ -718,8 +734,9 @@ void ManualSpriteEditorViewport::DrawTriangles(FCanvas* Canvas, const FViewport*
 
 	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
 
-	// Обновляем кэш пересечений
+	// Обновляем кэш пересечений и частичное выделение
 	UpdateIntersectingEdges();
+	const_cast<ManualSpriteEditorViewport*>(this)->UpdatePartialTrianglesSelection();
 
 	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
 	{
@@ -734,14 +751,87 @@ void ManualSpriteEditorViewport::DrawTriangles(FCanvas* Canvas, const FViewport*
 		const FVector2D Pos1 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex1].Position, InViewport);
 		const FVector2D Pos2 = WorldToScreen(Geometry.Vertices[Triangle.VertexIndex2].Position, InViewport);
 
-		// Базовый цвет треугольника
+		// Определяем состояние треугольника
+		const bool bIsFullySelected = SelectedTriangles.Contains(i);
+		const bool bIsPartiallySelected = PartiallySelectedTriangles.Contains(i);
 		const bool bIsHovered = (i == HoveredTriangle);
-		const FLinearColor BaseColor = bIsHovered ? SelectedTriangleColor : TriangleColor;
+		
+		// Выбираем цвета и стили - HOVER имеет приоритет
+		FLinearColor FillColor = TriangleColor;
+		FLinearColor EdgeColorToUse = EdgeLineColor;
+		float EdgeThickness = 1.0f;
+		
+		if (bIsHovered)
+		{
+			// HOVER имеет наивысший приоритет
+			FillColor = HoveredTriangleColor;
+			EdgeColorToUse = FLinearColor::White;
+			EdgeThickness = 2.0f;
+		}
+		else if (bIsFullySelected)
+		{
+			// Полностью выделенный треугольник - ярко-зеленый
+			FillColor = SelectedTriangleColor;
+			EdgeColorToUse = SelectedEdgeColor;
+			EdgeThickness = 2.5f;
+		}
+		else if (bIsPartiallySelected)
+		{
+			// Частично выделенный треугольник - синий
+			FillColor = FLinearColor(0.0f, 0.5f, 1.0f, 0.3f); // Синий полупрозрачный
+			EdgeColorToUse = FLinearColor(0.0f, 0.7f, 1.0f, 1.0f); // Синие рёбра
+			EdgeThickness = 1.8f;
+		}
 
-		// Рисуем три ребра треугольника с проверкой пересечений
-		DrawTriangleEdge(Canvas, Pos0, Pos1, Triangle.VertexIndex0, Triangle.VertexIndex1, BaseColor);
-		DrawTriangleEdge(Canvas, Pos1, Pos2, Triangle.VertexIndex1, Triangle.VertexIndex2, BaseColor);
-		DrawTriangleEdge(Canvas, Pos2, Pos0, Triangle.VertexIndex2, Triangle.VertexIndex0, BaseColor);
+		// Рисуем заливку треугольника
+		if (bIsFullySelected || bIsPartiallySelected || bIsHovered)
+		{
+			// Создаем массив вершин для треугольника
+			TArray<FCanvasUVTri> Triangles;
+			FCanvasUVTri TriangleItem;
+			TriangleItem.V0_Pos = FVector2D(Pos0.X, Pos0.Y);
+			TriangleItem.V1_Pos = FVector2D(Pos1.X, Pos1.Y);
+			TriangleItem.V2_Pos = FVector2D(Pos2.X, Pos2.Y);
+			TriangleItem.V0_UV = FVector2D(0.0f, 0.0f);
+			TriangleItem.V1_UV = FVector2D(1.0f, 0.0f);
+			TriangleItem.V2_UV = FVector2D(0.5f, 1.0f);
+			TriangleItem.V0_Color = FillColor;
+			TriangleItem.V1_Color = FillColor;
+			TriangleItem.V2_Color = FillColor;
+			Triangles.Add(TriangleItem);
+			
+			FCanvasTriangleItem CanvasTriangle(Triangles, GWhiteTexture);
+			CanvasTriangle.BlendMode = SE_BLEND_AlphaBlend;
+			Canvas->DrawItem(CanvasTriangle);
+		}
+
+		// Рисуем рёбра треугольника с проверкой пересечений
+		DrawTriangleEdge(Canvas, Pos0, Pos1, Triangle.VertexIndex0, Triangle.VertexIndex1, EdgeColorToUse, EdgeThickness);
+		DrawTriangleEdge(Canvas, Pos1, Pos2, Triangle.VertexIndex1, Triangle.VertexIndex2, EdgeColorToUse, EdgeThickness);
+		DrawTriangleEdge(Canvas, Pos2, Pos0, Triangle.VertexIndex2, Triangle.VertexIndex0, EdgeColorToUse, EdgeThickness);
+
+		// Показываем номер треугольника если он выделен или под курсором
+		if (bIsFullySelected || bIsPartiallySelected || bIsHovered)
+		{
+			const FVector2D Center = (Pos0 + Pos1 + Pos2) / 3.0f;
+			const FString TriangleNumber = FString::Printf(TEXT("T%d"), i);
+			
+			// Фон для номера
+			const float TextWidth = 30.0f;
+			const float TextHeight = 12.0f;
+			FCanvasBoxItem BackgroundItem(Center - FVector2D(TextWidth * 0.5f, TextHeight * 0.5f), FVector2D(TextWidth, TextHeight));
+			BackgroundItem.SetColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.7f));
+			Canvas->DrawItem(BackgroundItem);
+			
+			FLinearColor TextColor = FLinearColor::White;
+			if (bIsHovered) TextColor = FLinearColor::White;
+			else if (bIsFullySelected) TextColor = FLinearColor::Green;
+			else if (bIsPartiallySelected) TextColor = FLinearColor(0.0f, 0.7f, 1.0f, 1.0f);
+			
+			FCanvasTextItem TextItem(Center - FVector2D(12.0f, 6.0f), FText::FromString(TriangleNumber), 
+				GEngine->GetTinyFont(), TextColor);
+			Canvas->DrawItem(TextItem);
+		}
 	}
 }
 
@@ -892,38 +982,84 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 	}
 	
 	// Информация о выделении
-	if (SelectedVertices.Num() > 0)
-	{
-		FString SelectionText = FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num());
-		
-		// Подсчитываем количество связанных треугольников
-		if (ManualSpritePtr.IsValid())
-		{
-			int32 ConnectedTriangles = 0;
-			for (const FManualSpriteTriangle& Triangle : ManualSpritePtr->ManualGeometry.Triangles)
-			{
-				bool bIsConnected = false;
-				for (int32 SelectedVertex : SelectedVertices)
-				{
-					if (Triangle.VertexIndex0 == SelectedVertex ||
-						Triangle.VertexIndex1 == SelectedVertex ||
-						Triangle.VertexIndex2 == SelectedVertex)
-					{
-						bIsConnected = true;
-						break;
-					}
-				}
-				if (bIsConnected)
-				{
-					ConnectedTriangles++;
-				}
-			}
-			
-			if (ConnectedTriangles > 0)
-			{
-				SelectionText += FString::Printf(TEXT(" (%d connected triangles)"), ConnectedTriangles);
-			}
-		}
+// Информация о выделении
+if (SelectedVertices.Num() > 0 || SelectedTriangles.Num() > 0)
+{
+    FString SelectionText;
+    
+    // Проверяем режим редактирования
+    const bool bInTriangleMode = Editor.IsValid() && Editor->GetEditMode() == FManualSpriteEditorToolkit::EEditMode::Triangle;
+    
+    if (SelectedVertices.Num() > 0)
+    {
+        if (bInTriangleMode)
+        {
+            // Специальное отображение для режима треугольника
+            SelectionText = FString::Printf(TEXT("Triangle Mode: %d/3 vertices selected"), SelectedVertices.Num());
+            if (SelectedVertices.Num() == 3)
+            {
+                SelectionText += TEXT(" | Ready to create triangle!");
+            }
+        }
+        else
+        {
+            SelectionText = FString::Printf(TEXT("Selected: %d vertices"), SelectedVertices.Num());
+            
+            // Подсчитываем количество связанных треугольников (только вне режима Triangle)
+            if (ManualSpritePtr.IsValid())
+            {
+                int32 ConnectedTriangles = 0;
+                for (const FManualSpriteTriangle& Triangle : ManualSpritePtr->ManualGeometry.Triangles)
+                {
+                    bool bIsConnected = false;
+                    for (int32 SelectedVertex : SelectedVertices)
+                    {
+                        if (Triangle.VertexIndex0 == SelectedVertex ||
+                            Triangle.VertexIndex1 == SelectedVertex ||
+                            Triangle.VertexIndex2 == SelectedVertex)
+                        {
+                            bIsConnected = true;
+                            break;
+                        }
+                    }
+                    if (bIsConnected)
+                    {
+                        ConnectedTriangles++;
+                    }
+                }
+                
+                if (ConnectedTriangles > 0)
+                {
+                    SelectionText += FString::Printf(TEXT(" (%d connected triangles)"), ConnectedTriangles);
+                }
+            }
+        }
+    }
+    else if (SelectedTriangles.Num() > 0)
+    {
+        SelectionText = FString::Printf(TEXT("Selected: %d triangles"), SelectedTriangles.Num());
+        
+        // Подсчитываем количество уникальных вершин
+        TSet<int32> UniqueVertices;
+        if (ManualSpritePtr.IsValid())
+        {
+            for (int32 TriangleIndex : SelectedTriangles)
+            {
+                if (TriangleIndex >= 0 && TriangleIndex < ManualSpritePtr->ManualGeometry.Triangles.Num())
+                {
+                    const FManualSpriteTriangle& Triangle = ManualSpritePtr->ManualGeometry.Triangles[TriangleIndex];
+                    UniqueVertices.Add(Triangle.VertexIndex0);
+                    UniqueVertices.Add(Triangle.VertexIndex1);
+                    UniqueVertices.Add(Triangle.VertexIndex2);
+                }
+            }
+            
+            if (UniqueVertices.Num() > 0)
+            {
+                SelectionText += FString::Printf(TEXT(" (%d unique vertices)"), UniqueVertices.Num());
+            }
+        }
+    }
 		
 		// Добавляем информацию о возможных действиях
 		if (SelectedVertices.Num() >= 3)
@@ -933,6 +1069,10 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 		else if (SelectedVertices.Num() > 0)
 		{
 			SelectionText += TEXT(" | 4 - Delete Connected Triangles");
+		}
+		else if (SelectedTriangles.Num() > 0)
+		{
+			SelectionText += TEXT(" | Del - Delete Triangles");
 		}
 		
 		FCanvasTextItem TextItem(FVector2D(10, CurrentY), 
@@ -991,24 +1131,24 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 				bShowHint = true;
 			}
 			break;
-		case FManualSpriteEditorToolkit::EEditMode::Triangle:
-			if (SelectedVertices.Num() > 0)
-			{
-				HintText = FString::Printf(TEXT("Triangle: %d/3 vertices selected"), SelectedVertices.Num());
-				bShowHint = true;
-			}
-			else
-			{
-				HintText = TEXT("Select 3 vertices to create a triangle");
-				bShowHint = true;
-			}
-			break;
 		case FManualSpriteEditorToolkit::EEditMode::AddVertex:
 			HintText = TEXT("Click anywhere to add a new vertex");
 			bShowHint = true;
 			break;
+		case FManualSpriteEditorToolkit::EEditMode::Triangle:
+			if (SelectedVertices.Num() > 0)
+			{
+				HintText = FString::Printf(TEXT("Triangle: %d/3 vertices selected | Click vertex again to deselect | Click empty space to clear"), SelectedVertices.Num());
+				bShowHint = true;
+			}
+			else
+			{
+				HintText = TEXT("Select 3 vertices to create a triangle | Click empty space to clear selection");
+				bShowHint = true;
+			}
+			break;
 		case FManualSpriteEditorToolkit::EEditMode::Delete:
-			HintText = TEXT("Click on vertex or triangle to delete it");
+			HintText = TEXT("LMB on vertex to delete vertex | LMB on triangle to delete triangle");
 			bShowHint = true;
 			break;
 		case FManualSpriteEditorToolkit::EEditMode::Paste:
@@ -1078,6 +1218,13 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 void ManualSpriteEditorViewport::SetSelectedVertices(const TArray<int32>& NewSelection)
 {
 	SelectedVertices = NewSelection;
+	// При выделении вершин снимаем выделение с треугольников
+	SelectedTriangles.Empty();
+}
+
+void ManualSpriteEditorViewport::SetSelectedTriangles(const TArray<int32>& NewSelection)
+{
+	SelectedTriangles = NewSelection;
 }
 
 void ManualSpriteEditorViewport::SelectAllVertices()
@@ -1087,15 +1234,382 @@ void ManualSpriteEditorViewport::SelectAllVertices()
 		return;
 
 	SelectedVertices.Empty();
+	SelectedTriangles.Empty();
 	for (int32 i = 0; i < ManualSpritePtr->ManualGeometry.Vertices.Num(); i++)
 	{
 		SelectedVertices.Add(i);
 	}
 }
 
+void ManualSpriteEditorViewport::SelectAllTriangles()
+{
+	if (!ManualSpritePtr.IsValid())
+		return;
+
+	SelectedTriangles.Empty();
+	SelectedVertices.Empty();
+	for (int32 i = 0; i < ManualSpritePtr->ManualGeometry.Triangles.Num(); i++)
+	{
+		SelectedTriangles.Add(i);
+	}
+}
+
 void ManualSpriteEditorViewport::ClearSelection()
 {
 	SelectedVertices.Empty();
+	SelectedTriangles.Empty();
+}
+
+void ManualSpriteEditorViewport::ToggleVertexSelection(int32 VertexIndex, bool bAdditive, bool bSubtractive)
+{
+	if (VertexIndex < 0 || !ManualSpritePtr.IsValid() || VertexIndex >= ManualSpritePtr->ManualGeometry.Vertices.Num())
+		return;
+
+	if (bSubtractive)
+	{
+		// Alt - убираем из выделения
+		SelectedVertices.Remove(VertexIndex);
+	}
+	else if (bAdditive)
+	{
+		// Ctrl - добавляем к выделению
+		if (!SelectedVertices.Contains(VertexIndex))
+		{
+			SelectedVertices.Add(VertexIndex);
+		}
+	}
+	else
+	{
+		// Обычный клик - заменяем выделение
+		if (SelectedVertices.Contains(VertexIndex) && SelectedVertices.Num() == 1)
+		{
+			// Если единственная выделенная вершина - снимаем выделение
+			SelectedVertices.Empty();
+		}
+		else
+		{
+			SelectedVertices.Empty();
+			SelectedVertices.Add(VertexIndex);
+		}
+	}
+	
+	// При выделении вершин снимаем выделение с треугольников (только если не субтрактивное действие)
+	if (!bSubtractive && SelectedVertices.Num() > 0)
+	{
+		SelectedTriangles.Empty();
+	}
+	
+	// Обновляем связанные треугольники в зависимости от действия
+	if (bSubtractive)
+	{
+		// При удалении вершин убираем неполные треугольники
+		RemoveIncompleteTrianglesFromSelection();
+	}
+	else
+	{
+		// При добавлении/замене вершин обновляем связанные треугольники
+		UpdateConnectedTrianglesSelection();
+	}
+}
+
+void ManualSpriteEditorViewport::ToggleTriangleSelection(int32 TriangleIndex, bool bAdditive, bool bSubtractive)
+{
+	if (TriangleIndex < 0 || !ManualSpritePtr.IsValid() || TriangleIndex >= ManualSpritePtr->ManualGeometry.Triangles.Num())
+		return;
+
+	if (bSubtractive)
+	{
+		// Alt - убираем из выделения
+		if (SelectedTriangles.Contains(TriangleIndex))
+		{
+			SelectedTriangles.Remove(TriangleIndex);
+			
+			// Убираем вершины этого треугольника, если они не принадлежат другим выделенным треугольникам
+			RemoveTriangleVerticesFromSelection(TriangleIndex);
+		}
+	}
+	else if (bAdditive)
+	{
+		// Ctrl - добавляем к выделению
+		if (!SelectedTriangles.Contains(TriangleIndex))
+		{
+			SelectedTriangles.Add(TriangleIndex);
+			// Добавляем вершины треугольника к выделению
+			AddTriangleVerticestoSelection(TriangleIndex);
+		}
+	}
+	else
+	{
+		// Обычный клик - заменяем выделение
+		if (SelectedTriangles.Contains(TriangleIndex) && SelectedTriangles.Num() == 1)
+		{
+			SelectedTriangles.Empty();
+			SelectedVertices.Empty();
+		}
+		else
+		{
+			SelectedTriangles.Empty();
+			SelectedVertices.Empty();
+			SelectedTriangles.Add(TriangleIndex);
+			AddTriangleVerticestoSelection(TriangleIndex);
+		}
+	}
+	
+	// При выделении треугольников НЕ вызываем UpdateConnectedVerticesSelection
+	// так как мы управляем вершинами вручную через специальные методы
+}
+
+void ManualSpriteEditorViewport::SelectTriangleVertices(int32 TriangleIndex)
+{
+	if (!ManualSpritePtr.IsValid() || TriangleIndex < 0 || TriangleIndex >= ManualSpritePtr->ManualGeometry.Triangles.Num())
+		return;
+
+	const FManualSpriteTriangle& Triangle = ManualSpritePtr->ManualGeometry.Triangles[TriangleIndex];
+	
+	SelectedVertices.Empty();
+	SelectedTriangles.Empty();
+	
+	SelectedVertices.Add(Triangle.VertexIndex0);
+	SelectedVertices.Add(Triangle.VertexIndex1);
+	SelectedVertices.Add(Triangle.VertexIndex2);
+}
+
+void ManualSpriteEditorViewport::SelectVerticesOfSelectedTriangles()
+{
+	if (!ManualSpritePtr.IsValid() || SelectedTriangles.Num() == 0)
+		return;
+
+	TSet<int32> VertexSet;
+	
+	for (int32 TriangleIndex : SelectedTriangles)
+	{
+		if (TriangleIndex >= 0 && TriangleIndex < ManualSpritePtr->ManualGeometry.Triangles.Num())
+		{
+			const FManualSpriteTriangle& Triangle = ManualSpritePtr->ManualGeometry.Triangles[TriangleIndex];
+			VertexSet.Add(Triangle.VertexIndex0);
+			VertexSet.Add(Triangle.VertexIndex1);
+			VertexSet.Add(Triangle.VertexIndex2);
+		}
+	}
+	
+	SelectedVertices = VertexSet.Array();
+	SelectedTriangles.Empty();
+}
+
+void ManualSpriteEditorViewport::UpdateConnectedTrianglesSelection()
+{
+	if (!ManualSpritePtr.IsValid())
+	{
+		SelectedTriangles.Empty();
+		return;
+	}
+
+	// Сохраняем существующие треугольники, выделенные вручную
+	TSet<int32> ManuallySelectedTriangles(SelectedTriangles);
+	SelectedTriangles.Empty();
+	
+	if (SelectedVertices.Num() == 0)
+	{
+		// Если нет выделенных вершин, оставляем только вручную выделенные треугольники
+		SelectedTriangles = ManuallySelectedTriangles.Array();
+		return;
+	}
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	
+	// Находим все треугольники, которые полностью состоят из выделенных вершин
+	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
+	{
+		const FManualSpriteTriangle& Triangle = Geometry.Triangles[i];
+		
+		// Проверяем, выделены ли ВСЕ вершины треугольника
+		if (SelectedVertices.Contains(Triangle.VertexIndex0) &&
+			SelectedVertices.Contains(Triangle.VertexIndex1) &&
+			SelectedVertices.Contains(Triangle.VertexIndex2))
+		{
+			SelectedTriangles.Add(i);
+		}
+	}
+	
+	// Добавляем вручную выделенные треугольники
+	for (int32 TriangleIndex : ManuallySelectedTriangles)
+	{
+		if (!SelectedTriangles.Contains(TriangleIndex))
+		{
+			SelectedTriangles.Add(TriangleIndex);
+		}
+	}
+}
+
+void ManualSpriteEditorViewport::UpdateConnectedVerticesSelection()
+{
+	if (!ManualSpritePtr.IsValid() || SelectedTriangles.Num() == 0)
+	{
+		return;
+	}
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	TSet<int32> VertexSet;
+	
+	// Собираем все вершины из выделенных треугольников
+	for (int32 TriangleIndex : SelectedTriangles)
+	{
+		if (TriangleIndex >= 0 && TriangleIndex < Geometry.Triangles.Num())
+		{
+			const FManualSpriteTriangle& Triangle = Geometry.Triangles[TriangleIndex];
+			VertexSet.Add(Triangle.VertexIndex0);
+			VertexSet.Add(Triangle.VertexIndex1);
+			VertexSet.Add(Triangle.VertexIndex2);
+		}
+	}
+	
+	// Добавляем к уже выделенным вершинам (не заменяем)
+	for (int32 VertexIndex : VertexSet)
+	{
+		if (!SelectedVertices.Contains(VertexIndex))
+		{
+			SelectedVertices.Add(VertexIndex);
+		}
+	}
+}
+
+void ManualSpriteEditorViewport::UpdatePartialTrianglesSelection()
+{
+	if (!ManualSpritePtr.IsValid())
+		return;
+
+	PartiallySelectedTriangles.Empty();
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	
+	// Находим треугольники, которые частично выделены (не все вершины выделены)
+	for (int32 i = 0; i < Geometry.Triangles.Num(); i++)
+	{
+		if (SelectedTriangles.Contains(i))
+			continue; // Пропускаем полностью выделенные
+			
+		const FManualSpriteTriangle& Triangle = Geometry.Triangles[i];
+		
+		int32 SelectedVertexCount = 0;
+		if (SelectedVertices.Contains(Triangle.VertexIndex0)) SelectedVertexCount++;
+		if (SelectedVertices.Contains(Triangle.VertexIndex1)) SelectedVertexCount++;
+		if (SelectedVertices.Contains(Triangle.VertexIndex2)) SelectedVertexCount++;
+		
+		// Если выделена хотя бы одна, но не все вершины
+		if (SelectedVertexCount > 0 && SelectedVertexCount < 3)
+		{
+			PartiallySelectedTriangles.Add(i);
+		}
+	}
+}
+
+void ManualSpriteEditorViewport::AddTriangleVerticestoSelection(int32 TriangleIndex)
+{
+	if (!ManualSpritePtr.IsValid() || TriangleIndex < 0 || TriangleIndex >= ManualSpritePtr->ManualGeometry.Triangles.Num())
+		return;
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	const FManualSpriteTriangle& Triangle = Geometry.Triangles[TriangleIndex];
+	
+	// Добавляем вершины треугольника к выделению
+	if (!SelectedVertices.Contains(Triangle.VertexIndex0))
+		SelectedVertices.Add(Triangle.VertexIndex0);
+	if (!SelectedVertices.Contains(Triangle.VertexIndex1))
+		SelectedVertices.Add(Triangle.VertexIndex1);
+	if (!SelectedVertices.Contains(Triangle.VertexIndex2))
+		SelectedVertices.Add(Triangle.VertexIndex2);
+}
+
+void ManualSpriteEditorViewport::RemoveTriangleVerticesFromSelection(int32 TriangleIndex)
+{
+	if (!ManualSpritePtr.IsValid() || TriangleIndex < 0 || TriangleIndex >= ManualSpritePtr->ManualGeometry.Triangles.Num())
+		return;
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	const FManualSpriteTriangle& Triangle = Geometry.Triangles[TriangleIndex];
+	
+	// Проверяем каждую вершину треугольника
+	TArray<int32> VerticestoCheck = {Triangle.VertexIndex0, Triangle.VertexIndex1, Triangle.VertexIndex2};
+	
+	for (int32 VertexIndex : VerticestoCheck)
+	{
+		if (!SelectedVertices.Contains(VertexIndex))
+			continue;
+			
+		// Проверяем, принадлежит ли эта вершина другим выделенным треугольникам
+		bool bBelongsToOtherSelectedTriangle = false;
+		
+		for (int32 OtherTriangleIndex : SelectedTriangles)
+		{
+			if (OtherTriangleIndex == TriangleIndex)
+				continue; // Пропускаем сам удаляемый треугольник
+				
+			if (OtherTriangleIndex >= 0 && OtherTriangleIndex < Geometry.Triangles.Num())
+			{
+				const FManualSpriteTriangle& OtherTriangle = Geometry.Triangles[OtherTriangleIndex];
+				if (OtherTriangle.VertexIndex0 == VertexIndex || 
+					OtherTriangle.VertexIndex1 == VertexIndex || 
+					OtherTriangle.VertexIndex2 == VertexIndex)
+				{
+					bBelongsToOtherSelectedTriangle = true;
+					break;
+				}
+			}
+		}
+		
+		// Если вершина не принадлежит другим выделенным треугольникам - убираем её
+		if (!bBelongsToOtherSelectedTriangle)
+		{
+			SelectedVertices.Remove(VertexIndex);
+		}
+	}
+}
+
+bool ManualSpriteEditorViewport::CanDragFromPosition(const FVector2D& ScreenPos, const FViewport* InViewport) const
+{
+	if (!ManualSpritePtr.IsValid())
+		return false;
+
+	const float ClickTolerance = 10.0f;
+	
+	// Проверяем, кликнули ли мы по выделенной вершине
+	const int32 VertexIndex = FindVertexAtScreenPosition(ScreenPos, InViewport, ClickTolerance);
+	if (VertexIndex != -1 && SelectedVertices.Contains(VertexIndex))
+	{
+		return true;
+	}
+	
+	// Проверяем, кликнули ли мы по ПОЛНОСТЬЮ выделенному треугольнику
+	const FVector2D WorldPos = ScreenToWorld(ScreenPos, InViewport);
+	const int32 TriangleIndex = FindTriangleAtPosition(WorldPos);
+	if (TriangleIndex != -1 && SelectedTriangles.Contains(TriangleIndex))
+	{
+		return true;
+	}
+	
+	// НЕ проверяем частично выделенные треугольники для перетаскивания
+	// Это позволит кликать по ним для смены выделения
+	
+	return false;
+}
+
+void ManualSpriteEditorViewport::DeleteSelectedTriangles()
+{
+	const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
+	if (!Editor.IsValid() || SelectedTriangles.Num() == 0)
+		return;
+
+	// Сортируем индексы в убывающем порядке для корректного удаления
+	TArray<int32> SortedIndices = SelectedTriangles;
+	SortedIndices.Sort([](const int32& A, const int32& B) {
+		return A > B;
+	});
+
+	for (int32 TriangleIndex : SortedIndices)
+	{
+		Editor->RemoveTriangleWithTransaction(TriangleIndex);
+	}
+
+	SelectedTriangles.Empty();
 }
 
 void ManualSpriteEditorViewport::DeleteSelectedVertices()
@@ -1151,82 +1665,146 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 		}
 		break;
 
-	case FManualSpriteEditorToolkit::EEditMode::Select:
-		if (Key == EKeys::LeftMouseButton)
+case FManualSpriteEditorToolkit::EEditMode::Select:
+	if (Key == EKeys::LeftMouseButton)
+	{
+		if (Event == IE_Pressed)
 		{
-			if (Event == IE_Pressed)
+			const float ClickTolerance = 10.0f;
+			const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
+			const int32 TriangleIndex = FindTriangleAtPosition(WorldPos);
+			
+			const bool bCtrlPressed = FSlateApplication::Get().GetModifierKeys().IsControlDown();
+			const bool bAltPressed = FSlateApplication::Get().GetModifierKeys().IsAltDown();
+			
+			if (VertexIndex != -1)
 			{
-				// ИСПРАВЛЕНИЕ: Используем точный поиск по экранным координатам
-				const float ClickTolerance = 10.0f; // Немного больше для удобства клика
-				const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
-				const bool bCtrlPressed = FSlateApplication::Get().GetModifierKeys().IsControlDown();
+				// Клик по вершине
+				const bool bWasSelected = SelectedVertices.Contains(VertexIndex);
 				
-				if (VertexIndex != -1)
+				if (!bCtrlPressed && !bAltPressed)
 				{
-					if (!bCtrlPressed)
+					if (bWasSelected && SelectedVertices.Num() > 1)
 					{
-						if (!SelectedVertices.Contains(VertexIndex))
-						{
-							SelectedVertices.Empty();
-							SelectedVertices.Add(VertexIndex);
-						}
+						// Если вершина выделена и есть другие выделенные - начинаем перетаскивание
+						BeginVerticesDrag();
+					}
+					else if (bWasSelected && SelectedVertices.Num() == 1)
+					{
+						// Если выделена только эта вершина - начинаем перетаскивание
+						BeginVerticesDrag();
 					}
 					else
 					{
-						if (SelectedVertices.Contains(VertexIndex))
-						{
-							SelectedVertices.Remove(VertexIndex);
-						}
-						else
-						{
-							SelectedVertices.Add(VertexIndex);
-						}
-					}
-					
-					if (SelectedVertices.Num() > 0)
-					{
+						// Выделяем только эту вершину
+						SelectedVertices.Empty();
+						SelectedTriangles.Empty();
+						SelectedVertices.Add(VertexIndex);
+						UpdateConnectedTrianglesSelection();
 						BeginVerticesDrag();
 					}
 				}
 				else
 				{
-					StartBoxSelection(MousePos, bCtrlPressed);
+					// Изменяем выделение с модификаторами
+					ToggleVertexSelection(VertexIndex, bCtrlPressed, bAltPressed);
+					UpdateConnectedTrianglesSelection();
+					
+					// Начинаем перетаскивание если есть выделенные вершины
+					if (SelectedVertices.Num() > 0 && !bAltPressed)
+					{
+						BeginVerticesDrag();
+					}
 				}
-				
+			}
+			else if (TriangleIndex != -1)
+			{
+				if (bCtrlPressed)
+				{
+					// Ctrl + клик по треугольнику - добавляем треугольник к выделению
+					ToggleTriangleSelection(TriangleIndex, true, false);
+					UpdateConnectedVerticesSelection();
+				}
+				else if (bAltPressed)
+				{
+					// Alt + клик по треугольнику - убираем треугольник из выделения
+					ToggleTriangleSelection(TriangleIndex, false, true);
+					UpdateConnectedVerticesSelection();
+				}
+				else
+				{
+					// Обычный клик по треугольнику
+					const bool bCanDrag = CanDragFromPosition(MousePos, InViewport);
+					
+					if (!bCanDrag)
+					{
+						// Выделяем только этот треугольник и его вершины (сбрасываем предыдущее выделение)
+						SelectedTriangles.Empty();
+						SelectedVertices.Empty();
+						SelectedTriangles.Add(TriangleIndex);
+						UpdateConnectedVerticesSelection();
+					}
+					
+					// Всегда пытаемся начать перетаскивание
+					BeginVerticesDrag();
+				}
+			}
+			else
+			{
+				// Клик в пустоту - начинаем выделение рамкой
+				StartBoxSelection(MousePos, bCtrlPressed);
+			}
+			
+			InViewport->Invalidate();
+		}
+		else if (Event == IE_Released)
+		{
+			if (bIsDraggingVertices)
+			{
+				EndVerticesDrag();
+			}
+			else if (BoxSelection.bIsActive)
+			{
+				EndBoxSelection();
 				InViewport->Invalidate();
 			}
-			else if (Event == IE_Released)
-			{
-				if (bIsDraggingVertices)
-				{
-					EndVerticesDrag();
-				}
-				else if (BoxSelection.bIsActive)
-				{
-					EndBoxSelection();
-					InViewport->Invalidate();
-				}
-			}
 		}
-		break;
-
+	}
+	break;
+		
 	case FManualSpriteEditorToolkit::EEditMode::Triangle:
 		if (Key == EKeys::LeftMouseButton && Event == IE_Pressed)
 		{
-			// ИСПРАВЛЕНИЕ: Точный поиск для режима создания треугольников
 			const float ClickTolerance = 10.0f;
 			const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
 			
 			if (VertexIndex != -1)
 			{
-				if (!SelectedVertices.Contains(VertexIndex))
+				// Клик по вершине
+				if (SelectedVertices.Contains(VertexIndex))
 				{
+					// Повторный клик по уже выделенной вершине - убираем её из выделения
+					SelectedVertices.Remove(VertexIndex);
+				}
+				else
+				{
+					// Добавляем вершину к выделению
 					SelectedVertices.Add(VertexIndex);
 				}
 
+				// Проверяем, набрали ли мы 3 вершины для создания треугольника
 				if (SelectedVertices.Num() == 3)
 				{
 					Editor->AddTriangleWithTransaction(SelectedVertices[0], SelectedVertices[1], SelectedVertices[2]);
+					SelectedVertices.Empty(); // Очищаем выделение после создания треугольника
+					InViewport->Invalidate();
+				}
+			}
+			else
+			{
+				// Клик в пустоту - сбрасываем выделение вершин
+				if (SelectedVertices.Num() > 0)
+				{
 					SelectedVertices.Empty();
 					InViewport->Invalidate();
 				}
@@ -1237,19 +1815,29 @@ void ManualSpriteEditorViewport::HandleMouseClick(FViewport* InViewport, FKey Ke
 	case FManualSpriteEditorToolkit::EEditMode::Delete:
 		if (Key == EKeys::LeftMouseButton && Event == IE_Pressed)
 		{
-			// ИСПРАВЛЕНИЕ: Точный поиск для режима удаления
 			const float ClickTolerance = 10.0f;
 			const int32 VertexIndex = FindVertexAtScreenPosition(MousePos, InViewport, ClickTolerance);
+			const int32 TriangleIndex = FindTriangleAtPosition(WorldPos);
 			
 			if (VertexIndex != -1)
 			{
+				// ЛКМ по вершине - удаляем вершину
 				Editor->RemoveVertexWithTransaction(VertexIndex);
 				SelectedVertices.Empty();
+				SelectedTriangles.Empty();
 				InViewport->Invalidate();
 			}
-			else if (const int32 TriangleIndex = FindTriangleAtPosition(WorldPos); TriangleIndex != -1)
+			else if (TriangleIndex != -1)
 			{
+				// ЛКМ по треугольнику - удаляем треугольник
 				Editor->RemoveTriangleWithTransaction(TriangleIndex);
+				
+				// Очищаем выделение и сбрасываем hover для предотвращения скачков
+				SelectedTriangles.Empty();
+				SelectedVertices.Empty();
+				HoveredTriangle = -1;
+				HoveredVertex = -1;
+				
 				InViewport->Invalidate();
 			}
 		}
@@ -1438,7 +2026,17 @@ FVector2D ManualSpriteEditorViewport::SnapToGrid(const FVector2D& Position) cons
 void ManualSpriteEditorViewport::BeginVerticesDrag()
 {
 	const TSharedPtr<FManualSpriteEditorToolkit> Editor = ManualSpriteEditorPtr.Pin();
-	if (!Editor.IsValid() || SelectedVertices.Num() == 0 || !ManualSpritePtr.IsValid())
+	if (!Editor.IsValid() || !ManualSpritePtr.IsValid())
+		return;
+
+	// Если выделены треугольники, переводим их вершины в выделение
+	if (SelectedTriangles.Num() > 0 && SelectedVertices.Num() == 0)
+	{
+		SelectVerticesOfSelectedTriangles();
+	}
+
+	// Проверяем, есть ли выделенные вершины для перетаскивания
+	if (SelectedVertices.Num() == 0)
 		return;
 
 	bIsDraggingVertices = true;
@@ -1527,9 +2125,15 @@ void ManualSpriteEditorViewport::StartBoxSelection(const FVector2D& StartPos, bo
 	BoxSelection.CurrentPosition = StartPos;
 	BoxSelection.bIsAdditive = bAdditive;
 	
-	if (!bAdditive)
+	// Определяем режим: добавление (Ctrl) или удаление (Alt)
+	const bool bAltPressed = FSlateApplication::Get().GetModifierKeys().IsAltDown();
+	BoxSelection.bIsSubtractive = bAltPressed;
+	
+	// Если не добавляем и не убираем - очищаем выделение
+	if (!bAdditive && !bAltPressed)
 	{
 		SelectedVertices.Empty();
+		SelectedTriangles.Empty();
 	}
 }
 
@@ -1550,8 +2154,20 @@ void ManualSpriteEditorViewport::EndBoxSelection()
 	{
 		TArray<int32> VerticesInBox = GetVerticesInSelectionBox();
 		
-		if (BoxSelection.bIsAdditive)
+		if (BoxSelection.bIsSubtractive)
 		{
+			// Alt - убираем вершины из выделения
+			for (int32 VertexIndex : VerticesInBox)
+			{
+				SelectedVertices.Remove(VertexIndex);
+			}
+			
+			// После удаления вершин, проверяем какие треугольники больше не полностью выделены
+			RemoveIncompleteTrianglesFromSelection();
+		}
+		else if (BoxSelection.bIsAdditive)
+		{
+			// Ctrl - добавляем к выделению
 			for (int32 VertexIndex : VerticesInBox)
 			{
 				if (!SelectedVertices.Contains(VertexIndex))
@@ -1559,21 +2175,59 @@ void ManualSpriteEditorViewport::EndBoxSelection()
 					SelectedVertices.Add(VertexIndex);
 				}
 			}
+			
+			// Обновляем связанные треугольники
+			UpdateConnectedTrianglesSelection();
 		}
 		else
 		{
+			// Обычное выделение - заменяем
 			SelectedVertices = VerticesInBox;
+			// Обновляем связанные треугольники
+			UpdateConnectedTrianglesSelection();
 		}
 	}
 	else
 	{
-		if (!BoxSelection.bIsAdditive)
+		if (!BoxSelection.bIsAdditive && !BoxSelection.bIsSubtractive)
 		{
 			SelectedVertices.Empty();
+			SelectedTriangles.Empty();
 		}
 	}
 	
 	BoxSelection.bIsActive = false;
+}
+
+void ManualSpriteEditorViewport::RemoveIncompleteTrianglesFromSelection()
+{
+	if (!ManualSpritePtr.IsValid())
+		return;
+
+	const FManualSpriteGeometry& Geometry = ManualSpritePtr->ManualGeometry;
+	
+	// Проверяем каждый выделенный треугольник
+	for (int32 i = SelectedTriangles.Num() - 1; i >= 0; i--)
+	{
+		const int32 TriangleIndex = SelectedTriangles[i];
+		
+		if (TriangleIndex >= 0 && TriangleIndex < Geometry.Triangles.Num())
+		{
+			const FManualSpriteTriangle& Triangle = Geometry.Triangles[TriangleIndex];
+			
+			// Проверяем, выделены ли все вершины треугольника
+			const bool bAllVerticesSelected = 
+				SelectedVertices.Contains(Triangle.VertexIndex0) &&
+				SelectedVertices.Contains(Triangle.VertexIndex1) &&
+				SelectedVertices.Contains(Triangle.VertexIndex2);
+			
+			// Если не все вершины выделены - убираем треугольник из выделения
+			if (!bAllVerticesSelected)
+			{
+				SelectedTriangles.RemoveAt(i);
+			}
+		}
+	}
 }
 
 void ManualSpriteEditorViewport::CancelBoxSelection()
@@ -1826,10 +2480,10 @@ bool ManualSpriteEditorViewport::IsEdgeIntersecting(int32 VertexA, int32 VertexB
 }
 
 void ManualSpriteEditorViewport::DrawTriangleEdge(FCanvas* Canvas, const FVector2D& StartPos, const FVector2D& EndPos, 
-                                                 int32 VertexA, int32 VertexB, const FLinearColor& BaseColor) const
+												 int32 VertexA, int32 VertexB, const FLinearColor& EdgeColorParam, float Thickness) const
 {
-	FLinearColor EdgeColor = BaseColor;
-	float LineThickness = 1.0f;
+	FLinearColor EdgeColor = EdgeColorParam;
+	float LineThickness = Thickness;
 	
 	if (IsEdgeIntersecting(VertexA, VertexB))
 	{
@@ -1837,7 +2491,7 @@ void ManualSpriteEditorViewport::DrawTriangleEdge(FCanvas* Canvas, const FVector
 		const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(Time * 8.0f);
 		
 		EdgeColor = FLinearColor(1.0f, 0.0f, 0.0f, FMath::Lerp(0.7f, 1.0f, PulseAlpha));
-		LineThickness = 2.5f;
+		LineThickness = FMath::Max(Thickness, 2.5f);
 	}
 	
 	FCanvasLineItem LineItem(StartPos, EndPos);
