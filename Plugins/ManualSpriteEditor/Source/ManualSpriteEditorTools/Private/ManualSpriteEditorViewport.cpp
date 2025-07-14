@@ -123,9 +123,6 @@ void ManualSpriteEditorViewport::SetManualSprite(UManualSprite* InManualSprite)
 {
 	ManualSpritePtr = InManualSprite;
 	
-	// ИСПРАВЛЕНИЕ: НЕ создаем 3D render component, работаем только с 2D
-	SpriteRenderComponent.Reset();
-	
 	// Сброс флага масштабирования для пересчёта
 	bSpriteZoomed = false;
 	// Инвалидируем кэш при смене спрайта
@@ -1238,19 +1235,6 @@ void ManualSpriteEditorViewport::SelectAllVertices()
 	for (int32 i = 0; i < ManualSpritePtr->ManualGeometry.Vertices.Num(); i++)
 	{
 		SelectedVertices.Add(i);
-	}
-}
-
-void ManualSpriteEditorViewport::SelectAllTriangles()
-{
-	if (!ManualSpritePtr.IsValid())
-		return;
-
-	SelectedTriangles.Empty();
-	SelectedVertices.Empty();
-	for (int32 i = 0; i < ManualSpritePtr->ManualGeometry.Triangles.Num(); i++)
-	{
-		SelectedTriangles.Add(i);
 	}
 }
 

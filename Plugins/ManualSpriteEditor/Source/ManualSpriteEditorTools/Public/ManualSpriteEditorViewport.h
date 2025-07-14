@@ -15,14 +15,6 @@ class SViewport;
 class FSceneViewport;
 class ManualSpriteEditorViewport;
 
-// Константы для viewport
-namespace FManualSpriteViewportUtils
-{
-   const FVector PaperAxisX(1.0f, 0.0f, 0.0f);
-   const FVector PaperAxisY(0.0f, 0.0f, 1.0f);
-   const FVector PaperAxisZ(0.0f, 1.0f, 0.0f);
-}
-
 /**
 * Viewport widget для редактирования Manual Sprite - ИСПРАВЛЕННАЯ ВЕРСИЯ
 */
@@ -118,7 +110,6 @@ public:
    void SetSelectedVertices(const TArray<int32>& NewSelection);
    void SetSelectedTriangles(const TArray<int32>& NewSelection);
    void SelectAllVertices();
-   void SelectAllTriangles();
    void ClearSelection();
    bool HasSelection() const { return SelectedVertices.Num() > 0 || SelectedTriangles.Num() > 0; }
 	/** Проверка возможности перетаскивания с данной позиции */
@@ -331,9 +322,6 @@ private:
 
    /** Manual Sprite для отображения */
    TWeakObjectPtr<UManualSprite> ManualSpritePtr;
-
-   /** Render component для спрайта (НЕ ИСПОЛЬЗУЕТСЯ в исправленной версии) */
-   TWeakObjectPtr<UPrimitiveComponent> SpriteRenderComponent;
    
    /** Параметры отображения */
    float ZoomFactor;
