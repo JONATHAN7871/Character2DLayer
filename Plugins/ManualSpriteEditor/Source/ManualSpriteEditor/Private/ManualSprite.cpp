@@ -9,7 +9,7 @@ UManualSprite::UManualSprite()
 	bUseManualGeometry = true;
 	
 	// НОВОЕ: Инициализация настроек пивота
-	PivotPlacement = EManualSpritePivotPlacement::Center;
+	PivotPlacement = EManualSpritePivotPlacement::Custom;
 	CustomPivotOffset = FVector::ZeroVector;
 	MeshScale = 1.0f;
 	bShowPivotPreview = true;
