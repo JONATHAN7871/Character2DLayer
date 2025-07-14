@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ManualSpriteMeshGeneratorOptions.h"
 #include "PaperSprite.h"
 #include "Engine/Texture2D.h"
 #include "ManualSprite.generated.h"
@@ -139,6 +140,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Manual Geometry")
 	bool bUseManualGeometry;
 
+	// НОВОЕ: Настройки пивота и генерации меша для превью
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Generation", meta = (EditCondition = "bUseManualGeometry"))
+	EManualSpritePivotPlacement PivotPlacement;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Generation", meta = (EditCondition = "bUseManualGeometry && PivotPlacement == EManualSpritePivotPlacement::Custom"))
+	FVector CustomPivotOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Generation", meta = (EditCondition = "bUseManualGeometry", ClampMin = "0.001", UIMin = "0.001", UIMax = "10.0"))
+	float MeshScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Generation", meta = (EditCondition = "bUseManualGeometry"))
+	bool bShowPivotPreview;
+
+	// НОВОЕ: Методы для работы с пивотом
+	UFUNCTION(BlueprintCallable, Category = "Mesh Generation")
+	FVector CalculateCurrentPivotPosition() const;
+	
+	// Уведомление об изменении настроек пивота
+	void OnPivotSettingsChanged();
+	
 	// Ручная геометрия спрайта
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Manual Geometry", meta = (EditCondition = "bUseManualGeometry"))
 	FManualSpriteGeometry ManualGeometry;

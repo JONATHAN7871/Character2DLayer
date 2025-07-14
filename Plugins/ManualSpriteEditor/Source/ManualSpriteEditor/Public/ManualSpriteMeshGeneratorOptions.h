@@ -24,7 +24,7 @@ enum class EManualSpritePivotPlacement : uint8
  * Настройки генератора мешей для Manual Sprite
  */
 UCLASS(config = EditorPerProjectUserSettings, DefaultConfig, DisplayName = "Manual Sprite Mesh Generator")
-class MANUALSPRITEEDITORTOOLS_API UManualSpriteMeshGeneratorOptions : public UObject
+class MANUALSPRITEEDITOR_API UManualSpriteMeshGeneratorOptions : public UObject
 {
     GENERATED_BODY()
 
@@ -46,10 +46,6 @@ public:
     UPROPERTY(EditAnywhere, Config, Category = "Transform", 
              meta = (ClampMin = "0.001", UIMin = "0.001", UIMax = "10.0"))
     float MeshScale = 1.0f;
-
-    /** Дополнительное смещение всего меша */
-    UPROPERTY(EditAnywhere, Config, Category = "Transform")
-    FVector MeshOffset = FVector::ZeroVector;
 
     /** Путь для сохранения ассетов */
     UPROPERTY(EditAnywhere, Config, Category = "Save", meta = (ContentDir))

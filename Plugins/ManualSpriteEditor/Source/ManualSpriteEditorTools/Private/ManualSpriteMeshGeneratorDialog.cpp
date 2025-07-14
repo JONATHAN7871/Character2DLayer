@@ -143,24 +143,6 @@ void SManualSpriteMeshGeneratorDialog::Construct(const FArguments& InArgs)
             .SpinBoxStyle(&FCoreStyle::Get().GetWidgetStyle<FSpinBoxStyle>("SpinBox"))
         ]
 
-        // Смещение меша
-        + SScrollBox::Slot().Padding(8, 4)
-        [
-            SNew(STextBlock)
-            .Text(LOCTEXT("MeshOffset", "Mesh Offset"))
-            .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-        ]
-        + SScrollBox::Slot().Padding(8, 2, 8, 8)
-        [
-            SNew(SVectorInputBox)
-            .X_Lambda([this]() { return MeshOffset.X; })
-            .Y_Lambda([this]() { return MeshOffset.Y; })
-            .Z_Lambda([this]() { return MeshOffset.Z; })
-            .OnXCommitted_Lambda([this](float NewValue, ETextCommit::Type) { MeshOffset.X = NewValue; })
-            .OnYCommitted_Lambda([this](float NewValue, ETextCommit::Type) { MeshOffset.Y = NewValue; })
-            .OnZCommitted_Lambda([this](float NewValue, ETextCommit::Type) { MeshOffset.Z = NewValue; })
-        ]
-
         // Имя ассета
         + SScrollBox::Slot().Padding(8, 4)
         [
@@ -322,35 +304,54 @@ void SManualSpriteMeshGeneratorDialog::InitializeFromSettings()
 
 void SManualSpriteMeshGeneratorDialog::LoadSettings()
 {
-    const UManualSpriteMeshGeneratorOptions* Settings = GetDefault<UManualSpriteMeshGeneratorOptions>();
-    
-    SelectedMeshType = Settings->MeshType;
-    SelectedPivotPlacement = Settings->PivotPlacement;
-    CustomPivotOffset = Settings->CustomPivotOffset;
-    MeshScale = Settings->MeshScale;
-    MeshOffset = Settings->MeshOffset;
-    AssetName = Settings->AssetBaseName;
-    SavePath = Settings->SavePath.Path;
-    bCreateMaterial = Settings->bCreateMaterial;
-    bCreateUnlitMaterial = Settings->bCreateUnlitMaterial;
-    bTwoSidedMaterial = Settings->bTwoSidedMaterial;
+    // Загружаем из ManualSprite если доступно, иначе из глобальных настроек
+    if (ManualSprite)
+    {
+        SelectedMeshType = EManualSpriteMeshType::StaticMesh; // Можно добавить в ManualSprite
+        SelectedPivotPlacement = ManualSprite->PivotPlacement;
+        CustomPivotOffset = ManualSprite->CustomPivotOffset;
+        MeshScale = ManualSprite->MeshScale;
+        AssetName = ManualSprite->GetName() + TEXT("_Mesh");
+        bCreateMaterial = true;
+        bCreateUnlitMaterial = true;
+        bTwoSidedMaterial = true;
+    }
+    else
+    {
+        // Fallback к глобальным настройкам
+        const UManualSpriteMeshGeneratorOptions* Settings = GetDefault<UManualSpriteMeshGeneratorOptions>();
+        SelectedMeshType = Settings->MeshType;
+        SelectedPivotPlacement = Settings->PivotPlacement;
+        CustomPivotOffset = Settings->CustomPivotOffset;
+        MeshScale = Settings->MeshScale;
+        AssetName = Settings->AssetBaseName;
+    }
+	
+    SavePath = GetDefault<UManualSpriteMeshGeneratorOptions>()->SavePath.Path;
 }
 
 void SManualSpriteMeshGeneratorDialog::SaveSettings()
 {
+    // Сохраняем в ManualSprite
+    if (ManualSprite)
+    {
+        ManualSprite->PivotPlacement = SelectedPivotPlacement;
+        ManualSprite->CustomPivotOffset = CustomPivotOffset;
+        ManualSprite->MeshScale = MeshScale;
+        (void)ManualSprite->MarkPackageDirty();
+    }
+	
+    // Также сохраняем в глобальные настройки
     UManualSpriteMeshGeneratorOptions* Settings = GetMutableDefault<UManualSpriteMeshGeneratorOptions>();
-    
     Settings->MeshType = SelectedMeshType;
     Settings->PivotPlacement = SelectedPivotPlacement;
     Settings->CustomPivotOffset = CustomPivotOffset;
     Settings->MeshScale = MeshScale;
-    Settings->MeshOffset = MeshOffset;
     Settings->AssetBaseName = AssetName;
     Settings->SavePath.Path = SavePath;
     Settings->bCreateMaterial = bCreateMaterial;
     Settings->bCreateUnlitMaterial = bCreateUnlitMaterial;
     Settings->bTwoSidedMaterial = bTwoSidedMaterial;
-    
     Settings->SaveConfig();
 }
 
@@ -405,7 +406,6 @@ FReply SManualSpriteMeshGeneratorDialog::OnGenerateClicked()
     Params.PivotPlacement = SelectedPivotPlacement;
     Params.CustomPivotOffset = CustomPivotOffset;
     Params.MeshScale = MeshScale;
-    Params.MeshOffset = MeshOffset;
     Params.AssetName = AssetName;
     Params.SavePath = SavePath;
     Params.bCreateMaterial = bCreateMaterial;

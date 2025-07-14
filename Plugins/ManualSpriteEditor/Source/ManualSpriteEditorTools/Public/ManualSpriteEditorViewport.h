@@ -313,6 +313,9 @@ protected:
    /** Поиск всех пересекающихся рёбер */
    void UpdateIntersectingEdges() const;
 
+	/** Отрисовка превью пивота */
+	void DrawPivotPreview(FCanvas* Canvas, const FViewport* InViewport) const;
+
 private:
    // Preview scene для корректного рендеринга
    FPreviewScene OwnedPreviewScene;

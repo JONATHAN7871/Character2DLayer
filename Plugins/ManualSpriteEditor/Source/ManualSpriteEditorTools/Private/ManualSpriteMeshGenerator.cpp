@@ -252,7 +252,6 @@ bool ManualSpriteMeshGenerator::CreateMeshDescriptionFromSprite(UManualSprite* M
 
         // Применяем смещение пивота и дополнительное смещение
         WorldPosition -= PivotOffset;
-        WorldPosition += Params.MeshOffset;
 
         FVertexID VertexID = Builder.AppendVertex(WorldPosition);
         VertexIDs.Add(VertexID);

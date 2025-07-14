@@ -1,10 +1,18 @@
 #include "ManualSprite.h"
+
+#include "ManualSpriteMeshGeneratorOptions.h"
 #include "SpriteEditorOnlyTypes.h"
 #include "Engine/Texture2D.h"
 
 UManualSprite::UManualSprite()
 {
 	bUseManualGeometry = true;
+	
+	// НОВОЕ: Инициализация настроек пивота
+	PivotPlacement = EManualSpritePivotPlacement::Center;
+	CustomPivotOffset = FVector::ZeroVector;
+	MeshScale = 1.0f;
+	bShowPivotPreview = true;
 }
 
 #if WITH_EDITOR
@@ -333,8 +341,69 @@ void UManualSprite::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 		GenerateDefaultGeometry();
 	}
 	
+	// НОВОЕ: Обновляем превью пивота при изменении настроек
+	if (PropertyChangedEvent.Property)
+	{
+		const FName PropertyName = PropertyChangedEvent.Property->GetFName();
+		if (PropertyName == GET_MEMBER_NAME_CHECKED(UManualSprite, PivotPlacement) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UManualSprite, CustomPivotOffset) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UManualSprite, MeshScale) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UManualSprite, bShowPivotPreview))
+		{
+			// Уведомляем viewport о необходимости обновления
+			OnPivotSettingsChanged();
+		}
+	}
+	
 	// Валидируем геометрию при любых изменениях
 	ValidateGeometry();
+}
+
+void UManualSprite::OnPivotSettingsChanged()
+{
+	// Этот метод вызывается при изменении настроек пивота
+	// Viewport будет отслеживать эти изменения для обновления превью
+	UE_LOG(LogTemp, Log, TEXT("Pivot settings changed: Placement=%d, Scale=%.2f"), 
+		   (int32)PivotPlacement, MeshScale);
+}
+
+FVector UManualSprite::CalculateCurrentPivotPosition() const
+{
+	if (!bUseManualGeometry || ManualGeometry.Vertices.Num() == 0)
+	{
+		return FVector::ZeroVector;
+	}
+
+	// Вычисляем границы геометрии в 3D пространстве
+	FBox SpriteBounds(ForceInit);
+	for (const FManualSpriteVertex& Vertex : ManualGeometry.Vertices)
+	{
+		// Конвертируем 2D в 3D (Y=0, Z инвертированный)
+		SpriteBounds += FVector(Vertex.Position.X * MeshScale, 0.0f, -Vertex.Position.Y * MeshScale);
+	}
+
+	FVector PivotPos = FVector::ZeroVector;
+	
+	switch (PivotPlacement)
+	{
+	case EManualSpritePivotPlacement::Origin:
+		PivotPos = FVector::ZeroVector;
+		break;
+		
+	case EManualSpritePivotPlacement::Center:
+		PivotPos = SpriteBounds.GetCenter();
+		break;
+		
+	case EManualSpritePivotPlacement::BottomCenter:
+		PivotPos = FVector(SpriteBounds.GetCenter().X, SpriteBounds.GetCenter().Y, SpriteBounds.Min.Z);
+		break;
+		
+	case EManualSpritePivotPlacement::Custom:
+		PivotPos = CustomPivotOffset;
+		break;
+	}
+
+	return PivotPos;
 }
 
 void UManualSprite::GenerateDefaultGeometry()

@@ -11,6 +11,7 @@
 #include "Editor.h"
 #include "SViewportToolBar.h"
 #include "EditorViewportCommands.h"
+#include "ManualSpriteMeshGeneratorOptions.h"
 #include "SCommonEditorViewportToolbarBase.h"
 
 // Console variable для отладки
@@ -598,6 +599,77 @@ void ManualSpriteEditorViewport::DrawDebugGeometry(FCanvas* Canvas, const FViewp
 	{
 		DrawPastePreview(Canvas, InViewport);
 	}
+	
+	// НОВОЕ: Отрисовка превью пивота
+	if (ManualSpritePtr->bShowPivotPreview)
+	{
+		DrawPivotPreview(Canvas, InViewport);
+	}
+	
+}
+
+void ManualSpriteEditorViewport::DrawPivotPreview(FCanvas* Canvas, const FViewport* InViewport) const
+{
+	if (!ManualSpritePtr.IsValid() || !ManualSpritePtr->bUseManualGeometry)
+		return;
+
+	// Получаем позицию пивота в 3D, но показываем в 2D проекции
+	const FVector PivotPos3D = ManualSpritePtr->CalculateCurrentPivotPosition();
+	
+	// Проецируем 3D пивот обратно в 2D для отображения
+	// Учитываем, что Y=0, а Z инвертирован
+	const FVector2D PivotPos2D = FVector2D(PivotPos3D.X / ManualSpritePtr->MeshScale, -PivotPos3D.Z / ManualSpritePtr->MeshScale);
+	const FVector2D PivotScreenPos = WorldToScreen(PivotPos2D, InViewport);
+
+	// Размер крестика пивота
+	const float CrossSize = 15.0f;
+	const FLinearColor PivotColor = FLinearColor(1.0f, 0.0f, 1.0f, 1.0f); // Магента
+
+	// Рисуем крестик пивота
+	FCanvasLineItem HorizontalLine(
+		PivotScreenPos - FVector2D(CrossSize, 0),
+		PivotScreenPos + FVector2D(CrossSize, 0)
+	);
+	HorizontalLine.SetColor(PivotColor);
+	HorizontalLine.LineThickness = 3.0f;
+	Canvas->DrawItem(HorizontalLine);
+
+	FCanvasLineItem VerticalLine(
+		PivotScreenPos - FVector2D(0, CrossSize),
+		PivotScreenPos + FVector2D(0, CrossSize)
+	);
+	VerticalLine.SetColor(PivotColor);
+	VerticalLine.LineThickness = 3.0f;
+	Canvas->DrawItem(VerticalLine);
+
+	// Окружность вокруг пивота
+	const int32 CircleSegments = 16;
+	const float CircleRadius = CrossSize * 0.7f;
+	
+	for (int32 i = 0; i < CircleSegments; i++)
+	{
+		const float Angle1 = (i * 2.0f * PI) / CircleSegments;
+		const float Angle2 = ((i + 1) * 2.0f * PI) / CircleSegments;
+		
+		const FVector2D Point1 = PivotScreenPos + FVector2D(FMath::Cos(Angle1), FMath::Sin(Angle1)) * CircleRadius;
+		const FVector2D Point2 = PivotScreenPos + FVector2D(FMath::Cos(Angle2), FMath::Sin(Angle2)) * CircleRadius;
+		
+		FCanvasLineItem CircleLine(Point1, Point2);
+		CircleLine.SetColor(FLinearColor(PivotColor.R, PivotColor.G, PivotColor.B, 0.6f));
+		CircleLine.LineThickness = 2.0f;
+		Canvas->DrawItem(CircleLine);
+	}
+
+	// Подпись пивота
+	const FString PivotLabel = TEXT("PIVOT");
+	FCanvasTextItem LabelItem(
+		PivotScreenPos + FVector2D(CrossSize + 5, -8),
+		FText::FromString(PivotLabel),
+		GEngine->GetSmallFont(),
+		PivotColor
+	);
+	LabelItem.EnableShadow(FLinearColor::Black);
+	Canvas->DrawItem(LabelItem);
 }
 
 void ManualSpriteEditorViewport::DrawVertices(FCanvas* Canvas, const FViewport* InViewport) const
@@ -899,6 +971,40 @@ void ManualSpriteEditorViewport::DrawHUD(FCanvas* Canvas, const FViewport* InVie
 			GEngine->GetSmallFont(), FLinearColor::Gray);
 		TextItem.EnableShadow(FLinearColor::Black);
 		Canvas->DrawItem(TextItem);
+		CurrentY += LineHeight;
+	}
+
+	// НОВОЕ: Отображение информации о пивоте
+	if (ManualSpritePtr->bShowPivotPreview)
+	{
+		CurrentY += 5; // Отступ
+	
+		const FVector PivotPos = ManualSpritePtr->CalculateCurrentPivotPosition();
+		const FString PivotText = FString::Printf(TEXT("Pivot: (%.1f, %.1f, %.1f) Scale: %.2f"), 
+			PivotPos.X, PivotPos.Y, PivotPos.Z, ManualSpritePtr->MeshScale);
+	
+		FCanvasTextItem PivotTextItem(FVector2D(10, CurrentY), 
+			FText::FromString(PivotText), GEngine->GetSmallFont(), FColor::Cyan);
+		PivotTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(PivotTextItem);
+		CurrentY += LineHeight;
+	
+		// Информация о размещении пивота
+		FString PlacementText;
+		switch (ManualSpritePtr->PivotPlacement)
+		{
+		case EManualSpritePivotPlacement::Origin: PlacementText = TEXT("Origin"); break;
+		case EManualSpritePivotPlacement::Center: PlacementText = TEXT("Center"); break;
+		case EManualSpritePivotPlacement::BottomCenter: PlacementText = TEXT("Bottom Center"); break;
+		case EManualSpritePivotPlacement::Custom: PlacementText = FString::Printf(TEXT("Custom (%.1f, %.1f, %.1f)"), 
+			ManualSpritePtr->CustomPivotOffset.X, ManualSpritePtr->CustomPivotOffset.Y, ManualSpritePtr->CustomPivotOffset.Z); break;
+		}
+	
+		FCanvasTextItem PlacementTextItem(FVector2D(10, CurrentY), 
+			FText::FromString(FString::Printf(TEXT("Placement: %s"), *PlacementText)), 
+			GEngine->GetSmallFont(), FLinearColor::Yellow);
+		PlacementTextItem.EnableShadow(FLinearColor::Black);
+		Canvas->DrawItem(PlacementTextItem);
 		CurrentY += LineHeight;
 	}
 
