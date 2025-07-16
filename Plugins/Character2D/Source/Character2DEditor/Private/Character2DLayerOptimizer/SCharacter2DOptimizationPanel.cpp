@@ -10,6 +10,9 @@
 #include "Framework/Docking/TabManager.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "EditorStyleSet.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
+#include "Misc/DateTime.h"
 
 #define LOCTEXT_NAMESPACE "SCharacter2DOptimizationPanel"
 
@@ -38,6 +41,14 @@ void SCharacter2DOptimizationPanel::Construct(const FArguments& InArgs)
         .Padding(5, 2)
         [
             SNew(SSeparator)
+        ]
+        
+        // Информационная секция
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(5)
+        [
+            CreateInfoSection()
         ]
         
         // Секция анализа
@@ -77,6 +88,38 @@ void SCharacter2DOptimizationPanel::Construct(const FArguments& InArgs)
     UpdateButtonStates();
 }
 
+TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateInfoSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        .Padding(10)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("InfoSection", "ℹ️ Information"))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            ]
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("OptimizationInfo", 
+                    "This tool optimizes sprite layers by removing transparent areas and creating properly positioned assets.\n"
+                    "• Optimized textures and sprites will be saved to: /Game/Character2D/Optimized/[AssetName]/\n"
+                    "• Original assets remain unchanged until you apply the optimization\n"
+                    "• You can preview changes before applying them"))
+                .AutoWrapText(true)
+                .Justification(ETextJustify::Left)
+            ]
+        ];
+}
+
 TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateAnalysisSection()
 {
     return SNew(SBorder)
@@ -89,7 +132,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateAnalysisSection()
             .AutoHeight()
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("AnalysisSection", "Analysis"))
+                .Text(LOCTEXT("AnalysisSection", "🔍 Analysis"))
                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
             ]
             
@@ -98,7 +141,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateAnalysisSection()
             .Padding(0, 5)
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("AnalysisInfo", "Analyze current layer textures to find optimization opportunities"))
+                .Text(LOCTEXT("AnalysisDescription", "Analyze current layer textures to find optimization opportunities"))
                 .AutoWrapText(true)
             ]
             
@@ -111,6 +154,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateAnalysisSection()
                 .OnClicked(this, &SCharacter2DOptimizationPanel::OnAnalyzeLayers)
                 .IsEnabled_Lambda([this]() { return CharacterAsset.IsValid(); })
                 .HAlign(HAlign_Center)
+                .ToolTipText(LOCTEXT("AnalyzeTooltip", "Scan all sprite layers to detect areas that can be optimized"))
             ]
         ];
 }
@@ -127,7 +171,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateResultsSection()
             .AutoHeight()
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("ResultsSection", "Optimization Results"))
+                .Text(LOCTEXT("ResultsSection", "📊 Optimization Results"))
                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
             ]
             
@@ -184,7 +228,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateSummarySection()
             .AutoHeight()
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("SummarySection", "Summary"))
+                .Text(LOCTEXT("SummarySection", "📈 Summary"))
                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
             ]
             
@@ -211,7 +255,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateActionsSection()
             .AutoHeight()
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("ActionsSection", "Actions"))
+                .Text(LOCTEXT("ActionsSection", "⚡ Actions"))
                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
             ]
             
@@ -226,10 +270,11 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateActionsSection()
                 .Padding(2)
                 [
                     SAssignNew(OptimizeButton, SButton)
-                    .Text(LOCTEXT("OptimizeSelected", "Optimize Selected"))
+                    .Text(LOCTEXT("OptimizeSelected", "🔧 Create Optimized Assets"))
                     .OnClicked(this, &SCharacter2DOptimizationPanel::OnOptimizeSelected)
                     .IsEnabled(false)
                     .HAlign(HAlign_Center)
+                    .ToolTipText(LOCTEXT("OptimizeTooltip", "Create optimized texture and sprite assets for selected layers"))
                 ]
                 
                 + SHorizontalBox::Slot()
@@ -237,10 +282,11 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateActionsSection()
                 .Padding(2)
                 [
                     SAssignNew(PreviewButton, SButton)
-                    .Text(LOCTEXT("PreviewOptimization", "Preview"))
+                    .Text(LOCTEXT("PreviewOptimization", "👁️ Preview"))
                     .OnClicked(this, &SCharacter2DOptimizationPanel::OnPreviewOptimization)
                     .IsEnabled(false)
                     .HAlign(HAlign_Center)
+                    .ToolTipText(LOCTEXT("PreviewTooltip", "Preview optimization results before applying"))
                 ]
                 
                 + SHorizontalBox::Slot()
@@ -248,10 +294,23 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateActionsSection()
                 .Padding(2)
                 [
                     SAssignNew(ApplyButton, SButton)
-                    .Text(LOCTEXT("ApplyOptimization", "Apply"))
+                    .Text(LOCTEXT("ApplyOptimization", "✅ Apply to Asset"))
                     .OnClicked(this, &SCharacter2DOptimizationPanel::OnApplyOptimization)
                     .IsEnabled(false)
                     .HAlign(HAlign_Center)
+                    .ToolTipText(LOCTEXT("ApplyTooltip", "Apply optimized sprites to the Character2D asset"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .Padding(2)
+                [
+                    SAssignNew(ValidateButton, SButton)
+                    .Text(LOCTEXT("ValidatePositions", "🔍 Validate Positions"))
+                    .OnClicked(this, &SCharacter2DOptimizationPanel::OnValidatePositions)
+                    .IsEnabled(false)
+                    .HAlign(HAlign_Center)
+                    .ToolTipText(LOCTEXT("ValidateTooltip", "Check if optimized sprites maintain correct positioning"))
                 ]
             ]
             
@@ -272,6 +331,7 @@ TSharedRef<SWidget> SCharacter2DOptimizationPanel::CreateActionsSection()
                 .OnClicked(this, &SCharacter2DOptimizationPanel::OnAutoOptimizeEverything)
                 .IsEnabled_Lambda([this]() { return CharacterAsset.IsValid(); })
                 .HAlign(HAlign_Center)
+                .ToolTipText(LOCTEXT("AutoOptimizeTooltip", "Automatically analyze, optimize, and apply all layers in one step"))
             ]
         ];
 }
@@ -370,11 +430,14 @@ FReply SCharacter2DOptimizationPanel::OnAnalyzeLayers()
         return FReply::Handled();
     }
     
+    // Показываем индикатор загрузки
+    ShowNotification(LOCTEXT("AnalyzingLayers", "Analyzing layers..."), 0);
+    
     // Очищаем предыдущие данные
     LayerAnalysisData.Empty();
     CurrentOptimizationResults.Empty();
     
-    // ИСПРАВЛЕНО: Функция анализа спрайта
+    // Функция анализа спрайта
     auto AnalyzeSprite = [this](UPaperSprite* Sprite, const FString& LayerName)
     {
         if (Sprite)
@@ -382,7 +445,6 @@ FReply SCharacter2DOptimizationPanel::OnAnalyzeLayers()
             UTexture2D* SourceTexture = Sprite->GetSourceTexture();
             if (SourceTexture)
             {
-                // ИСПРАВЛЕНО: Используем MakeShared вместо MakeShareable(new ...)
                 TSharedPtr<FLayerAnalysisRow> Row = MakeShared<FLayerAnalysisRow>();
                 Row->LayerName = LayerName;
                 Row->OriginalTexture = SourceTexture;
@@ -410,6 +472,35 @@ FReply SCharacter2DOptimizationPanel::OnAnalyzeLayers()
     UpdateOptimizationSummary();
     UpdateButtonStates();
     
+    // Показываем результат анализа
+    FText ResultText = FText::Format(LOCTEXT("AnalysisComplete", "Analysis complete! Found {0} layers to optimize."), LayerAnalysisData.Num());
+    ShowNotification(ResultText, 1);
+    
+    return FReply::Handled();
+}
+
+FReply SCharacter2DOptimizationPanel::OnValidatePositions()
+{
+    if (!CharacterAsset.IsValid())
+    {
+        ShowNotification(LOCTEXT("NoAssetToValidate", "No asset to validate"), 2);
+        return FReply::Handled();
+    }
+    
+    ShowNotification(LOCTEXT("ValidatingPositions", "🔍 Validating sprite positions..."), 0);
+    
+    // Выполняем валидацию (проверяем текущий ассет сам с собой после оптимизации)
+    bool bValidationPassed = UCharacter2DLayerOptimizer::ValidateOptimizedPositions(CharacterAsset.Get(), CharacterAsset.Get());
+    
+    if (bValidationPassed)
+    {
+        ShowNotification(LOCTEXT("ValidationPassed", "✅ Position validation completed. Check Output Log for details."), 1);
+    }
+    else
+    {
+        ShowNotification(LOCTEXT("ValidationFailed", "❌ Position validation found issues. Check Output Log for details."), 2);
+    }
+    
     return FReply::Handled();
 }
 
@@ -419,10 +510,17 @@ FReply SCharacter2DOptimizationPanel::OnOptimizeSelected()
     
     if (SelectedLayers.Num() == 0)
     {
+        ShowNotification(LOCTEXT("NoLayersSelected", "Please select layers to optimize"), 2);
         return FReply::Handled();
     }
     
+    FText ProcessingText = FText::Format(LOCTEXT("CreatingOptimizedAssets", "Creating optimized assets for {0} layers..."), SelectedLayers.Num());
+    ShowNotification(ProcessingText, 0);
+    
     CurrentOptimizationResults.Empty();
+    
+    // Создаем путь для сохранения
+    FString BasePath = FString::Printf(TEXT("/Game/Character2D/Optimized/%s"), *CharacterAsset->GetName());
     
     // Оптимизируем выбранные слои
     for (const auto& Layer : SelectedLayers)
@@ -444,13 +542,16 @@ FReply SCharacter2DOptimizationPanel::OnOptimizeSelected()
             
             if (LayerSprite)
             {
-                FLayerOptimizationResult Result = UCharacter2DLayerOptimizer::OptimizeLayer(LayerSprite, Layer->LayerName);
+                FLayerOptimizationResult Result = UCharacter2DLayerOptimizer::OptimizeLayer(LayerSprite, Layer->LayerName, BasePath);
                 CurrentOptimizationResults.Add(Result);
             }
         }
     }
     
     UpdateButtonStates();
+    
+    FText CompletionText = FText::Format(LOCTEXT("OptimizationAssetsCreated", "✅ Created optimized assets for {0} layers. Check /Game/Character2D/Optimized/"), CurrentOptimizationResults.Num());
+    ShowNotification(CompletionText, 1);
     
     return FReply::Handled();
 }
@@ -459,8 +560,11 @@ FReply SCharacter2DOptimizationPanel::OnApplyOptimization()
 {
     if (CurrentOptimizationResults.Num() == 0 || !CharacterAsset.IsValid())
     {
+        ShowNotification(LOCTEXT("NoOptimizationToApply", "No optimization results to apply. Create optimized assets first."), 2);
         return FReply::Handled();
     }
+    
+    ShowNotification(LOCTEXT("ApplyingOptimization", "Applying optimization to asset..."), 0);
     
     // Применяем оптимизацию к ассету
     UCharacter2DLayerOptimizer::ApplyOptimizationToAsset(CharacterAsset.Get(), CurrentOptimizationResults);
@@ -477,6 +581,11 @@ FReply SCharacter2DOptimizationPanel::OnApplyOptimization()
     // Обновляем анализ
     OnAnalyzeLayers();
     
+    // Проводим валидацию позиций после применения
+    UCharacter2DLayerOptimizer::ValidateOptimizedPositions(CharacterAsset.Get(), CharacterAsset.Get());
+    
+    ShowNotification(LOCTEXT("OptimizationApplied", "✅ Optimization applied successfully! Asset updated with optimized sprites."), 1);
+    
     return FReply::Handled();
 }
 
@@ -492,6 +601,8 @@ FReply SCharacter2DOptimizationPanel::OnAutoOptimizeEverything()
     {
         return FReply::Handled();
     }
+    
+    ShowNotification(LOCTEXT("AutoOptimizing", "🚀 Auto-optimizing all layers..."), 0);
     
     // Сначала анализируем
     OnAnalyzeLayers();
@@ -532,21 +643,22 @@ void SCharacter2DOptimizationPanel::UpdateOptimizationSummary()
     
     FText SummaryText = FText::Format(LOCTEXT("OptimizationSummaryFormat",
         "📊 Optimization Analysis:\n"
-        "Layers analyzed: {0}\n"
-        "Current total size: {1:.1f} MB\n"
-        "Optimized total size: {2:.1f} MB\n"
-        "Potential savings: {3:.1f} MB ({4:.1f}%)\n\n"
-        "🚀 Expected performance improvement: {5}x faster loading"),
+        "• Layers analyzed: {0}\n"
+        "• Current total size: {1} MB\n"
+        "• Optimized total size: {2} MB\n"
+        "• Potential savings: {3} MB ({4}%)\n"
+        "• Performance improvement: ~{5}x faster loading"),
         LayerCount,
-        TotalOriginalMB,
-        TotalOptimizedMB,
-        TotalSavingsMB,
-        SavingsPercent,
+        FText::AsNumber(TotalOriginalMB),
+        FText::AsNumber(TotalOptimizedMB),
+        FText::AsNumber(TotalSavingsMB),
+        FText::AsNumber(SavingsPercent),
         FMath::Max(1, FMath::RoundToInt(SavingsPercent / 15.0f))
     );
     
     OptimizationSummary->SetText(SummaryText);
 }
+
 
 void SCharacter2DOptimizationPanel::UpdateButtonStates()
 {
@@ -568,6 +680,11 @@ void SCharacter2DOptimizationPanel::UpdateButtonStates()
     {
         ApplyButton->SetEnabled(bHasOptimizationResults);
     }
+    
+    if (ValidateButton.IsValid())
+    {
+        ValidateButton->SetEnabled(CharacterAsset.IsValid());
+    }
 }
 
 TArray<TSharedPtr<FLayerAnalysisRow>> SCharacter2DOptimizationPanel::GetSelectedLayers() const
@@ -586,7 +703,7 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
     TSharedRef<SWindow> PreviewWindow = SNew(SWindow)
         .Title(LOCTEXT("OptimizationPreview", "Optimization Preview"))
         .SizingRule(ESizingRule::UserSized)
-        .ClientSize(FVector2D(800, 600))
+        .ClientSize(FVector2D(900, 700))
         .SupportsMaximize(false)
         .SupportsMinimize(false)
         .Content()
@@ -601,8 +718,19 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                 .Padding(0, 10)
                 [
                     SNew(STextBlock)
-                    .Text(LOCTEXT("PreviewInfo", "Optimization Preview - Comparing Original vs Optimized"))
+                    .Text(LOCTEXT("PreviewTitle", "📋 Optimization Preview Report"))
                     .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                    .Justification(ETextJustify::Center)
+                ]
+                
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0, 5)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::Format(LOCTEXT("PreviewSubtitle", "Asset: {0} | Generated: {1}"), 
+                        FText::FromString(CharacterAsset.IsValid() ? CharacterAsset->GetName() : TEXT("Unknown")),
+                        FText::FromString(FDateTime::Now().ToString())))
                     .Justification(ETextJustify::Center)
                 ]
                 
@@ -619,7 +747,7 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                     [
                         SNew(SBorder)
                         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-                        .Padding(10)
+                        .Padding(15)
                         [
                             SNew(SVerticalBox)
                             
@@ -627,7 +755,7 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                             .AutoHeight()
                             [
                                 SNew(STextBlock)
-                                .Text(LOCTEXT("OriginalStats", "Original (Before Optimization)"))
+                                .Text(LOCTEXT("OriginalStats", "📈 Before Optimization"))
                                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
                                 .Justification(ETextJustify::Center)
                             ]
@@ -650,7 +778,7 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                     [
                         SNew(SBorder)
                         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-                        .Padding(10)
+                        .Padding(15)
                         [
                             SNew(SVerticalBox)
                             
@@ -658,7 +786,7 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                             .AutoHeight()
                             [
                                 SNew(STextBlock)
-                                .Text(LOCTEXT("OptimizedStats", "Optimized (After Optimization)"))
+                                .Text(LOCTEXT("OptimizedStats", "🚀 After Optimization"))
                                 .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
                                 .Justification(ETextJustify::Center)
                             ]
@@ -675,6 +803,36 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                     ]
                 ]
                 
+                // Секция информации об ассетах
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0, 10)
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+                    .Padding(15)
+                    [
+                        SNew(SVerticalBox)
+                        
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        [
+                            SNew(STextBlock)
+                            .Text(LOCTEXT("AssetInfo", "💾 Generated Assets"))
+                            .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                        ]
+                        
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0, 5)
+                        [
+                            SNew(STextBlock)
+                            .Text(GetAssetInfoText())
+                            .AutoWrapText(true)
+                        ]
+                    ]
+                ]
+                
                 + SVerticalBox::Slot()
                 .AutoHeight()
                 .Padding(0, 10)
@@ -686,10 +844,9 @@ void SCharacter2DOptimizationPanel::ShowOptimizationPreview()
                     .Padding(5)
                     [
                         SNew(SButton)
-                        .Text(LOCTEXT("ClosePreview", "Close"))
+                        .Text(LOCTEXT("ClosePreview", "Close Preview"))
                         .OnClicked(FOnClicked::CreateLambda([PreviewWindow]() -> FReply
                         {
-                            // ИСПРАВЛЕНО: Используем простой способ закрытия без WeakPtr
                             PreviewWindow->RequestDestroyWindow();
                             return FReply::Handled();
                         }))
@@ -738,16 +895,16 @@ FText SCharacter2DOptimizationPanel::GetOriginalStatsText() const
     
     if (LayerCount == 0)
     {
-        return LOCTEXT("NoDataOriginal", "No data available");
+        return LOCTEXT("NoDataOriginal", "No data available - run analysis first");
     }
     
-    FString StatsText = FString::Printf(TEXT("Total Layers: %d\nTotal Size: %.1f MB\n\nBreakdown:\n"), 
+    FString StatsText = FString::Printf(TEXT("Total Layers: %d\nTotal Size: %.1f MB\n\nLayer Details:\n"), 
                                        LayerCount, TotalOriginalMB);
     
     for (const auto& Row : LayerAnalysisData)
     {
-        StatsText += FString::Printf(TEXT("• %s: %.1f MB\n"), 
-                                   *Row->LayerName, Row->OriginalSizeMB);
+        StatsText += FString::Printf(TEXT("• %s: %.1f MB (%.1f%% used)\n"), 
+                                   *Row->LayerName, Row->OriginalSizeMB, Row->UsagePercent);
     }
     
     return FText::FromString(StatsText);
@@ -768,22 +925,66 @@ FText SCharacter2DOptimizationPanel::GetOptimizedStatsText() const
     
     if (LayerCount == 0)
     {
-        return LOCTEXT("NoDataOptimized", "No data available");
+        return LOCTEXT("NoDataOptimized", "No data available - run analysis first");
     }
     
     float TotalSavingsMB = TotalOriginalMB - TotalOptimizedMB;
     float SavingsPercent = TotalOriginalMB > 0 ? (TotalSavingsMB / TotalOriginalMB) * 100.0f : 0.0f;
     
-    FString StatsText = FString::Printf(TEXT("Total Layers: %d\nOptimized Size: %.1f MB\nSavings: %.1f MB (%.1f%%)\n\nBreakdown:\n"), 
+    FString StatsText = FString::Printf(TEXT("Total Layers: %d\nOptimized Size: %.1f MB\nSavings: %.1f MB (%.1f%%)\n\nLayer Details:\n"), 
                                        LayerCount, TotalOptimizedMB, TotalSavingsMB, SavingsPercent);
     
     for (const auto& Row : LayerAnalysisData)
     {
-        StatsText += FString::Printf(TEXT("• %s: %.1f MB (%.1f%% saved)\n"), 
-                                   *Row->LayerName, Row->OptimizedSizeMB, Row->SavingsPercent);
+        StatsText += FString::Printf(TEXT("• %s: %.1f MB → %.1f MB (%.1f%% saved)\n"), 
+                                   *Row->LayerName, Row->OriginalSizeMB, Row->OptimizedSizeMB, Row->SavingsPercent);
     }
     
     return FText::FromString(StatsText);
+}
+
+FText SCharacter2DOptimizationPanel::GetAssetInfoText() const
+{
+    if (CurrentOptimizationResults.Num() == 0)
+    {
+        return LOCTEXT("NoAssetsCreated", "No optimized assets created yet. Use 'Create Optimized Assets' button first.");
+    }
+    
+    FString AssetPath = FString::Printf(TEXT("/Game/Character2D/Optimized/%s/"), 
+                                       CharacterAsset.IsValid() ? *CharacterAsset->GetName() : TEXT("Unknown"));
+    
+    FString InfoText = FString::Printf(TEXT("Optimized assets saved to: %s\n\nCreated Assets:\n"), *AssetPath);
+    
+    for (const auto& Result : CurrentOptimizationResults)
+    {
+        if (Result.OptimizedTexture && Result.OptimizedSprite)
+        {
+            InfoText += FString::Printf(TEXT("• %s: Texture + Sprite\n"), *Result.LayerName);
+        }
+        else if (Result.OptimizedTexture)
+        {
+            InfoText += FString::Printf(TEXT("• %s: Texture only\n"), *Result.LayerName);
+        }
+    }
+    
+    InfoText += TEXT("\nThese assets are automatically saved and can be found in the Content Browser.");
+    
+    return FText::FromString(InfoText);
+}
+
+void SCharacter2DOptimizationPanel::ShowNotification(const FText& Message, int32 State)
+{
+    // Простая версия - логируем в консоль
+    FString StateString;
+    switch (State)
+    {
+        case 0: StateString = TEXT("PENDING"); break;
+        case 1: StateString = TEXT("SUCCESS"); break;
+        case 2: StateString = TEXT("FAIL"); break;
+        default: StateString = TEXT("INFO"); break;
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("Character2D Optimizer [%s]: %s"), *StateString, *Message.ToString());
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -67,6 +67,7 @@ private:
     TSharedPtr<SButton> OptimizeButton;
     TSharedPtr<SButton> ApplyButton;
     TSharedPtr<SButton> PreviewButton;
+    TSharedPtr<SButton> ValidateButton;
     
     // Обработчики событий
     FReply OnAnalyzeLayers();
@@ -74,8 +75,10 @@ private:
     FReply OnApplyOptimization();
     FReply OnPreviewOptimization();
     FReply OnAutoOptimizeEverything();
+    FReply OnValidatePositions();
     
     // Создание UI элементов
+    TSharedRef<SWidget> CreateInfoSection();
     TSharedRef<SWidget> CreateAnalysisSection();
     TSharedRef<SWidget> CreateResultsSection();
     TSharedRef<SWidget> CreateActionsSection();
@@ -98,4 +101,10 @@ private:
     
     // Получение текста статистики после оптимизации  
     FText GetOptimizedStatsText() const;
+    
+    // Получение информации о созданных ассетах
+    FText GetAssetInfoText() const;
+    
+    // Показ уведомлений (простая версия)
+    void ShowNotification(const FText& Message, int32 State = 0);
 };

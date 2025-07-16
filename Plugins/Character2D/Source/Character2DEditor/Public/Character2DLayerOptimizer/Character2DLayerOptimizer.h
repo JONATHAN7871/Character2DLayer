@@ -5,7 +5,7 @@
 #include "PaperSprite.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Character2DAsset.h"
-#include "SpriteEditorOnlyTypes.h"  // ДОБАВЛЕНО: для FSpriteAssetInitParameters
+#include "SpriteEditorOnlyTypes.h"  // для FSpriteAssetInitParameters
 #include "Character2DLayerOptimizer.generated.h"
 
 USTRUCT(BlueprintType)
@@ -45,6 +45,17 @@ struct FCharacter2DLayerPositionData
     FVector2D GetCorrectedPosition() const
     {
         return FVector2D(ContentBounds.Min.X, ContentBounds.Min.Y);
+    }
+    
+    // Вычисляет смещение центра обрезанной области относительно центра оригинала
+    FVector2D GetCenterOffset() const
+    {
+        FVector2D OriginalCenter = OriginalCanvasSize * 0.5f;
+        FVector2D UsedCenter = FVector2D(
+            ContentBounds.Min.X + ContentBounds.Width() * 0.5f,
+            ContentBounds.Min.Y + ContentBounds.Height() * 0.5f
+        );
+        return UsedCenter - OriginalCenter;
     }
 };
 
@@ -97,19 +108,26 @@ public:
     UFUNCTION(CallInEditor, Category="Character2D Optimization", BlueprintCallable)
     static TArray<FLayerOptimizationResult> OptimizeLayeredCharacter(UCharacter2DAsset* Asset);
     
-    // Оптимизация отдельного слоя
+    // Оптимизация отдельного слоя (новая версия с сохранением)
     UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
-    static FLayerOptimizationResult OptimizeLayer(UPaperSprite* LayerSprite, const FString& LayerName);
+    static FLayerOptimizationResult OptimizeLayer(UPaperSprite* LayerSprite, const FString& LayerName, const FString& OptimizedBasePath = TEXT("/Game/Character2D/Optimized"));
     
     // Поиск границ содержимого
     UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
     static FIntRect FindUsedBounds(UTexture2D* Texture);
     
-    // Создание оптимизированной текстуры
+    // Создание и сохранение оптимизированной текстуры как ассета
+    UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
+    static UTexture2D* CreateAndSaveOptimizedTexture(UTexture2D* SourceTexture, FIntRect UsedRegion, const FString& LayerName, const FString& BasePath);
+    
+    // Создание и сохранение оптимизированного спрайта как ассета (исправленное позиционирование)
+    UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
+    static UPaperSprite* CreateAndSaveOptimizedSprite(const FLayerOptimizationResult& OptimizationResult, const FString& BasePath);
+    
+    // Старые функции для обратной совместимости (создают временные объекты)
     UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
     static UTexture2D* CreateOptimizedTexture(UTexture2D* SourceTexture, FIntRect UsedRegion, const FString& LayerName);
     
-    // Создание оптимизированного спрайта с правильным позиционированием
     UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
     static UPaperSprite* CreateOptimizedSprite(const FLayerOptimizationResult& OptimizationResult);
     
@@ -117,9 +135,13 @@ public:
     UFUNCTION(CallInEditor, Category="Character2D Optimization", BlueprintCallable)
     static void ApplyOptimizationToAsset(UCharacter2DAsset* Asset, const TArray<FLayerOptimizationResult>& OptimizationResults);
     
-    // Валидация позиций
+    // Валидация позиций (с подробным логированием)
     UFUNCTION(BlueprintCallable, Category="Character2D Optimization")
     static bool ValidateOptimizedPositions(UCharacter2DAsset* OriginalAsset, UCharacter2DAsset* OptimizedAsset);
+    
+    // Отладочная функция для проверки позиционирования спрайта
+    UFUNCTION(BlueprintCallable, Category="Character2D Optimization", CallInEditor)
+    static void DebugSpritePositioning(UPaperSprite* OriginalSprite, UPaperSprite* OptimizedSprite, const FString& LayerName);
     
     // Вспомогательные функции
     static TArray<FColor> GetTexturePixelData(UTexture2D* Texture);

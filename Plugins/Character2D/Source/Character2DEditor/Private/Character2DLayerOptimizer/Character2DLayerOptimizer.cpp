@@ -1,11 +1,13 @@
 #include "Character2DLayerOptimizer/Character2DLayerOptimizer.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Materials/MaterialInterface.h"
 #include "Engine/Texture2D.h"
 #include "PaperSprite.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
 #include "HAL/PlatformFileManager.h"
-#include "ImageUtils.h"
+#include "Misc/DateTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCharacter2DOptimizer, Log, All);
 
@@ -21,48 +23,17 @@ TArray<FLayerOptimizationResult> UCharacter2DLayerOptimizer::OptimizeLayeredChar
     
     UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Starting optimization for asset: %s"), *Asset->GetName());
     
-    // Анализируем каждый слой
-    if (Asset->SpriteStructure.Body.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Body.Sprite, TEXT("Body")));
-    }
+    const FString BaseOptimizedPath = FString::Printf(TEXT("/Game/Character2D/Optimized/%s"), *Asset->GetName());
     
-    if (Asset->SpriteStructure.Arms.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Arms.Sprite, TEXT("Arms")));
-    }
+    if (Asset->SpriteStructure.Body.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Body.Sprite, TEXT("Body"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Arms.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Arms.Sprite, TEXT("Arms"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Head.Head.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Head.Sprite, TEXT("Head"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Head.Eyes.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyes.Sprite, TEXT("Eyes"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Head.Eyebrows.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyebrows.Sprite, TEXT("Eyebrows"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Head.Eyelids.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyelids.Sprite, TEXT("Eyelids"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Head.Mouth.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Mouth.Sprite, TEXT("Mouth"), BaseOptimizedPath));
+    if (Asset->SpriteStructure.Shadow.Sprite) Results.Add(OptimizeLayer(Asset->SpriteStructure.Shadow.Sprite, TEXT("Shadow"), BaseOptimizedPath));
     
-    if (Asset->SpriteStructure.Head.Head.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Head.Sprite, TEXT("Head")));
-    }
-    
-    if (Asset->SpriteStructure.Head.Eyes.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyes.Sprite, TEXT("Eyes")));
-    }
-    
-    if (Asset->SpriteStructure.Head.Eyebrows.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyebrows.Sprite, TEXT("Eyebrows")));
-    }
-    
-    if (Asset->SpriteStructure.Head.Eyelids.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Eyelids.Sprite, TEXT("Eyelids")));
-    }
-    
-    if (Asset->SpriteStructure.Head.Mouth.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Head.Mouth.Sprite, TEXT("Mouth")));
-    }
-    
-    if (Asset->SpriteStructure.Shadow.Sprite)
-    {
-        Results.Add(OptimizeLayer(Asset->SpriteStructure.Shadow.Sprite, TEXT("Shadow")));
-    }
-    
-    // Подсчитываем общую статистику
     float TotalOriginalMB = 0;
     float TotalOptimizedMB = 0;
     
@@ -81,58 +52,84 @@ TArray<FLayerOptimizationResult> UCharacter2DLayerOptimizer::OptimizeLayeredChar
     return Results;
 }
 
-FLayerOptimizationResult UCharacter2DLayerOptimizer::OptimizeLayer(UPaperSprite* LayerSprite, const FString& LayerName)
+FLayerOptimizationResult UCharacter2DLayerOptimizer::OptimizeLayer(UPaperSprite* LayerSprite, const FString& LayerName, const FString& OptimizedBasePath)
 {
     FLayerOptimizationResult Result;
     Result.LayerName = LayerName;
-    
-    if (!LayerSprite)
+
+    if (!LayerSprite || !LayerSprite->GetSourceTexture())
     {
-        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Layer %s: Invalid sprite"), *LayerName);
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Layer %s: Invalid sprite or source texture."), *LayerName);
         return Result;
     }
     
-    // Получаем текстуру из спрайта
+    // Проверяем, что есть "запеченные" данные рендера
+    if (LayerSprite->BakedRenderData.IsEmpty())
+    {
+       // Попытаемся пересобрать данные, если их нет. Это может помочь для свежесозданных спрайтов.
+#if WITH_EDITOR
+       LayerSprite->RebuildRenderData();
+       if (LayerSprite->BakedRenderData.IsEmpty())
+       {
+            UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Layer %s: Sprite has no BakedRenderData. Cannot determine geometry. Try re-saving the sprite."), *LayerName);
+            return Result;
+       }
+#else
+       return Result;
+#endif
+    }
+    
     UTexture2D* SourceTexture = LayerSprite->GetSourceTexture();
-    if (!SourceTexture)
+    Result.OriginalTexture = SourceTexture;
+    const FVector2D OriginalCanvasSize(SourceTexture->GetSizeX(), SourceTexture->GetSizeY());
+    
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Optimizing layer: %s (using Baked Render Data)"), *LayerName);
+
+    // --- 1. Находим границы по "запеченным" данным рендера ---
+    FBox2D GeometryBounds(EForceInit::ForceInit); // Границы вершин (в мировых юнитах от пивота)
+    FBox2D UvBounds(EForceInit::ForceInit);       // Границы UV (в нормализованных координатах 0-1)
+
+    for (const FVector4& BakedVertex : LayerSprite->BakedRenderData)
     {
-        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Layer %s: No source texture"), *LayerName);
-        return Result;
+        GeometryBounds += FVector2D(BakedVertex.X, BakedVertex.Y);
+        UvBounds += FVector2D(BakedVertex.Z, BakedVertex.W);
     }
     
-    Result.OriginalTexture = SourceTexture;
-    
-    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Optimizing layer: %s (Size: %dx%d)"), 
-           *LayerName, SourceTexture->GetSizeX(), SourceTexture->GetSizeY());
-    
-    // Находим реально используемую область
-    FIntRect UsedBounds = FindUsedBounds(SourceTexture);
+    if (!GeometryBounds.bIsValid || !UvBounds.bIsValid)
+    {
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Layer %s: No valid geometry or UV data found in BakedRenderData."), *LayerName);
+        return Result;
+    }
+
+    // --- 2. Определяем область для обрезки в пикселях на основе UV ---
+    FIntRect UsedBounds(
+        FMath::FloorToInt(UvBounds.Min.X * OriginalCanvasSize.X),
+        FMath::FloorToInt(UvBounds.Min.Y * OriginalCanvasSize.Y),
+        FMath::CeilToInt(UvBounds.Max.X * OriginalCanvasSize.X),
+        FMath::CeilToInt(UvBounds.Max.Y * OriginalCanvasSize.Y)
+    );
+
+    // Добавим небольшой padding, чтобы не обрезать сглаженные края
+    const int32 Padding = 2;
+    UsedBounds.Min.X = FMath::Max(0, UsedBounds.Min.X - Padding);
+    UsedBounds.Min.Y = FMath::Max(0, UsedBounds.Min.Y - Padding);
+    UsedBounds.Max.X = FMath::Min(SourceTexture->GetSizeX(), UsedBounds.Max.X + Padding);
+    UsedBounds.Max.Y = FMath::Min(SourceTexture->GetSizeY(), UsedBounds.Max.Y + Padding);
+
     Result.UsedRegion = UsedBounds;
     
-    // Вычисляем размеры
-    int32 OriginalPixels = SourceTexture->GetSizeX() * SourceTexture->GetSizeY();
-    int32 UsedPixels = UsedBounds.Width() * UsedBounds.Height();
+    // --- 3. Вычисляем статистику и создаем ассеты ---
+    Result.OptimizedTexture = CreateAndSaveOptimizedTexture(SourceTexture, UsedBounds, LayerName, OptimizedBasePath);
     
-    Result.OriginalSizeMB = (OriginalPixels * 4) / (1024.0f * 1024.0f);
-    Result.OptimizedSizeMB = (UsedPixels * 4) / (1024.0f * 1024.0f);
-    Result.SavingsPercent = Result.OriginalSizeMB > 0 ? ((Result.OriginalSizeMB - Result.OptimizedSizeMB) / Result.OriginalSizeMB) * 100.0f : 0.0f;
-    
-    // Создаем оптимизированную текстуру
-    Result.OptimizedTexture = CreateOptimizedTexture(SourceTexture, UsedBounds, LayerName);
-    
-    // Сохраняем данные позиционирования
-    Result.PositionData.OriginalCanvasSize = FVector2D(SourceTexture->GetSizeX(), SourceTexture->GetSizeY());
+    // Сохраняем данные для создания спрайта
+    Result.PositionData.OriginalCanvasSize = OriginalCanvasSize;
     Result.PositionData.ContentBounds = UsedBounds;
-    Result.PositionData.PositionOffset = Result.PositionData.GetCorrectedPosition();
-    Result.PositionData.OptimizedTexture = Result.OptimizedTexture;
+    // Смещение ЦЕНТРА видимой геометрии относительно ПИВОТА оригинального спрайта (в мировых юнитах).
+    // Это именно то смещение, которое нам нужно компенсировать.
+    Result.PositionData.PositionOffset = GeometryBounds.GetCenter(); 
     
-    // Создаем оптимизированный спрайт
-    Result.OptimizedSprite = CreateOptimizedSprite(Result);
-    
-    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Layer %s: %.1f MB -> %.1f MB (%.1f%% savings), Bounds: (%d,%d,%d,%d)"), 
-           *LayerName, Result.OriginalSizeMB, Result.OptimizedSizeMB, Result.SavingsPercent,
-           UsedBounds.Min.X, UsedBounds.Min.Y, UsedBounds.Max.X, UsedBounds.Max.Y);
-    
+    Result.OptimizedSprite = CreateAndSaveOptimizedSprite(Result, OptimizedBasePath);
+
     return Result;
 }
 
@@ -180,11 +177,9 @@ FIntRect UCharacter2DLayerOptimizer::FindUsedBounds(UTexture2D* Texture)
     if (!FoundContent)
     {
         UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("No non-transparent content found, using center region"));
-        // Если ничего не найдено, возвращаем центральную область
         return FIntRect(Width/2 - 50, Height/2 - 50, Width/2 + 50, Height/2 + 50);
     }
     
-    // Добавляем небольшой padding
     int32 Padding = 4;
     MinX = FMath::Max(0, MinX - Padding);
     MinY = FMath::Max(0, MinY - Padding);
@@ -194,14 +189,13 @@ FIntRect UCharacter2DLayerOptimizer::FindUsedBounds(UTexture2D* Texture)
     return FIntRect(MinX, MinY, MaxX + 1, MaxY + 1);
 }
 
-UTexture2D* UCharacter2DLayerOptimizer::CreateOptimizedTexture(UTexture2D* SourceTexture, FIntRect UsedRegion, const FString& LayerName)
+UTexture2D* UCharacter2DLayerOptimizer::CreateAndSaveOptimizedTexture(UTexture2D* SourceTexture, FIntRect UsedRegion, const FString& LayerName, const FString& BasePath)
 {
     if (!SourceTexture)
     {
         return nullptr;
     }
     
-    // Создаем новую текстуру только с используемой областью
     int32 NewWidth = UsedRegion.Width();
     int32 NewHeight = UsedRegion.Height();
     
@@ -211,14 +205,12 @@ UTexture2D* UCharacter2DLayerOptimizer::CreateOptimizedTexture(UTexture2D* Sourc
         return nullptr;
     }
     
-    // Получаем исходные пиксели
     TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
     if (SourcePixels.Num() == 0)
     {
         return nullptr;
     }
     
-    // Извлекаем пиксели только из нужной области
     TArray<FColor> OptimizedPixels;
     OptimizedPixels.Reserve(NewWidth * NewHeight);
     
@@ -239,96 +231,150 @@ UTexture2D* UCharacter2DLayerOptimizer::CreateOptimizedTexture(UTexture2D* Sourc
         }
     }
     
-    // Создаем новую текстуру
-    FString OptimizedAssetName = FString::Printf(TEXT("%s_Optimized"), *LayerName);
-    UTexture2D* OptimizedTexture = CreateTextureFromPixels(OptimizedPixels, NewWidth, NewHeight, OptimizedAssetName);
+    FString TextureAssetPath = FString::Printf(TEXT("%s/Textures/T_%s_Optimized"), *BasePath, *LayerName);
+    FString PackageName = TextureAssetPath;
+    FPackageName::TryConvertFilenameToLongPackageName(PackageName, PackageName);
     
-    if (OptimizedTexture)
+    UPackage* Package = CreatePackage(*PackageName);
+    Package->FullyLoad();
+    
+    FString TextureName = FString::Printf(TEXT("T_%s_Optimized"), *LayerName);
+    UTexture2D* NewTexture = NewObject<UTexture2D>(Package, FName(*TextureName), RF_Public | RF_Standalone);
+    
+    if (!NewTexture)
     {
-        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Created optimized texture for %s: %dx%d"), *LayerName, NewWidth, NewHeight);
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Failed to create optimized texture object"));
+        return nullptr;
     }
     
-    return OptimizedTexture;
+    NewTexture->SetPlatformData(new FTexturePlatformData());
+    NewTexture->GetPlatformData()->SizeX = NewWidth;
+    NewTexture->GetPlatformData()->SizeY = NewHeight;
+    NewTexture->GetPlatformData()->PixelFormat = PF_B8G8R8A8;
+    
+    FTexture2DMipMap* Mip = new FTexture2DMipMap();
+    NewTexture->GetPlatformData()->Mips.Add(Mip);
+    Mip->SizeX = NewWidth;
+    Mip->SizeY = NewHeight;
+    
+    Mip->BulkData.Lock(LOCK_READ_WRITE);
+    void* TextureData = Mip->BulkData.Realloc(OptimizedPixels.Num() * sizeof(FColor));
+    FMemory::Memcpy(TextureData, OptimizedPixels.GetData(), OptimizedPixels.Num() * sizeof(FColor));
+    Mip->BulkData.Unlock();
+    
+    NewTexture->Source.Init(NewWidth, NewHeight, 1, 1, TSF_BGRA8, (uint8*)OptimizedPixels.GetData());
+    
+    NewTexture->SRGB = SourceTexture->SRGB;
+    NewTexture->CompressionSettings = SourceTexture->CompressionSettings;
+    NewTexture->Filter = SourceTexture->Filter;
+    NewTexture->AddressX = SourceTexture->AddressX;
+    NewTexture->AddressY = SourceTexture->AddressY;
+    
+    NewTexture->UpdateResource();
+    Package->MarkPackageDirty();
+    
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.SaveFlags = SAVE_NoError;
+    
+    FString PackageFileName = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+    bool bSaved = UPackage::SavePackage(Package, NewTexture, *PackageFileName, SaveArgs);
+    
+    if (bSaved)
+    {
+        FAssetRegistryModule::AssetCreated(NewTexture);
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Created and saved optimized texture: %s (%dx%d)"), *TextureAssetPath, NewWidth, NewHeight);
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Failed to save optimized texture: %s"), *TextureAssetPath);
+    }
+    
+    return NewTexture;
 }
 
-UPaperSprite* UCharacter2DLayerOptimizer::CreateOptimizedSprite(const FLayerOptimizationResult& OptimizationResult)
+UPaperSprite* UCharacter2DLayerOptimizer::CreateAndSaveOptimizedSprite(const FLayerOptimizationResult& OptimizationResult, const FString& BasePath)
 {
     if (!OptimizationResult.OptimizedTexture)
     {
         UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("No optimized texture for %s"), *OptimizationResult.LayerName);
         return nullptr;
     }
-    
-    UPaperSprite* NewSprite = NewObject<UPaperSprite>();
-    if (!NewSprite)
+
+    // --- Блок создания пакета и объекта спрайта ---
+    FString SpriteAssetPath = FString::Printf(TEXT("%s/Sprites/S_%s_Optimized"), *BasePath, *OptimizationResult.LayerName);
+    FString PackageName = SpriteAssetPath;
+    FPackageName::TryConvertFilenameToLongPackageName(PackageName, PackageName);
+    UPackage* Package = CreatePackage(*PackageName);
+    Package->FullyLoad();
+    FString SpriteName = FString::Printf(TEXT("S_%s_Optimized"), *OptimizationResult.LayerName);
+    UPaperSprite* NewSprite = NewObject<UPaperSprite>(Package, FName(*SpriteName), RF_Public | RF_Standalone);
+    if (!NewSprite) { /*...*/ return nullptr; }
+
+    // --- ПОДГОТОВКА ДАННЫХ ДЛЯ ИНИЦИАЛИЗАЦИИ ---
+
+    // 1. Вычисляем пивот (этот код работает)
+    const FIntRect& CroppedBounds = OptimizationResult.UsedRegion;
+    const FVector2D& OriginalTextureSize = OptimizationResult.PositionData.OriginalCanvasSize;
+    const FVector2D OriginalPivotInPixels = OriginalTextureSize * 0.5f;
+    const FVector2D CroppedTextureTopLeftInPixels(CroppedBounds.Min.X, CroppedBounds.Min.Y);
+    const FVector2D NewPivotInPixels = OriginalPivotInPixels - CroppedTextureTopLeftInPixels;
+
+    // 2. Загружаем материал
+    const FString MaterialPath = TEXT("/Game/CoreGame/Materials/Sprite/TranslucentUnlitSpriteMaterial.TranslucentUnlitSpriteMaterial");
+    UMaterialInterface* SpriteMaterial = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
+    if (!SpriteMaterial)
     {
-        UE_LOG(LogCharacter2DOptimizer, Error, TEXT("Failed to create sprite for %s"), *OptimizationResult.LayerName);
-        return nullptr;
+         UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("   - Could not find material at path: %s. Sprite will be created with default material."), *MaterialPath);
     }
     
-    // ИСПРАВЛЕНО: Используем правильные параметры инициализации
+    // 3. Заполняем структуру FSpriteAssetInitParameters ВСЕМИ данными
     FSpriteAssetInitParameters InitParams;
     InitParams.Texture = OptimizationResult.OptimizedTexture;
-    InitParams.Offset = FIntPoint::ZeroValue;  // ИСПРАВЛЕНО: ZeroValue вместо (0,0)
-    InitParams.Dimension = FIntPoint(
-        OptimizationResult.OptimizedTexture->GetSizeX(), 
-        OptimizationResult.OptimizedTexture->GetSizeY()
-    );
+    InitParams.Offset = FIntPoint::ZeroValue; // Обрезку мы сделали сами, поэтому offset 0
+    InitParams.Dimension = FIntPoint(OptimizationResult.OptimizedTexture->GetSizeX(), OptimizationResult.OptimizedTexture->GetSizeY());
+    InitParams.DefaultMaterialOverride = SpriteMaterial;     // <<< УСТАНАВЛИВАЕМ МАТЕРИАЛ ЗДЕСЬ
+    InitParams.bOverridePixelsPerUnrealUnit = 1.0f;           // <<< УСТАНАВЛИВАЕМ PIXELS PER UNIT ЗДЕСЬ
+
+    // --- ВЫПОЛНЯЕМ ИНИЦИАЛИЗАЦИЮ И НАСТРОЙКУ ---
     
-    // ОТЛАДКА: Логируем параметры
-    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Creating sprite %s: Texture=%dx%d, Dimension=%dx%d"), 
-           *OptimizationResult.LayerName,
-           OptimizationResult.OptimizedTexture->GetSizeX(), OptimizationResult.OptimizedTexture->GetSizeY(),
-           InitParams.Dimension.X, InitParams.Dimension.Y);
+    // Инициализируем спрайт со всеми данными, КРОМЕ пивота
+    NewSprite->InitializeSprite(InitParams, false); // bRebuildData = false, чтобы затем установить пивот
+
+    // Устанавливаем пивот отдельно, так как его нет в FSpriteAssetInitParameters
+    NewSprite->SetPivotMode(ESpritePivotMode::Custom, NewPivotInPixels, true); // bRebuildData = true, чтобы "запечь" всё
     
-    // Инициализируем спрайт с базовыми параметрами
-    NewSprite->InitializeSprite(InitParams, true); // ИСПРАВЛЕНО: добавлен параметр bRebuildData
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("   - Assigned material and PixelsPerUnit via InitParams."));
+
+    // --- Отладочный вывод и сохранение ---
+    Package->MarkPackageDirty();
     
-    // ИСПРАВЛЕНО: Вычисляем корректный pivot с учетом оригинальной позиции
-    FVector2D OriginalCanvasSize = OptimizationResult.PositionData.OriginalCanvasSize;
-    FVector2D PositionOffset = OptimizationResult.PositionData.PositionOffset;
-    FVector2D TextureSize = FVector2D(InitParams.Dimension.X, InitParams.Dimension.Y);
-    
-    // Вычисляем offset в мировых координатах
-    FVector2D WorldOffset = FVector2D::ZeroVector;
-    if (OriginalCanvasSize.X > 0 && OriginalCanvasSize.Y > 0)
+    // ... остальная часть метода ...
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.SaveFlags = SAVE_NoError;
+    FString PackageFileName = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+    bool bSaved = UPackage::SavePackage(Package, NewSprite, *PackageFileName, SaveArgs);
+    if(bSaved)
     {
-        // Offset = насколько сдвинулся центр обрезанной области относительно центра оригинала
-        FVector2D OriginalCenter = OriginalCanvasSize * 0.5f;
-        FVector2D NewCenter = PositionOffset + TextureSize * 0.5f;
-        WorldOffset = NewCenter - OriginalCenter;
-        
-        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Sprite %s offset calculation: OriginalCenter=(%.1f,%.1f), NewCenter=(%.1f,%.1f), WorldOffset=(%.1f,%.1f)"), 
-               *OptimizationResult.LayerName, 
-               OriginalCenter.X, OriginalCenter.Y,
-               NewCenter.X, NewCenter.Y,
-               WorldOffset.X, WorldOffset.Y);
+        FAssetRegistryModule::AssetCreated(NewSprite);
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("✅ Successfully created and saved optimized sprite: %s"), *SpriteAssetPath);
     }
-    
-    // ИСПРАВЛЕНО: Устанавливаем pivot с учетом смещения
-    // Pivot в UE4/5 это точка вращения в нормализованных координатах (0-1)
-    FVector2D PivotPoint = FVector2D(0.5f, 0.5f); // Центр спрайта
-    
-    // Корректируем pivot если есть значительное смещение
-    if (TextureSize.X > 0 && TextureSize.Y > 0)
-    {
-        FVector2D PivotCorrection = -WorldOffset / TextureSize; // Инвертируем смещение
-        PivotPoint += PivotCorrection;
-        
-        // Ограничиваем pivot разумными пределами
-        PivotPoint.X = FMath::Clamp(PivotPoint.X, -1.0f, 2.0f);
-        PivotPoint.Y = FMath::Clamp(PivotPoint.Y, -1.0f, 2.0f);
-    }
-    
-    // Устанавливаем кастомный pivot
-    NewSprite->SetPivotMode(ESpritePivotMode::Custom, PivotPoint, true); // ИСПРАВЛЕНО: добавлен параметр bRebuildData
-    
-    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Created optimized sprite for %s: size %dx%d, pivot (%.3f, %.3f)"), 
-           *OptimizationResult.LayerName, 
-           InitParams.Dimension.X, InitParams.Dimension.Y,
-           PivotPoint.X, PivotPoint.Y);
     
     return NewSprite;
+}
+
+// Старые функции остаются для обратной совместимости
+UTexture2D* UCharacter2DLayerOptimizer::CreateOptimizedTexture(UTexture2D* SourceTexture, FIntRect UsedRegion, const FString& LayerName)
+{
+    // Вызываем новую функцию с временным путем
+    return CreateAndSaveOptimizedTexture(SourceTexture, UsedRegion, LayerName, TEXT("/Game/Character2D/Temp"));
+}
+
+UPaperSprite* UCharacter2DLayerOptimizer::CreateOptimizedSprite(const FLayerOptimizationResult& OptimizationResult)
+{
+    // Вызываем новую функцию с временным путем
+    return CreateAndSaveOptimizedSprite(OptimizationResult, TEXT("/Game/Character2D/Temp"));
 }
 
 void UCharacter2DLayerOptimizer::ApplyOptimizationToAsset(UCharacter2DAsset* Asset, const TArray<FLayerOptimizationResult>& OptimizationResults)
@@ -394,15 +440,111 @@ void UCharacter2DLayerOptimizer::ApplyOptimizationToAsset(UCharacter2DAsset* Ass
 
 bool UCharacter2DLayerOptimizer::ValidateOptimizedPositions(UCharacter2DAsset* OriginalAsset, UCharacter2DAsset* OptimizedAsset)
 {
-    // Базовая валидация - проверяем что оба ассета существуют
     if (!OriginalAsset || !OptimizedAsset)
     {
         UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("Cannot validate: One or both assets are null"));
         return false;
     }
     
-    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("Position validation passed (basic check)"));
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("🔍 Validating optimized positions for asset: %s"), *OriginalAsset->GetName());
+    
+    // Проверяем каждый слой
+    auto ValidateLayer = [](UPaperSprite* Original, UPaperSprite* Optimized, const FString& LayerName) -> bool
+    {
+        if (!Original || !Optimized)
+        {
+            UE_LOG(LogCharacter2DOptimizer, Log, TEXT("   - %s: Skipped (one sprite is null)"), *LayerName);
+            return true;
+        }
+        
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("   - %s: Checking positioning..."), *LayerName);
+        DebugSpritePositioning(Original, Optimized, LayerName);
+        return true;
+    };
+    
+    ValidateLayer(OriginalAsset->SpriteStructure.Body.Sprite, OptimizedAsset->SpriteStructure.Body.Sprite, TEXT("Body"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Arms.Sprite, OptimizedAsset->SpriteStructure.Arms.Sprite, TEXT("Arms"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Head.Head.Sprite, OptimizedAsset->SpriteStructure.Head.Head.Sprite, TEXT("Head"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Head.Eyes.Sprite, OptimizedAsset->SpriteStructure.Head.Eyes.Sprite, TEXT("Eyes"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Head.Eyebrows.Sprite, OptimizedAsset->SpriteStructure.Head.Eyebrows.Sprite, TEXT("Eyebrows"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Head.Eyelids.Sprite, OptimizedAsset->SpriteStructure.Head.Eyelids.Sprite, TEXT("Eyelids"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Head.Mouth.Sprite, OptimizedAsset->SpriteStructure.Head.Mouth.Sprite, TEXT("Mouth"));
+    ValidateLayer(OriginalAsset->SpriteStructure.Shadow.Sprite, OptimizedAsset->SpriteStructure.Shadow.Sprite, TEXT("Shadow"));
+    
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("✅ Position validation completed"));
     return true;
+}
+
+void UCharacter2DLayerOptimizer::DebugSpritePositioning(UPaperSprite* OriginalSprite, UPaperSprite* OptimizedSprite, const FString& LayerName)
+{
+    if (!OriginalSprite || !OptimizedSprite)
+    {
+        return;
+    }
+    
+    // Получаем информацию об оригинальном спрайте
+    UTexture2D* OriginalTexture = OriginalSprite->GetSourceTexture();
+    FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
+    
+    // Получаем информацию об оптимизированном спрайте
+    UTexture2D* OptimizedTexture = OptimizedSprite->GetSourceTexture();
+    FVector2D OptimizedPivot = OptimizedSprite->GetPivotPosition();
+    
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("     📏 %s Sprite Analysis:"), *LayerName);
+    
+    if (OriginalTexture)
+    {
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       Original: %dx%d, Pivot: (%.1f, %.1f)"), 
+               OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY(),
+               OriginalPivot.X, OriginalPivot.Y);
+    }
+    
+    if (OptimizedTexture)
+    {
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       Optimized: %dx%d, Pivot: (%.1f, %.1f)"), 
+               OptimizedTexture->GetSizeX(), OptimizedTexture->GetSizeY(),
+               OptimizedPivot.X, OptimizedPivot.Y);
+    }
+    
+    // Вычисляем теоретическое смещение
+    FVector2D PivotDifference = OptimizedPivot - OriginalPivot;
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       Pivot difference: (%.1f, %.1f)"), 
+           PivotDifference.X, PivotDifference.Y);
+    
+    // Анализируем pivot mode (исправлено для UE5)
+    FVector2D TempPivot;
+    ESpritePivotMode::Type OriginalPivotMode = OriginalSprite->GetPivotMode(TempPivot);
+    ESpritePivotMode::Type OptimizedPivotMode = OptimizedSprite->GetPivotMode(TempPivot);
+    
+    FString OriginalModeStr = (OriginalPivotMode == ESpritePivotMode::Custom) ? TEXT("Custom") : TEXT("Center");
+    FString OptimizedModeStr = (OptimizedPivotMode == ESpritePivotMode::Custom) ? TEXT("Custom") : TEXT("Center");
+    
+    UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       Pivot modes: Original=%s, Optimized=%s"), 
+           *OriginalModeStr, *OptimizedModeStr);
+    
+    // Получаем custom pivot если есть (исправлено для UE5)
+    if (OptimizedPivotMode == ESpritePivotMode::Custom)
+    {
+        FVector2D CustomPivot;
+        OptimizedSprite->GetPivotMode(CustomPivot);
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       Custom pivot: (%.3f, %.3f)"), 
+               CustomPivot.X, CustomPivot.Y);
+    }
+    
+    // Анализ результата
+    if (OptimizedPivotMode == ESpritePivotMode::Custom)
+    {
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       ✅ Using custom pivot to compensate for positioning"));
+    }
+    else if (FMath::Abs(PivotDifference.X) < 1.0f && FMath::Abs(PivotDifference.Y) < 1.0f)
+    {
+        UE_LOG(LogCharacter2DOptimizer, Log, TEXT("       ✅ Position looks correct (minimal pivot difference)"));
+    }
+    else
+    {
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("       ⚠️ Significant position difference detected - may need custom pivot"));
+        UE_LOG(LogCharacter2DOptimizer, Warning, TEXT("           Consider using Custom pivot mode for this sprite"));
+    }
 }
 
 TArray<FColor> UCharacter2DLayerOptimizer::GetTexturePixelData(UTexture2D* Texture)

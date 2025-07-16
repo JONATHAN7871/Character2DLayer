@@ -49,7 +49,7 @@ public class Character2DEditor : ModuleRules
 			"DesktopPlatform",          // Для диалогов файлов
 			"EditorSubsystem",          // Для подсистем редактора
 			"ApplicationCore",          // Для Application функций
-			"Paper2DEditor"             // ДОБАВЛЕНО: для FSpriteAssetInitParameters
+			"Paper2DEditor", "EditorScriptingUtilities" // для FSpriteAssetInitParameters
 		});
 	}
 }
