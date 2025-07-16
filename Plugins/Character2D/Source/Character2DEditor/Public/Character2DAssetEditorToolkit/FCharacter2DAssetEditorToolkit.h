@@ -40,6 +40,8 @@ public:
     static const FName ActionsTabID;
     static const FName PresetsTabID;
 
+    static const FName OptimizationTabID;
+
 private:
     // Обработчик события изменения свойств ассета
     void OnAssetPropertyChanged(const FPropertyChangedEvent& PropertyChangedEvent);
@@ -70,4 +72,7 @@ private:
 
     // Текущий режим редактирования (для панели пресетов)
     ECharacter2DEditMode CurrentMode = ECharacter2DEditMode::Body;
+
+    TSharedPtr<class SCharacter2DOptimizationPanel> OptimizationPanel;
+    TSharedRef<SDockTab> SpawnOptimizationTab(const FSpawnTabArgs& Args);
 };

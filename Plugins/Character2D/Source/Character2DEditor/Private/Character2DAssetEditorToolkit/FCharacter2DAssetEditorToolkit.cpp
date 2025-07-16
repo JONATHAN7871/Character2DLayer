@@ -18,6 +18,8 @@
 #include "Internationalization/Text.h"
 #include "Editor.h" // Для FTicker
 #include "Character2DActor.h" // <<< ВАЖНО: ДОБАВЛЕН НЕДОСТАЮЩИЙ INCLUDE
+#include "Character2DLayerOptimizer/Character2DLayerOptimizer.h"
+#include "Character2DLayerOptimizer/SCharacter2DOptimizationPanel.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCharacter2DEditor, Log, All);
 
@@ -28,6 +30,7 @@ const FName FCharacter2DAssetEditorToolkit::SkeletalDetailsTabID(TEXT("Character
 const FName FCharacter2DAssetEditorToolkit::SpriteDetailsTabID(TEXT("Character2DAssetEditor_SpriteDetails"));
 const FName FCharacter2DAssetEditorToolkit::ActionsTabID(TEXT("Character2DAssetEditor_Actions"));
 const FName FCharacter2DAssetEditorToolkit::PresetsTabID(TEXT("Character2DAssetEditor_Presets"));
+const FName FCharacter2DAssetEditorToolkit::OptimizationTabID(TEXT("Character2DAssetEditor_Optimization"));
 
 void FCharacter2DAssetEditorToolkit::InitEditor(const EToolkitMode::Type Mode,
                                                 const TSharedPtr<IToolkitHost>& Host,
@@ -53,6 +56,7 @@ void FCharacter2DAssetEditorToolkit::InitEditor(const EToolkitMode::Type Mode,
                     ->AddTab(SkeletalDetailsTabID, ETabState::OpenedTab)
                     ->AddTab(SpriteDetailsTabID, ETabState::OpenedTab)
                     ->AddTab(ActionsTabID, ETabState::OpenedTab)
+                    ->AddTab(OptimizationTabID, ETabState::OpenedTab)
                     ->SetForegroundTab(SkeletalDetailsTabID)
                     ->SetSizeCoefficient(1.0f)
                 )
@@ -164,6 +168,9 @@ void FCharacter2DAssetEditorToolkit::RegisterTabSpawners(const TSharedRef<FTabMa
     InTabManager->RegisterTabSpawner(SpriteDetailsTabID, FOnSpawnTab::CreateSP(this, &FCharacter2DAssetEditorToolkit::SpawnSpriteDetailsTab)).SetDisplayName(LOCTEXT("SpriteDetailsTab", "Sprites & Effects")).SetGroup(WorkspaceMenuCategory.ToSharedRef());
     InTabManager->RegisterTabSpawner(ActionsTabID, FOnSpawnTab::CreateSP(this, &FCharacter2DAssetEditorToolkit::SpawnActionsTab)).SetDisplayName(LOCTEXT("ActionsTab", "Actions")).SetGroup(WorkspaceMenuCategory.ToSharedRef());
     InTabManager->RegisterTabSpawner(PresetsTabID, FOnSpawnTab::CreateSP(this, &FCharacter2DAssetEditorToolkit::SpawnPresetsTab)).SetDisplayName(LOCTEXT("PresetsTab", "Presets")).SetGroup(WorkspaceMenuCategory.ToSharedRef());
+    InTabManager->RegisterTabSpawner(OptimizationTabID, FOnSpawnTab::CreateSP(this, &FCharacter2DAssetEditorToolkit::SpawnOptimizationTab))
+    .SetDisplayName(LOCTEXT("OptimizationTab", "Optimization"))
+    .SetGroup(WorkspaceMenuCategory.ToSharedRef());
 }
 
 void FCharacter2DAssetEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -174,6 +181,7 @@ void FCharacter2DAssetEditorToolkit::UnregisterTabSpawners(const TSharedRef<FTab
     InTabManager->UnregisterTabSpawner(SpriteDetailsTabID);
     InTabManager->UnregisterTabSpawner(ActionsTabID);
     InTabManager->UnregisterTabSpawner(PresetsTabID);
+    InTabManager->UnregisterTabSpawner(OptimizationTabID);
 }
 
 TSharedRef<SDockTab> FCharacter2DAssetEditorToolkit::SpawnViewportTab(const FSpawnTabArgs& Args)
@@ -308,6 +316,11 @@ void FCharacter2DAssetEditorToolkit::OnAssetPropertyChanged(const FPropertyChang
             }
             return false; // Запустить тикер только один раз
         }), 0.0f);
+
+    if (OptimizationPanel.IsValid())
+    {
+        OptimizationPanel->SetCharacterAsset(AssetBeingEdited);
+    }
 }
 
 // <<< ИСПРАВЛЕНО: УДАЛЕНА РЕАЛИЗАЦИЯ ValidateHeadHierarchy, ТАК КАК ЕЕ ЗДЕСЬ БЫТЬ НЕ ДОЛЖНО >>>
@@ -320,6 +333,41 @@ FLinearColor FCharacter2DAssetEditorToolkit::GetWorldCentricTabColorScale() cons
 void FCharacter2DAssetEditorToolkit::AddReferencedObjects(FReferenceCollector& Collector)
 {
     Collector.AddReferencedObject(AssetBeingEdited);
+}
+
+TSharedRef<SDockTab> FCharacter2DAssetEditorToolkit::SpawnOptimizationTab(const FSpawnTabArgs& Args)
+{
+    OptimizationPanel = SNew(SCharacter2DOptimizationPanel)
+        .CharacterAsset(AssetBeingEdited)
+        .OnOptimizationComplete_Lambda([this](const TArray<FLayerOptimizationResult>& Results)
+        {
+            // Обновляем другие панели после оптимизации
+            if (SkeletalDetailsView.IsValid()) SkeletalDetailsView->SetObject(AssetBeingEdited);
+            if (SpriteDetailsView.IsValid()) SpriteDetailsView->SetObject(AssetBeingEdited);
+            if (ViewportWidget.IsValid()) ViewportWidget->RefreshPreview();
+            
+            // Показываем уведомление о успешной оптимизации
+            float TotalSavings = 0;
+            for (const auto& Result : Results)
+            {
+                TotalSavings += (Result.OriginalSizeMB - Result.OptimizedSizeMB);
+            }
+            
+            FText NotificationText = FText::Format(
+                LOCTEXT("OptimizationCompleteNotification", "Optimization complete! Saved {0:.1f} MB ({1} layers optimized)"),
+                TotalSavings,
+                Results.Num()
+            );
+            
+            // Здесь можно добавить показ notification toast
+            UE_LOG(LogTemp, Log, TEXT("%s"), *NotificationText.ToString());
+        });
+    
+    return SNew(SDockTab)
+        .Label(LOCTEXT("OptimizationLabel", "Optimization"))
+        [
+            OptimizationPanel.ToSharedRef()
+        ];
 }
 
 #undef LOCTEXT_NAMESPACE
