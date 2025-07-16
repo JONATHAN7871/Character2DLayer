@@ -1,0 +1,75 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Engine/DeveloperSettings.h"
+#include "Materials/MaterialInterface.h"
+#include "SpriteOptimizerSettings.generated.h"
+
+/**
+ * Настройки плагина Sprite Optimizer
+ */
+UCLASS(config=EditorPerProjectUserSettings, meta=(DisplayName="Sprite Optimizer"))
+class SPRITEOPTIMIIZEREDITOR_API USpriteOptimizerSettings : public UDeveloperSettings
+{
+	GENERATED_BODY()
+
+public:
+	USpriteOptimizerSettings();
+
+	// Материал по умолчанию для оптимизированных спрайтов
+	UPROPERTY(config, EditAnywhere, Category = "Default Settings", meta = (AllowedClasses = "/Script/Engine.MaterialInterface"))
+	TSoftObjectPtr<UMaterialInterface> DefaultMaterial;
+
+	// Pixels Per Unit по умолчанию
+	UPROPERTY(config, EditAnywhere, Category = "Default Settings", meta = (ClampMin = "0.1", ClampMax = "100.0"))
+	float DefaultPixelsPerUnit = 1.0f;
+
+	// Padding по умолчанию (в пикселях)
+	UPROPERTY(config, EditAnywhere, Category = "Default Settings", meta = (ClampMin = "0", ClampMax = "20"))
+	int32 DefaultPadding = 2;
+
+	// Создавать backup по умолчанию
+	UPROPERTY(config, EditAnywhere, Category = "Default Settings")
+	bool bDefaultCreateBackup = true;
+
+	// Заменять оригиналы по умолчанию
+	UPROPERTY(config, EditAnywhere, Category = "Default Settings")
+	bool bDefaultReplaceOriginals = false;
+
+	// Минимальная экономия для автоматического выбора спрайтов (в процентах)
+	UPROPERTY(config, EditAnywhere, Category = "Auto Selection", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float MinimumSavingsForAutoSelect = 30.0f;
+
+	// Автоматически выбирать только спрайты с хорошим потенциалом оптимизации
+	UPROPERTY(config, EditAnywhere, Category = "Auto Selection")
+	bool bAutoSelectOptimalSpritesOnly = true;
+
+	// Показывать подробные логи в Output Log
+	UPROPERTY(config, EditAnywhere, Category = "Debug")
+	bool bShowDetailedLogs = true;
+
+	// Показывать уведомления об успешной оптимизации
+	UPROPERTY(config, EditAnywhere, Category = "Debug")
+	bool bShowOptimizationNotifications = true;
+
+	// Автоматически обновлять Content Browser после оптимизации
+	UPROPERTY(config, EditAnywhere, Category = "Workflow")
+	bool bAutoRefreshContentBrowser = true;
+
+	// Путь для сохранения оптимизированных ассетов (если пустой - рядом с оригиналом)
+	UPROPERTY(config, EditAnywhere, Category = "Workflow")
+	FString OptimizedAssetsPath;
+
+	// Суффикс для имен оптимизированных ассетов
+	UPROPERTY(config, EditAnywhere, Category = "Workflow")
+	FString OptimizedAssetsSuffix = TEXT("_Optimized");
+
+public:
+	// UDeveloperSettings interface
+	virtual FName GetCategoryName() const override;
+	virtual FText GetSectionText() const override;
+
+#if WITH_EDITOR
+	virtual FText GetSectionDescription() const override;
+#endif
+};
