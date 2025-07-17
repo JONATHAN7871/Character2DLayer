@@ -132,6 +132,99 @@ struct FSpriteOptimizationResult
     }
 };
 
+UENUM(BlueprintType)
+enum class EAtlasPackingAlgorithm : uint8
+{
+    Simple      UMETA(DisplayName = "Simple Grid"),
+    BestFit     UMETA(DisplayName = "Best Fit"),
+    MaxRects    UMETA(DisplayName = "MaxRects Algorithm")
+};
+
+USTRUCT(BlueprintType)
+struct FSpriteAtlasSettings
+{
+    GENERATED_BODY()
+    
+    // Максимальный размер атласа
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas", meta = (ClampMin = "256", ClampMax = "8192"))
+    FIntPoint MaxAtlasSize = FIntPoint(2048, 2048);
+    
+    // Отступ между спрайтами в атласе
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas", meta = (ClampMin = "0", ClampMax = "20"))
+    int32 SpritePadding = 2;
+    
+    // Алгоритм упаковки
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas")
+    EAtlasPackingAlgorithm PackingAlgorithm = EAtlasPackingAlgorithm::Simple;
+    
+    // Создавать отдельные спрайты или один большой
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas")
+    bool bCreateIndividualSprites = true;
+    
+    // Суффикс для атласа
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas")
+    FString AtlasSuffix = TEXT("_Atlas");
+    
+    // Оптимизировать спрайты перед созданием атласа
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas")
+    bool bOptimizeSpritesFirst = true;
+    
+    FSpriteAtlasSettings()
+    {
+        MaxAtlasSize = FIntPoint(2048, 2048);
+        SpritePadding = 2;
+        PackingAlgorithm = EAtlasPackingAlgorithm::Simple;
+        bCreateIndividualSprites = true;
+        AtlasSuffix = TEXT("_Atlas");
+        bOptimizeSpritesFirst = true;
+    }
+};
+
+USTRUCT(BlueprintType)
+struct FSpriteAtlasResult
+{
+    GENERATED_BODY()
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    TObjectPtr<UTexture2D> AtlasTexture = nullptr;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    TArray<TObjectPtr<UPaperSprite>> CreatedSprites;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    TArray<FIntRect> SpriteRegions;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FIntPoint AtlasSize;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float PackingEfficiency = 0.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    int32 TotalSprites = 0;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float MemorySavings = 0.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bSuccess = false;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FString ErrorMessage;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FString AtlasTexturePath;
+    
+    FSpriteAtlasResult()
+    {
+        AtlasSize = FIntPoint::ZeroValue;
+        PackingEfficiency = 0.0f;
+        TotalSprites = 0;
+        MemorySavings = 0.0f;
+        bSuccess = false;
+    }
+};
+
 UCLASS()
 class SPRITEOPTIMIZEREDITOR_API USpriteOptimizer : public UBlueprintFunctionLibrary
 {
@@ -193,4 +286,91 @@ public:
     static void CreateBackupIfNeeded(UObject* Asset, bool bCreateBackup);
     static void RefreshContentBrowser();
     static void ShowOptimizationNotification(const FText& Message, bool bSuccess = true);
+
+    public:
+    // === ATLAS METHODS ===
+    
+    // Создание атласа из множества спрайтов
+    UFUNCTION(CallInEditor, Category="Sprite Atlas", BlueprintCallable)
+    static FSpriteAtlasResult CreateSpriteAtlas(
+        const TArray<UPaperSprite*>& Sprites,
+        const FSpriteAtlasSettings& Settings = FSpriteAtlasSettings(),
+        const FString& AtlasName = TEXT("SpriteAtlas"),
+        const FString& AtlasPath = TEXT("")
+    );
+    
+    // Анализ возможности создания атласа
+    UFUNCTION(BlueprintCallable, Category="Sprite Atlas")
+    static FSpriteAtlasResult AnalyzeSpriteAtlas(
+        const TArray<UPaperSprite*>& Sprites,
+        const FSpriteAtlasSettings& Settings = FSpriteAtlasSettings()
+    );
+
+private:
+    // === ATLAS HELPER METHODS ===
+    
+    // Алгоритмы упаковки
+    static TArray<FIntRect> PackSprites_Simple(
+        const TArray<FIntPoint>& SpriteSizes, 
+        const FSpriteAtlasSettings& Settings, 
+        FIntPoint& OutAtlasSize
+    );
+    
+    static TArray<FIntRect> PackSprites_BestFit(
+        const TArray<FIntPoint>& SpriteSizes, 
+        const FSpriteAtlasSettings& Settings, 
+        FIntPoint& OutAtlasSize
+    );
+    
+    static TArray<FIntRect> PackSprites_MaxRects(
+        const TArray<FIntPoint>& SpriteSizes, 
+        const FSpriteAtlasSettings& Settings, 
+        FIntPoint& OutAtlasSize
+    );
+    
+    // Создание атласной текстуры
+    static UTexture2D* CreateAtlasTexture(
+        const TArray<UPaperSprite*>& Sprites,
+        const TArray<FIntRect>& SpriteRegions,
+        const FIntPoint& AtlasSize,
+        const FString& AssetName,
+        const FString& AssetPath
+    );
+    
+    // Создание спрайта из атласа
+    static UPaperSprite* CreateSpriteFromAtlas(
+        UTexture2D* AtlasTexture,
+        const FIntRect& Region,
+        UPaperSprite* OriginalSprite,
+        const FString& SpriteName,
+        const FString& AssetPath
+    );
+    
+    // Вычисление эффективности упаковки
+    static float CalculatePackingEfficiency(
+        const TArray<FIntPoint>& SpriteSizes, 
+        const FIntPoint& AtlasSize
+    );
+    
+    // Получение оптимизированных размеров спрайтов
+    static TArray<FIntPoint> GetOptimizedSpriteSizes(
+        const TArray<UPaperSprite*>& Sprites,
+        int32 Padding = 2
+    );
+
+    static bool CopyPixelsFromSourceToAtlas(
+    UTexture2D* SourceTexture, 
+    TArray<FColor>& AtlasPixels, 
+    const FIntRect& Region, 
+    const FIntPoint& AtlasSize
+    );
+
+    static FVector2D CalculateAtlasPivotForLayering(
+    int32 OriginalTextureWidth,
+    int32 OriginalTextureHeight, 
+    const FIntRect& OriginalUsedRegion,
+    const FIntRect& AtlasRegion,
+    UPaperSprite* OriginalSprite
+    );
+    
 };

@@ -69,6 +69,22 @@ public:
 	virtual FName GetCategoryName() const override;
 	virtual FText GetSectionText() const override;
 
+	// === ATLAS SETTINGS ===
+	UPROPERTY(config, EditAnywhere, Category = "Atlas Settings", meta = (ClampMin = "256", ClampMax = "8192"))
+	FIntPoint DefaultMaxAtlasSize = FIntPoint(2048, 2048);
+
+	UPROPERTY(config, EditAnywhere, Category = "Atlas Settings", meta = (ClampMin = "0", ClampMax = "20"))
+	int32 DefaultAtlasSpritePadding = 2;
+
+	UPROPERTY(config, EditAnywhere, Category = "Atlas Settings")
+	bool bDefaultOptimizeSpritesForAtlas = true;
+
+	UPROPERTY(config, EditAnywhere, Category = "Atlas Settings")
+	bool bDefaultCreateIndividualSprites = true;
+
+	UPROPERTY(config, EditAnywhere, Category = "Atlas Settings")
+	FString DefaultAtlasSuffix = TEXT("_Atlas");
+
 #if WITH_EDITOR
 	virtual FText GetSectionDescription() const override;
 #endif

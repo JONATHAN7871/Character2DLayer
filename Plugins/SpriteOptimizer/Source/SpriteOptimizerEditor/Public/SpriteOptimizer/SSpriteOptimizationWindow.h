@@ -47,6 +47,7 @@ public:
         SLATE_ARGUMENT(TArray<UPaperSprite*>, SpritesToOptimize)
     SLATE_END_ARGS()
 
+    virtual ~SSpriteOptimizationWindow();
     void Construct(const FArguments& InArgs);
     
     // Показ окна оптимизации
@@ -125,4 +126,47 @@ private:
     void OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
 
     static FReply ClosePreviewWindow(TSharedPtr<SWindow> WindowToClose);
+
+    // === ATLAS UI ELEMENTS ===
+    TSharedPtr<SCheckBox> CreateAtlasCheckBox;
+    TSharedPtr<SSpinBox<int32>> AtlasSizeXSpinBox;
+    TSharedPtr<SSpinBox<int32>> AtlasSizeYSpinBox;
+    TSharedPtr<SSpinBox<int32>> AtlasPaddingSpinBox;
+    TSharedPtr<SComboBox<TSharedPtr<FString>>> PackingAlgorithmComboBox;
+    TSharedPtr<SCheckBox> OptimizeSpritesFirstCheckBox;
+    TSharedPtr<SCheckBox> CreateIndividualSpritesCheckBox;
+    TSharedPtr<SEditableTextBox> AtlasSuffixTextBox;
+    TSharedPtr<SButton> AnalyzeAtlasButton;
+    TSharedPtr<SButton> CreateAtlasButton;
+    TSharedPtr<STextBlock> AtlasAnalysisText;
+    
+    // Atlas settings and data
+    FSpriteAtlasSettings AtlasSettings;
+    FSpriteAtlasResult LastAtlasAnalysis;
+    TArray<TSharedPtr<FString>> PackingAlgorithmOptions;
+    
+    // === ATLAS METHODS ===
+    void InitializeAtlasSettings();
+    void InitializePackingAlgorithmOptions();
+    TSharedRef<SWidget> CreateAtlasSection();
+    
+    // Atlas event handlers
+    void OnCreateAtlasChanged(ECheckBoxState NewState);
+    void OnAtlasSizeXChanged(int32 NewValue);
+    void OnAtlasSizeYChanged(int32 NewValue);
+    void OnAtlasPaddingChanged(int32 NewValue);
+    void OnPackingAlgorithmChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
+    void OnOptimizeSpritesFirstChanged(ECheckBoxState NewState);
+    void OnCreateIndividualSpritesChanged(ECheckBoxState NewState);
+    void OnAtlasSuffixChanged(const FText& NewText, ETextCommit::Type CommitType);
+    
+    // Atlas actions
+    FReply OnAnalyzeAtlas();
+    FReply OnCreateAtlas();
+    
+    // Atlas helper methods
+    void UpdateAtlasUI();
+    void UpdateAtlasButtonStates();
+    FText GetAtlasAnalysisText() const;
+    TArray<UPaperSprite*> GetSpritesForAtlas() const;
 };
