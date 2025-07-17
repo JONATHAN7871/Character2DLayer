@@ -38,6 +38,9 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
     
     // Загружаем настройки из проекта
     LoadSettingsFromProject();
+
+    // Инициализируем список материалов
+    InitializeMaterialOptions();
     
     // Создаем строки для спрайтов
     for (UPaperSprite* Sprite : InArgs._SpritesToOptimize)
@@ -122,6 +125,48 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
     
     // Начальное обновление
     RefreshAnalysis();
+}
+
+void SSpriteOptimizationWindow::InitializeMaterialOptions()
+{
+    MaterialOptions.Empty();
+    MaterialAssets.Empty();
+    
+    // Получаем доступные материалы
+    TArray<UMaterialInterface*> AvailableMaterials = USpriteOptimizer::GetAvailablePaper2DMaterials();
+    
+    for (UMaterialInterface* Material : AvailableMaterials)
+    {
+        if (Material)
+        {
+            MaterialAssets.Add(Material);
+            MaterialOptions.Add(MakeShared<FString>(Material->GetName()));
+        }
+    }
+    
+    // Добавляем опцию "Default"
+    MaterialAssets.Insert(nullptr, 0);
+    MaterialOptions.Insert(MakeShared<FString>(TEXT("Default Paper2D Material")), 0);
+}
+
+void SSpriteOptimizationWindow::OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo)
+{
+    if (SelectedItem.IsValid())
+    {
+        int32 Index = MaterialOptions.IndexOfByPredicate([SelectedItem](const TSharedPtr<FString>& Item)
+        {
+            return Item.IsValid() && *Item == *SelectedItem;
+        });
+        
+        if (Index != INDEX_NONE && MaterialAssets.IsValidIndex(Index))
+        {
+            CurrentSettings.Material = MaterialAssets[Index];
+            if (!CurrentSettings.Material)
+            {
+                CurrentSettings.Material = USpriteOptimizer::GetDefaultPaper2DMaterial();
+            }
+        }
+    }
 }
 
 void SSpriteOptimizationWindow::ShowOptimizationWindow(const TArray<UPaperSprite*>& Sprites)
@@ -233,6 +278,7 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateSettingsSection()
                 SNew(SUniformGridPanel)
                 .SlotPadding(FMargin(5, 2))
                 
+
                 // Материал
                 + SUniformGridPanel::Slot(0, 0)
                 [
@@ -240,15 +286,31 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateSettingsSection()
                     .Text(LOCTEXT("MaterialLabel", "Material:"))
                     .ToolTipText(LOCTEXT("MaterialTooltip", "Material to use for optimized sprites"))
                 ]
-                
+
                 + SUniformGridPanel::Slot(1, 0)
                 [
-                    SAssignNew(MaterialSelector, SObjectPropertyEntryBox)
-                    .AllowedClass(UMaterialInterface::StaticClass())
-                    .ObjectPath(CurrentSettings.Material ? CurrentSettings.Material->GetPathName() : FString())
-                    .OnObjectChanged(this, &SSpriteOptimizationWindow::OnMaterialChanged)
+                    SAssignNew(MaterialComboBox, SComboBox<TSharedPtr<FString>>)
+                    .OptionsSource(&MaterialOptions)
+                    .OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
+                    {
+                        return SNew(STextBlock).Text(FText::FromString(*Item));
+                    })
+                    .OnSelectionChanged(this, &SSpriteOptimizationWindow::OnMaterialComboChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text_Lambda([this]()
+                        {
+                            if (CurrentSettings.Material)
+                            {
+                                return FText::FromString(CurrentSettings.Material->GetName());
+                            }
+                            return LOCTEXT("NoMaterial", "Select Material");
+                        })
+                    ]
                     .ToolTipText(LOCTEXT("MaterialTooltip", "Material to use for optimized sprites"))
                 ]
+                
                 
                 // Pixels Per Unit
                 + SUniformGridPanel::Slot(0, 1)
@@ -686,8 +748,11 @@ FReply SSpriteOptimizationWindow::OnResetToDefaults()
     CurrentSettings = FSpriteOptimizationSettings();
     CurrentSettings.Material = USpriteOptimizer::GetDefaultPaper2DMaterial();
     
-    // Обновляем UI элементы - пересоздаем MaterialSelector
-    RefreshMaterialSelector();
+    // Сбрасываем MaterialComboBox
+    if (MaterialComboBox.IsValid())
+    {
+        MaterialComboBox->SetSelectedItem(MaterialOptions[0]); // Default материал
+    }
     
     if (PixelsPerUnitSpinBox.IsValid())
     {
@@ -765,8 +830,19 @@ void SSpriteOptimizationWindow::LoadSettingsFromProject()
     {
         CurrentSettings.LoadFromProjectSettings();
         
-        // Обновляем UI элементы - пересоздаем MaterialSelector
-        RefreshMaterialSelector();
+        // Обновляем MaterialComboBox
+        if (MaterialComboBox.IsValid() && CurrentSettings.Material)
+        {
+            // Находим соответствующий элемент в списке
+            for (int32 i = 0; i < MaterialAssets.Num(); i++)
+            {
+                if (MaterialAssets[i] == CurrentSettings.Material)
+                {
+                    MaterialComboBox->SetSelectedItem(MaterialOptions[i]);
+                    break;
+                }
+            }
+        }
         
         if (PixelsPerUnitSpinBox.IsValid())
         {
@@ -883,34 +959,46 @@ FText SSpriteOptimizationWindow::GetPreviewText() const
     
     FString PreviewText = TEXT("Optimization Results:\n\n");
     
-    float TotalOriginalMB = 0;
-    float TotalOptimizedMB = 0;
+    float TotalOriginalMB = 0.0f;
+    float TotalOptimizedMB = 0.0f;
     int32 SuccessCount = 0;
     
-    for (const auto& Result : OptimizationResults)
+    // Безопасная итерация по результатам
+    for (int32 i = 0; i < OptimizationResults.Num(); i++)
     {
-        PreviewText += FString::Printf(TEXT("• %s: "), *Result.SpriteName);
+        const FSpriteOptimizationResult& Result = OptimizationResults[i];
+        
+        // Проверяем валидность имени спрайта
+        FString SpriteName = Result.SpriteName.IsEmpty() ? TEXT("Unknown Sprite") : Result.SpriteName;
+        PreviewText += FString::Printf(TEXT("• %s: "), *SpriteName);
         
         if (Result.bSuccess)
         {
             PreviewText += FString::Printf(TEXT("✅ %.1f%% savings (%.1fMB → %.1fMB)\n"), 
                                          Result.SavingsPercent, Result.OriginalSizeMB, Result.OptimizedSizeMB);
-            PreviewText += FString::Printf(TEXT("  📁 Texture: %s\n"), *Result.OptimizedTexturePath);
-            PreviewText += FString::Printf(TEXT("  🎨 Sprite: %s\n\n"), *Result.OptimizedSpritePath);
+            
+            // Безопасная проверка путей
+            FString TexturePath = Result.OptimizedTexturePath.IsEmpty() ? TEXT("Unknown Path") : Result.OptimizedTexturePath;
+            FString SpritePath = Result.OptimizedSpritePath.IsEmpty() ? TEXT("Unknown Path") : Result.OptimizedSpritePath;
+            
+            PreviewText += FString::Printf(TEXT("  📁 Texture: %s\n"), *TexturePath);
+            PreviewText += FString::Printf(TEXT("  🎨 Sprite: %s\n\n"), *SpritePath);
+            
             TotalOriginalMB += Result.OriginalSizeMB;
             TotalOptimizedMB += Result.OptimizedSizeMB;
             SuccessCount++;
         }
         else
         {
-            PreviewText += FString::Printf(TEXT("❌ Failed: %s\n\n"), *Result.ErrorMessage);
+            FString ErrorMsg = Result.ErrorMessage.IsEmpty() ? TEXT("Unknown Error") : Result.ErrorMessage;
+            PreviewText += FString::Printf(TEXT("❌ Failed: %s\n\n"), *ErrorMsg);
         }
     }
     
     if (SuccessCount > 0)
     {
         float TotalSavingsMB = TotalOriginalMB - TotalOptimizedMB;
-        float SavingsPercent = TotalOriginalMB > 0 ? (TotalSavingsMB / TotalOriginalMB) * 100.0f : 0.0f;
+        float SavingsPercent = TotalOriginalMB > 0.0f ? (TotalSavingsMB / TotalOriginalMB) * 100.0f : 0.0f;
         
         PreviewText += FString::Printf(TEXT("📊 Summary:\n"));
         PreviewText += FString::Printf(TEXT("Successfully optimized: %d/%d sprites\n"), SuccessCount, OptimizationResults.Num());
@@ -940,6 +1028,13 @@ void SSpriteOptimizationWindow::ShowNotification(const FText& Message, int32 Sta
 
 void SSpriteOptimizationWindow::ShowOptimizationPreview()
 {
+    // Добавьте проверку на пустые результаты
+    if (OptimizationResults.Num() == 0)
+    {
+        ShowNotification(LOCTEXT("NoOptimizationResults", "No optimization results to preview. Run optimization first."), 2);
+        return;
+    }
+
     TSharedRef<SWindow> PreviewWindow = SNew(SWindow)
         .Title(LOCTEXT("OptimizationPreviewTitle", "Optimization Results Preview"))
         .SizingRule(ESizingRule::UserSized)
@@ -1075,7 +1170,16 @@ FReply SSpriteOptimizationWindow::OnPreviewOptimization()
         return FReply::Handled();
     }
     
-    ShowOptimizationPreview();
+    try
+    {
+        ShowOptimizationPreview();
+    }
+    catch (...)
+    {
+        ShowNotification(LOCTEXT("PreviewError", "Error showing preview window"), 2);
+        UE_LOG(LogTemp, Error, TEXT("Exception in ShowOptimizationPreview"));
+    }
+    
     return FReply::Handled();
 }
 
@@ -1113,19 +1217,6 @@ FReply SSpriteOptimizationWindow::OnSelectNone()
     UpdateButtonStates();
     
     return FReply::Handled();
-}
-
-void SSpriteOptimizationWindow::RefreshMaterialSelector()
-{
-    // Простое решение - не обновляем MaterialSelector программно
-    // Пользователь может выбрать материал заново через UI
-    // Это избегает проблем с API SObjectPropertyEntryBox
-    
-    // Альтернативно можно логировать текущий материал
-    if (CurrentSettings.Material)
-    {
-        UE_LOG(LogTemp, Log, TEXT("Current material: %s"), *CurrentSettings.Material->GetName());
-    }
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -65,7 +65,9 @@ private:
     TSharedPtr<SButton> PreviewButton;
     
     // Настройки
-    TSharedPtr<SObjectPropertyEntryBox> MaterialSelector;
+    TSharedPtr<SComboBox<TSharedPtr<FString>>> MaterialComboBox;
+    TArray<TSharedPtr<FString>> MaterialOptions;
+    TArray<UMaterialInterface*> MaterialAssets;
     TSharedPtr<SSpinBox<float>> PixelsPerUnitSpinBox;
     TSharedPtr<SSpinBox<int32>> PaddingSpinBox;
     TSharedPtr<SCheckBox> CreateBackupCheckBox;
@@ -119,5 +121,6 @@ private:
     // Создание окна предпросмотра
     void ShowOptimizationPreview();
 
-    void RefreshMaterialSelector();
+    void InitializeMaterialOptions();
+    void OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
 };
