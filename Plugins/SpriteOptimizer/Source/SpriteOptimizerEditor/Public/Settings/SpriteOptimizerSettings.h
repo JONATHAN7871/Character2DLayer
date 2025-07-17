@@ -9,7 +9,7 @@
  * Настройки плагина Sprite Optimizer
  */
 UCLASS(config=EditorPerProjectUserSettings, meta=(DisplayName="Sprite Optimizer"))
-class SPRITEOPTIMIIZEREDITOR_API USpriteOptimizerSettings : public UDeveloperSettings
+class SPRITEOPTIMIZEREDITOR_API USpriteOptimizerSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 

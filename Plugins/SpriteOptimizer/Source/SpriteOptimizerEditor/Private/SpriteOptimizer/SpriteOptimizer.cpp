@@ -509,7 +509,8 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     InitParams.Offset = FIntPoint::ZeroValue;
     InitParams.Dimension = FIntPoint(OptimizedTexture->GetSizeX(), OptimizedTexture->GetSizeY());
     InitParams.DefaultMaterialOverride = SpriteMaterial;
-    InitParams.bOverridePixelsPerUnrealUnit = Settings.PixelsPerUnit;
+    InitParams.bOverridePixelsPerUnrealUnit = true;
+    InitParams.PixelsPerUnrealUnit = Settings.PixelsPerUnit;
     
     // Инициализируем спрайт
     NewSprite->InitializeSprite(InitParams, false);

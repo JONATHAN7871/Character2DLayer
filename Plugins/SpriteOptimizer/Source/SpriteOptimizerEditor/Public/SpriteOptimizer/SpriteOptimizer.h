@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/Texture2D.h"
 #include "PaperSprite.h"
-#include "Materials/MaterialInterface.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
 #include "SpriteEditorOnlyTypes.h"
+#include "Engine/Texture2D.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "Materials/MaterialInterface.h"
+#include "Runtime/Engine/Classes/Kismet/BlueprintFunctionLibrary.h"
 #include "SpriteOptimizer.generated.h"
+
+class UPaperSprite;
 
 USTRUCT(BlueprintType)
 struct FSpriteOptimizationSettings
@@ -130,10 +133,10 @@ struct FSpriteOptimizationResult
 };
 
 UCLASS()
-class SPRITEOPTIMIIZEREDITOR_API USpriteOptimizer : public UBlueprintFunctionLibrary
+class SPRITEOPTIMIZEREDITOR_API USpriteOptimizer : public UBlueprintFunctionLibrary
 {
     GENERATED_BODY()
-    
+
 public:
     // Основная функция оптимизации множественных спрайтов
     UFUNCTION(CallInEditor, Category="Sprite Optimization", BlueprintCallable)

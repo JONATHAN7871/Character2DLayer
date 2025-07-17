@@ -10,15 +10,15 @@ public class SpriteOptimizerEditor : ModuleRules
 			new string[]
 			{
 				"Core",
-				"CoreUObject",
+				"CoreUObject", 
 				"Engine",
 				"UnrealEd",
 				"Slate",
 				"SlateCore",
-				"EditorStyle",
-				"EditorWidgets",
+				"AppFramework", // Добавьте
 				"ToolMenus",
-				"WorkspaceMenuStructure"
+				"WorkspaceMenuStructure",
+				"Paper2D"
 			}
 		);
 
@@ -27,27 +27,20 @@ public class SpriteOptimizerEditor : ModuleRules
 			{
 				"ApplicationCore",
 				"AssetTools",
-				"AssetRegistry",
+				"AssetRegistry", 
 				"ContentBrowser",
 				"ContentBrowserData",
-				"DesktopPlatform",
 				"DeveloperSettings",
 				"EditorSubsystem",
+				"EditorStyle", // Для совместимости
+				"EditorWidgets",
 				"ImageCore",
-				"ImageWrapper",
+				"ImageWrapper", 
 				"InputCore",
-				"Paper2D",
 				"Paper2DEditor",
 				"PropertyEditor",
 				"RenderCore",
 				"RHI",
-				"SkeletalMeshDescription",
-				"SkeletalMeshEditor",
-				"SkeletalMeshUtilitiesCommon",
-				"StaticMeshDescription",
-				"MeshDescription",
-				"MeshConversion",
-				"MeshUtilitiesCommon",
 				"ToolWidgets",
 				"UMG",
 				"EditorScriptingUtilities"

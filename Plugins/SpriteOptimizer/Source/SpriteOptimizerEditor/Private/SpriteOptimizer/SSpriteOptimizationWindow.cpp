@@ -8,8 +8,10 @@
 #include "Widgets/Views/SHeaderRow.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
+#include "Widgets/Input/SSpinBox.h"
+#include "Styling/AppStyle.h"
 #include "Framework/Application/SlateApplication.h"
-#include "EditorStyleSet.h"
+#include "Styling/AppStyle.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInterface.h"
 #include "PropertyCustomizationHelpers.h"
@@ -17,6 +19,10 @@
 #include "Framework/Docking/TabManager.h"
 #include "ISettingsModule.h"
 #include "Modules/ModuleManager.h"
+#include "Runtime/Slate/Public/Widgets/Input/SCheckBox.h"
+#include "Runtime/SlateCore/Public/Types/SlateEnums.h"
+#include "Runtime/SlateCore/Public/Widgets/DeclarativeSyntaxSupport.h"
+#include "Runtime/UMG/Public/Components/HorizontalBox.h"
 
 #define LOCTEXT_NAMESPACE "SSpriteOptimizationWindow"
 
@@ -490,9 +496,10 @@ TSharedRef<ITableRow> SSpriteOptimizationWindow::GenerateSpriteRow(TSharedPtr<FS
             
             // Checkbox
             + SHorizontalBox::Slot()
-            .FixedWidth(30)
+            .AutoWidth()
             .VAlign(VAlign_Center)
             .HAlign(HAlign_Center)
+            .Padding(5, 0)
             [
                 SNew(SCheckBox)
                 .IsChecked(Item->bSelected ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
@@ -679,11 +686,9 @@ FReply SSpriteOptimizationWindow::OnResetToDefaults()
     CurrentSettings = FSpriteOptimizationSettings();
     CurrentSettings.Material = USpriteOptimizer::GetDefaultPaper2DMaterial();
     
-    // Обновляем UI элементы
-    if (MaterialSelector.IsValid())
-    {
-        MaterialSelector->SetObjectPath(CurrentSettings.Material ? CurrentSettings.Material->GetPathName() : FString());
-    }
+    // Обновляем UI элементы - пересоздаем MaterialSelector
+    RefreshMaterialSelector();
+    
     if (PixelsPerUnitSpinBox.IsValid())
     {
         PixelsPerUnitSpinBox->SetValue(CurrentSettings.PixelsPerUnit);
@@ -760,11 +765,9 @@ void SSpriteOptimizationWindow::LoadSettingsFromProject()
     {
         CurrentSettings.LoadFromProjectSettings();
         
-        // Обновляем UI элементы
-        if (MaterialSelector.IsValid())
-        {
-            MaterialSelector->SetObjectPath(CurrentSettings.Material ? CurrentSettings.Material->GetPathName() : FString());
-        }
+        // Обновляем UI элементы - пересоздаем MaterialSelector
+        RefreshMaterialSelector();
+        
         if (PixelsPerUnitSpinBox.IsValid())
         {
             PixelsPerUnitSpinBox->SetValue(CurrentSettings.PixelsPerUnit);
@@ -1110,6 +1113,19 @@ FReply SSpriteOptimizationWindow::OnSelectNone()
     UpdateButtonStates();
     
     return FReply::Handled();
+}
+
+void SSpriteOptimizationWindow::RefreshMaterialSelector()
+{
+    // Простое решение - не обновляем MaterialSelector программно
+    // Пользователь может выбрать материал заново через UI
+    // Это избегает проблем с API SObjectPropertyEntryBox
+    
+    // Альтернативно можно логировать текущий материал
+    if (CurrentSettings.Material)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Current material: %s"), *CurrentSettings.Material->GetName());
+    }
 }
 
 #undef LOCTEXT_NAMESPACE

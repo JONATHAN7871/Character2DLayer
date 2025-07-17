@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Framework/Commands/Commands.h"
 #include "AssetTypeActions_Base.h"
 #include "ContentBrowserMenuContexts.h"
-#include "ToolMenuSection.h"
 #include "PaperSprite.h"
+#include "ToolMenuSection.h"
+#include "Framework/Commands/Commands.h"
+#include "Runtime/Slate/Public/Framework/Commands/Commands.h"
+
+class FUICommandInfo;
 
 // Команды для оптимизатора спрайтов
 class FSpriteOptimizerCommands : public TCommands<FSpriteOptimizerCommands>

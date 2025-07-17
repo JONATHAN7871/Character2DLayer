@@ -13,6 +13,7 @@
 #include "PaperSprite.h"
 #include "Materials/MaterialInterface.h"
 #include "PropertyCustomizationHelpers.h"
+#include "SpriteOptimizer.h"
 
 class UPaperSprite;
 class UMaterialInterface;
@@ -117,4 +118,6 @@ private:
     
     // Создание окна предпросмотра
     void ShowOptimizationPreview();
+
+    void RefreshMaterialSelector();
 };
