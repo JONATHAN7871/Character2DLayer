@@ -33,12 +33,11 @@ private:
 	// Добавление пунктов меню в Content Browser
 	static void ExtendContentBrowserContextMenu();
     
-	// Обработчики команд
+	// === ОБРАБОТЧИКИ КОМАНД ОПТИМИЗАЦИИ ===
 	static void ExecuteOptimizeSprites(const struct FToolMenuContext& Context);
-    
-	// Проверка возможности выполнения команды
 	static bool CanExecuteOptimizeSprites(const struct FToolMenuContext& Context);
     
+	// === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
 	// Получение выбранных спрайтов из контекста
 	static TArray<UPaperSprite*> GetSelectedSpritesFromContext(const struct FToolMenuContext& Context);
     

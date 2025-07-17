@@ -1,5 +1,6 @@
 #include "SpriteOptimizer/SpriteOptimizerActions.h"
 #include "SpriteOptimizer/SSpriteOptimizationWindow.h"
+#include "SpriteOptimizer/SAtlasCreationWindow.h"  // НОВЫЙ ИМПОРТ
 #include "Framework/Commands/UICommandList.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
@@ -60,7 +61,7 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
     FToolMenuSection& Section = Menu->FindOrAddSection("GetAssetActions");
     
     // Добавляем действие оптимизации спрайтов
-    Section.AddDynamicEntry("OptimizeSpritesDynamic", FNewToolMenuSectionDelegate::CreateLambda([](FToolMenuSection& InSection)
+    Section.AddDynamicEntry("SpriteOptimizerDynamic", FNewToolMenuSectionDelegate::CreateLambda([](FToolMenuSection& InSection)
     {
         // Проверяем контекст
         if (const UContentBrowserAssetContextMenuContext* Context = InSection.FindContext<UContentBrowserAssetContextMenuContext>())
@@ -81,64 +82,115 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                 }
             }
             
-            // Если есть спрайты, добавляем пункт меню оптимизации
+            // === ОПТИМИЗАЦИЯ СПРАЙТОВ ===
             if (SpriteCount > 0)
             {
-                FToolUIAction UIAction;
-                UIAction.ExecuteAction = FToolMenuExecuteAction::CreateStatic(&FSpriteOptimizerActions::ExecuteOptimizeSprites);
-                UIAction.CanExecuteAction = FToolMenuCanExecuteAction::CreateStatic(&FSpriteOptimizerActions::CanExecuteOptimizeSprites);
+                FToolUIAction OptimizeUIAction;
+                OptimizeUIAction.ExecuteAction = FToolMenuExecuteAction::CreateStatic(&FSpriteOptimizerActions::ExecuteOptimizeSprites);
+                OptimizeUIAction.CanExecuteAction = FToolMenuCanExecuteAction::CreateStatic(&FSpriteOptimizerActions::CanExecuteOptimizeSprites);
                 
-                FText MenuLabel = SpriteCount == 1 ? 
+                FText OptimizeMenuLabel = SpriteCount == 1 ? 
                     LOCTEXT("OptimizeSpritesSingle", "🚀 Optimize Sprite") :
                     FText::Format(LOCTEXT("OptimizeSpriteMultiple", "🚀 Optimize {0} Sprites"), SpriteCount);
                 
                 InSection.AddMenuEntry(
                     "OptimizeSprites",
-                    MenuLabel,
+                    OptimizeMenuLabel,
                     LOCTEXT("OptimizeSpritesTooltip", "Open the sprite optimization tool to reduce texture memory usage by removing transparent areas"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Edit"),
-                    UIAction,
+                    OptimizeUIAction,
                     EUserInterfaceActionType::Button
                 );
             }
             
+            // === СОЗДАНИЕ АТЛАСА ===
             // Добавляем пункт создания атласа для множественных спрайтов
             if (SpriteCount > 1)
             {
                 FToolUIAction AtlasUIAction;
                 AtlasUIAction.ExecuteAction = FToolMenuExecuteAction::CreateLambda([SelectedSprites](const FToolMenuContext&)
                 {
-                    // Быстрое создание атласа с настройками по умолчанию
-                    FSpriteAtlasSettings DefaultSettings;
-                    DefaultSettings.bOptimizeSpritesFirst = true;
-                    DefaultSettings.bCreateIndividualSprites = true;
-                    
-                    FString AtlasName = FString::Printf(TEXT("Atlas_%d_Sprites"), SelectedSprites.Num());
-                    FSpriteAtlasResult Result = USpriteOptimizer::CreateSpriteAtlas(SelectedSprites, DefaultSettings, AtlasName);
-                    
-                    if (Result.bSuccess)
-                    {
-                        USpriteOptimizer::ShowOptimizationNotification(
-                            FText::Format(LOCTEXT("QuickAtlasSuccess", "✅ Atlas created: {0}x{1}, {2} sprites, {3}% efficiency"),
-                            Result.AtlasSize.X, Result.AtlasSize.Y, Result.CreatedSprites.Num(), 
-                            FText::AsNumber(Result.PackingEfficiency)), true);
-                        USpriteOptimizer::RefreshContentBrowser();
-                    }
-                    else
-                    {
-                        USpriteOptimizer::ShowOptimizationNotification(
-                            FText::FromString(Result.ErrorMessage), false);
-                    }
+                    // ИЗМЕНЕНО: Вызываем новое окно создания атласа
+                    SAtlasCreationWindow::ShowAtlasCreationWindow(SelectedSprites);
+                });
+                
+                AtlasUIAction.CanExecuteAction = FToolMenuCanExecuteAction::CreateLambda([SpriteCount](const FToolMenuContext&) -> bool
+                {
+                    return SpriteCount > 1;
                 });
                 
                 InSection.AddMenuEntry(
                     "CreateSpriteAtlas",
                     FText::Format(LOCTEXT("CreateAtlasMultiple", "🎨 Create Atlas from {0} Sprites"), SpriteCount),
-                    LOCTEXT("CreateAtlasTooltip", "Create a texture atlas by combining selected sprites into a single texture"),
+                    LOCTEXT("CreateAtlasTooltip", "Open advanced atlas creation window to combine selected sprites into a single optimized texture"),
                     FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Create"),
                     AtlasUIAction,
                     EUserInterfaceActionType::Button
                 );
+                
+                // === БЫСТРОЕ СОЗДАНИЕ АТЛАСА ===
+                // Добавляем опцию быстрого создания атласа с настройками по умолчанию
+                FToolUIAction QuickAtlasUIAction;
+                QuickAtlasUIAction.ExecuteAction = FToolMenuExecuteAction::CreateLambda([SelectedSprites](const FToolMenuContext&)
+                {
+                    // Быстрое создание атласа с настройками по умолчанию
+                    FSpriteAtlasSettings DefaultSettings;
+                    DefaultSettings.bOptimizeSpritesFirst = true;
+                    DefaultSettings.bCreateIndividualSprites = true;
+                    DefaultSettings.MaxAtlasSize = FIntPoint(2048, 2048);
+                    DefaultSettings.SpritePadding = 2;
+                    DefaultSettings.PackingAlgorithm = EAtlasPackingAlgorithm::BestFit;
+                    
+                    FString AtlasName = FString::Printf(TEXT("QuickAtlas_%d_Sprites"), SelectedSprites.Num());
+                    
+                    // Показываем уведомление о начале процесса
+                    USpriteOptimizer::ShowOptimizationNotification(
+                        FText::Format(LOCTEXT("QuickAtlasStarted", "🔄 Creating quick atlas from {0} sprites..."), SelectedSprites.Num()), 
+                        true
+                    );
+                    
+                    FSpriteAtlasResult Result = USpriteOptimizer::CreateSpriteAtlas(SelectedSprites, DefaultSettings, AtlasName);
+                    
+                    if (Result.bSuccess)
+                    {
+                        USpriteOptimizer::ShowOptimizationNotification(
+                            FText::Format(LOCTEXT("QuickAtlasSuccess", 
+                                "✅ Quick Atlas created successfully!\n"
+                                "📐 Size: {0}x{1}\n"
+                                "📊 Efficiency: {2}%\n"
+                                "🎨 Individual sprites: {3}"),
+                                Result.AtlasSize.X, Result.AtlasSize.Y,
+                                FText::AsNumber(Result.PackingEfficiency),
+                                Result.CreatedSprites.Num()
+                            ), 
+                            true
+                        );
+                        USpriteOptimizer::RefreshContentBrowser();
+                    }
+                    else
+                    {
+                        USpriteOptimizer::ShowOptimizationNotification(
+                            FText::Format(LOCTEXT("QuickAtlasError", "❌ Quick Atlas creation failed: {0}"), 
+                                         FText::FromString(Result.ErrorMessage)), 
+                            false
+                        );
+                    }
+                });
+                
+                InSection.AddMenuEntry(
+                    "QuickCreateSpriteAtlas",
+                    FText::Format(LOCTEXT("QuickCreateAtlas", "⚡ Quick Atlas ({0} sprites)"), SpriteCount),
+                    LOCTEXT("QuickCreateAtlasTooltip", "Instantly create an atlas with default settings - optimize first, then pack with BestFit algorithm"),
+                    FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Reimport"),
+                    QuickAtlasUIAction,
+                    EUserInterfaceActionType::Button
+                );
+            }
+            
+            // === СЕПАРАТОР ===
+            if (SpriteCount > 0)
+            {
+                InSection.AddSeparator("SpriteOptimizerSeparator");
             }
         }
     }));
@@ -150,7 +202,7 @@ void FSpriteOptimizerActions::ExecuteOptimizeSprites(const FToolMenuContext& Con
     
     if (SelectedSprites.Num() > 0)
     {
-        // Открываем окно оптимизации
+        // Открываем окно оптимизации (БЕЗ функций атласа)
         SSpriteOptimizationWindow::ShowOptimizationWindow(SelectedSprites);
     }
 }
@@ -230,12 +282,13 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
                 
                 if (Sprites.Num() > 0)
                 {
-                    FText MenuLabel = Sprites.Num() == 1 ? 
+                    // === МЕНЮ ОПТИМИЗАЦИИ ===
+                    FText OptimizeMenuLabel = Sprites.Num() == 1 ? 
                         LOCTEXT("OptimizeSpritesSingle", "🚀 Optimize Sprite") :
                         FText::Format(LOCTEXT("OptimizeSpriteMultiple", "🚀 Optimize {0} Sprites"), Sprites.Num());
                     
                     MenuBuilder.AddMenuEntry(
-                        MenuLabel,
+                        OptimizeMenuLabel,
                         LOCTEXT("OptimizeSpritesTooltip", "Open the sprite optimization tool to reduce texture memory usage by removing transparent areas"),
                         FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Edit"),
                         FUIAction(FExecuteAction::CreateLambda([Sprites]()
@@ -243,6 +296,21 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
                             SSpriteOptimizationWindow::ShowOptimizationWindow(Sprites);
                         }))
                     );
+                    
+                    // === МЕНЮ АТЛАСА ===
+                    if (Sprites.Num() > 1)
+                    {
+                        MenuBuilder.AddMenuEntry(
+                            FText::Format(LOCTEXT("CreateAtlasAdvanced", "🎨 Create Atlas ({0} sprites)"), Sprites.Num()),
+                            LOCTEXT("CreateAtlasAdvancedTooltip", "Open advanced atlas creation window with detailed settings"),
+                            FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Create"),
+                            FUIAction(FExecuteAction::CreateLambda([Sprites]()
+                            {
+                                // ИЗМЕНЕНО: Вызываем новое окно создания атласа
+                                SAtlasCreationWindow::ShowAtlasCreationWindow(Sprites);
+                            }))
+                        );
+                    }
                 }
             })
         );

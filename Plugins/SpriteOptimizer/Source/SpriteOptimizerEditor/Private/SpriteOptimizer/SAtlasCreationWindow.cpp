@@ -1,5 +1,6 @@
 #include "SpriteOptimizer/SAtlasCreationWindow.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
+#include "SpriteOptimizer/SAtlasPreviewWindow.h"
 #include "Settings/SpriteOptimizerSettings.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Text/STextBlock.h"
@@ -865,8 +866,25 @@ FReply SAtlasCreationWindow::OnCreateAtlas()
 
 FReply SAtlasCreationWindow::OnPreviewAtlas()
 {
-    // TODO: Реализовать окно предпросмотра атласа
-    ShowNotification(LOCTEXT("PreviewNotImplemented", "Atlas preview coming in future update"), true);
+    // Проверяем, что анализ выполнен
+    if (!LastAnalysisResult.bSuccess || LastAnalysisResult.TotalSprites == 0)
+    {
+        ShowNotification(LOCTEXT("PreviewNeedsAnalysis", "Please run 'Analyze Atlas' first to preview the layout"), false);
+        return FReply::Handled();
+    }
+    
+    // Получаем выбранные спрайты
+    TArray<UPaperSprite*> SelectedSprites = GetSelectedSprites();
+    
+    if (SelectedSprites.Num() < 2)
+    {
+        ShowNotification(LOCTEXT("PreviewNeedsSprites", "Select at least 2 sprites to preview atlas"), false);
+        return FReply::Handled();
+    }
+    
+    // Показываем окно предпросмотра
+    SAtlasPreviewWindow::ShowAtlasPreview(SelectedSprites, AtlasSettings, LastAnalysisResult);
+    
     return FReply::Handled();
 }
 

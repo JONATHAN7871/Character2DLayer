@@ -14,6 +14,7 @@
 #include "PaperSprite.h"
 
 class UPaperSprite;
+class SAtlasPreviewWindow;
 
 struct FAtlasSpriteInfo
 {

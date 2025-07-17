@@ -36,10 +36,6 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
     CurrentSettings.bReplaceOriginals = false;
     CurrentSettings.bUseProjectSettings = true;
     
-    // Инициализируем настройки атласа
-    InitializeAtlasSettings();
-    InitializePackingAlgorithmOptions();
-    
     // Загружаем настройки из проекта
     LoadSettingsFromProject();
     
@@ -94,21 +90,6 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // === НОВАЯ СЕКЦИЯ АТЛАСА ===
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateAtlasSection()
-            ]
-            
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
-            
             // Список спрайтов
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
@@ -144,7 +125,6 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
     
     // Начальное обновление
     RefreshAnalysis();
-    UpdateAtlasButtonStates();
 }
 
 SSpriteOptimizationWindow::~SSpriteOptimizationWindow()
@@ -152,23 +132,8 @@ SSpriteOptimizationWindow::~SSpriteOptimizationWindow()
     // Принудительно очищаем все ссылки при уничтожении окна
     SpriteRows.Empty();
     OptimizationResults.Empty();
-    LastAtlasAnalysis = FSpriteAtlasResult();
     
     UE_LOG(LogTemp, Log, TEXT("SpriteOptimizationWindow destroyed and cleaned up"));
-}
-
-void SSpriteOptimizationWindow::InitializeAtlasSettings()
-{
-    AtlasSettings = FSpriteAtlasSettings();
-    LastAtlasAnalysis = FSpriteAtlasResult();
-}
-
-void SSpriteOptimizationWindow::InitializePackingAlgorithmOptions()
-{
-    PackingAlgorithmOptions.Empty();
-    PackingAlgorithmOptions.Add(MakeShared<FString>(TEXT("Simple Grid")));
-    PackingAlgorithmOptions.Add(MakeShared<FString>(TEXT("Best Fit")));
-    PackingAlgorithmOptions.Add(MakeShared<FString>(TEXT("MaxRects Algorithm")));
 }
 
 void SSpriteOptimizationWindow::InitializeMaterialOptions()
@@ -191,269 +156,6 @@ void SSpriteOptimizationWindow::InitializeMaterialOptions()
     // Добавляем опцию "Default"
     MaterialAssets.Insert(nullptr, 0);
     MaterialOptions.Insert(MakeShared<FString>(TEXT("Default Paper2D Material")), 0);
-}
-
-TSharedRef<SWidget> SSpriteOptimizationWindow::CreateAtlasSection()
-{
-    return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-        .Padding(10)
-        [
-            SNew(SVerticalBox)
-            
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            [
-                SNew(SHorizontalBox)
-                
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                [
-                    SNew(STextBlock)
-                    .Text(LOCTEXT("AtlasSection", "🎨 Atlas Creation"))
-                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                ]
-                
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(5, 0)
-                [
-                    SAssignNew(CreateAtlasCheckBox, SCheckBox)
-                    .IsChecked(ECheckBoxState::Unchecked)
-                    .OnCheckStateChanged(this, &SSpriteOptimizationWindow::OnCreateAtlasChanged)
-                    .Content()
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("EnableAtlasLabel", "Enable Atlas Creation"))
-                        .ToolTipText(LOCTEXT("EnableAtlasTooltip", "Create a texture atlas from selected sprites"))
-                    ]
-                ]
-            ]
-            
-            // Atlas settings (initially hidden)
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 10)
-            [
-                SNew(SVerticalBox)
-                .Visibility_Lambda([this]()
-                {
-                    return (CreateAtlasCheckBox.IsValid() && CreateAtlasCheckBox->IsChecked()) ? 
-                        EVisibility::Visible : EVisibility::Collapsed;
-                })
-                
-                // Atlas size settings
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 5)
-                [
-                    SNew(SUniformGridPanel)
-                    .SlotPadding(FMargin(5, 2))
-                    
-                    // Max Atlas Size X
-                    + SUniformGridPanel::Slot(0, 0)
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("AtlasSizeXLabel", "Max Width:"))
-                        .ToolTipText(LOCTEXT("AtlasSizeXTooltip", "Maximum atlas width in pixels"))
-                    ]
-                    
-                    + SUniformGridPanel::Slot(1, 0)
-                    [
-                        SAssignNew(AtlasSizeXSpinBox, SSpinBox<int32>)
-                        .Value(AtlasSettings.MaxAtlasSize.X)
-                        .MinValue(256)
-                        .MaxValue(8192)
-                        .OnValueChanged(this, &SSpriteOptimizationWindow::OnAtlasSizeXChanged)
-                        .ToolTipText(LOCTEXT("AtlasSizeXTooltip", "Maximum atlas width in pixels"))
-                    ]
-                    
-                    // Max Atlas Size Y
-                    + SUniformGridPanel::Slot(0, 1)
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("AtlasSizeYLabel", "Max Height:"))
-                        .ToolTipText(LOCTEXT("AtlasSizeYTooltip", "Maximum atlas height in pixels"))
-                    ]
-                    
-                    + SUniformGridPanel::Slot(1, 1)
-                    [
-                        SAssignNew(AtlasSizeYSpinBox, SSpinBox<int32>)
-                        .Value(AtlasSettings.MaxAtlasSize.Y)
-                        .MinValue(256)
-                        .MaxValue(8192)
-                        .OnValueChanged(this, &SSpriteOptimizationWindow::OnAtlasSizeYChanged)
-                        .ToolTipText(LOCTEXT("AtlasSizeYTooltip", "Maximum atlas height in pixels"))
-                    ]
-                    
-                    // Atlas Padding
-                    + SUniformGridPanel::Slot(0, 2)
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("AtlasPaddingLabel", "Sprite Padding:"))
-                        .ToolTipText(LOCTEXT("AtlasPaddingTooltip", "Pixels between sprites in atlas"))
-                    ]
-                    
-                    + SUniformGridPanel::Slot(1, 2)
-                    [
-                        SAssignNew(AtlasPaddingSpinBox, SSpinBox<int32>)
-                        .Value(AtlasSettings.SpritePadding)
-                        .MinValue(0)
-                        .MaxValue(20)
-                        .OnValueChanged(this, &SSpriteOptimizationWindow::OnAtlasPaddingChanged)
-                        .ToolTipText(LOCTEXT("AtlasPaddingTooltip", "Pixels between sprites in atlas"))
-                    ]
-                    
-                    // Packing Algorithm
-                    + SUniformGridPanel::Slot(0, 3)
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("PackingAlgorithmLabel", "Packing:"))
-                        .ToolTipText(LOCTEXT("PackingAlgorithmTooltip", "Algorithm for arranging sprites in atlas"))
-                    ]
-                    
-                    + SUniformGridPanel::Slot(1, 3)
-                    [
-                        SAssignNew(PackingAlgorithmComboBox, SComboBox<TSharedPtr<FString>>)
-                        .OptionsSource(&PackingAlgorithmOptions)
-                        .OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
-                        {
-                            return SNew(STextBlock).Text(FText::FromString(*Item));
-                        })
-                        .OnSelectionChanged(this, &SSpriteOptimizationWindow::OnPackingAlgorithmChanged)
-                        .Content()
-                        [
-                            SNew(STextBlock)
-                            .Text_Lambda([this]()
-                            {
-                                if (PackingAlgorithmComboBox.IsValid() && PackingAlgorithmComboBox->GetSelectedItem().IsValid())
-                                {
-                                    return FText::FromString(*PackingAlgorithmComboBox->GetSelectedItem());
-                                }
-                                return LOCTEXT("SelectAlgorithm", "Simple Grid");
-                            })
-                        ]
-                        .ToolTipText(LOCTEXT("PackingAlgorithmTooltip", "Algorithm for arranging sprites in atlas"))
-                    ]
-                ]
-                
-                // Atlas options
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 10)
-                [
-                    SNew(SHorizontalBox)
-                    
-                    + SHorizontalBox::Slot()
-                    .FillWidth(1.0f)
-                    [
-                        SAssignNew(OptimizeSpritesFirstCheckBox, SCheckBox)
-                        .IsChecked(AtlasSettings.bOptimizeSpritesFirst ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-                        .OnCheckStateChanged(this, &SSpriteOptimizationWindow::OnOptimizeSpritesFirstChanged)
-                        .Content()
-                        [
-                            SNew(STextBlock)
-                            .Text(LOCTEXT("OptimizeFirstLabel", "Optimize First"))
-                            .ToolTipText(LOCTEXT("OptimizeFirstTooltip", "Optimize sprites before creating atlas"))
-                        ]
-                    ]
-                    
-                    + SHorizontalBox::Slot()
-                    .FillWidth(1.0f)
-                    [
-                        SAssignNew(CreateIndividualSpritesCheckBox, SCheckBox)
-                        .IsChecked(AtlasSettings.bCreateIndividualSprites ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-                        .OnCheckStateChanged(this, &SSpriteOptimizationWindow::OnCreateIndividualSpritesChanged)
-                        .Content()
-                        [
-                            SNew(STextBlock)
-                            .Text(LOCTEXT("CreateIndividualLabel", "Create Individual Sprites"))
-                            .ToolTipText(LOCTEXT("CreateIndividualTooltip", "Create separate sprite assets from atlas"))
-                        ]
-                    ]
-                ]
-                
-                // Atlas suffix
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 5)
-                [
-                    SNew(SHorizontalBox)
-                    
-                    + SHorizontalBox::Slot()
-                    .AutoWidth()
-                    .VAlign(VAlign_Center)
-                    .Padding(0, 0, 5, 0)
-                    [
-                        SNew(STextBlock)
-                        .Text(LOCTEXT("AtlasSuffixLabel", "Atlas Suffix:"))
-                        .ToolTipText(LOCTEXT("AtlasSuffixTooltip", "Suffix for atlas asset names"))
-                    ]
-                    
-                    + SHorizontalBox::Slot()
-                    .FillWidth(1.0f)
-                    [
-                        SAssignNew(AtlasSuffixTextBox, SEditableTextBox)
-                        .Text(FText::FromString(AtlasSettings.AtlasSuffix))
-                        .OnTextCommitted(this, &SSpriteOptimizationWindow::OnAtlasSuffixChanged)
-                        .ToolTipText(LOCTEXT("AtlasSuffixTooltip", "Suffix for atlas asset names"))
-                    ]
-                ]
-                
-                // Atlas analysis and actions
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 10)
-                [
-                    SNew(SVerticalBox)
-                    
-                    // Analysis result
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    .Padding(0, 5)
-                    [
-                        SAssignNew(AtlasAnalysisText, STextBlock)
-                        .Text(GetAtlasAnalysisText())
-                        .AutoWrapText(true)
-                        .Visibility_Lambda([this]()
-                        {
-                            return LastAtlasAnalysis.TotalSprites > 0 ? EVisibility::Visible : EVisibility::Collapsed;
-                        })
-                    ]
-                    
-                    // Action buttons
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    .Padding(0, 5)
-                    [
-                        SNew(SHorizontalBox)
-                        
-                        + SHorizontalBox::Slot()
-                        .FillWidth(1.0f)
-                        .Padding(5, 0)
-                        [
-                            SAssignNew(AnalyzeAtlasButton, SButton)
-                            .Text(LOCTEXT("AnalyzeAtlas", "🔍 Analyze Atlas"))
-                            .OnClicked(this, &SSpriteOptimizationWindow::OnAnalyzeAtlas)
-                            .HAlign(HAlign_Center)
-                            .ToolTipText(LOCTEXT("AnalyzeAtlasTooltip", "Analyze atlas creation feasibility"))
-                        ]
-                        
-                        + SHorizontalBox::Slot()
-                        .FillWidth(1.0f)
-                        .Padding(5, 0)
-                        [
-                            SAssignNew(CreateAtlasButton, SButton)
-                            .Text(LOCTEXT("CreateAtlas", "🎨 Create Atlas"))
-                            .ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("PrimaryButton"))
-                            .OnClicked(this, &SSpriteOptimizationWindow::OnCreateAtlas)
-                            .HAlign(HAlign_Center)
-                            .ToolTipText(LOCTEXT("CreateAtlasTooltip", "Create texture atlas from selected sprites"))
-                        ]
-                    ]
-                ]
-            ]
-        ];
 }
 
 void SSpriteOptimizationWindow::OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo)
@@ -486,7 +188,7 @@ void SSpriteOptimizationWindow::ShowOptimizationWindow(const TArray<UPaperSprite
     TSharedRef<SWindow> OptimizationWindow = SNew(SWindow)
         .Title(FText::Format(LOCTEXT("OptimizationWindowTitle", "Sprite Optimization - {0} sprites"), Sprites.Num()))
         .SizingRule(ESizingRule::UserSized)
-        .ClientSize(FVector2D(1200, 900))
+        .ClientSize(FVector2D(1200, 800))  // Уменьшена высота, так как убрали секцию атласа
         .SupportsMaximize(true)
         .SupportsMinimize(false)
         .Content()
@@ -516,8 +218,12 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateHeaderSection()
         .Padding(0, 5)
         [
             SNew(STextBlock)
-            .Text(FText::Format(LOCTEXT("OptimizationSubtitle", "Optimize {0} selected sprites by removing transparent areas and creating efficient assets"), SpriteRows.Num()))
+            .Text(FText::Format(LOCTEXT("OptimizationSubtitle", 
+                "Optimize {0} selected sprites by removing transparent areas and creating efficient assets.\n"
+                "💡 For combining sprites into atlases, use the separate 'Create Atlas' option."), 
+                SpriteRows.Num()))
             .Justification(ETextJustify::Center)
+            .AutoWrapText(true)
         ];
 }
 
@@ -585,7 +291,6 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateSettingsSection()
                 SNew(SUniformGridPanel)
                 .SlotPadding(FMargin(5, 2))
                 
-
                 // Материал
                 + SUniformGridPanel::Slot(0, 0)
                 [
@@ -617,7 +322,6 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateSettingsSection()
                     ]
                     .ToolTipText(LOCTEXT("MaterialTooltip", "Material to use for optimized sprites"))
                 ]
-                
                 
                 // Pixels Per Unit
                 + SUniformGridPanel::Slot(0, 1)
@@ -1109,9 +813,6 @@ void SSpriteOptimizationWindow::UpdateButtonStates()
     {
         PreviewButton->SetEnabled(bHasOptimizationResults);
     }
-    
-    // Обновляем кнопки атласа
-    UpdateAtlasButtonStates();
 }
 
 TArray<TSharedPtr<FSpriteOptimizationRow>> SSpriteOptimizationWindow::GetSelectedSprites() const
@@ -1244,7 +945,8 @@ FText SSpriteOptimizationWindow::GetSummaryText() const
         "💾 Current total size: {1} MB\n"
         "🚀 Optimized total size: {2} MB\n"
         "💰 Potential savings: {3} MB ({4}%)\n"
-        "⚡ Performance improvement: ~{5}x faster loading"),
+        "⚡ Performance improvement: ~{5}x faster loading\n"
+        "💡 Tip: Use 'Create Atlas' to combine multiple sprites for even better performance!"),
         ValidSprites,
         FText::AsNumber(TotalOriginalMB, &FNumberFormattingOptions::DefaultWithGrouping()),
         FText::AsNumber(TotalOptimizedMB, &FNumberFormattingOptions::DefaultWithGrouping()),
@@ -1316,7 +1018,8 @@ FText SSpriteOptimizationWindow::GetPreviewText() const
         PreviewText += FString::Printf(TEXT("Performance improvement: ~%dx faster loading\n\n"), 
                                      FMath::Max(1, FMath::RoundToInt(SavingsPercent / 15.0f)));
         PreviewText += TEXT("💡 Optimized assets are saved in the same directory as originals with '_Optimized' suffix.\n");
-        PreviewText += TEXT("🔄 Content Browser will be automatically refreshed to show new assets.");
+        PreviewText += TEXT("🔄 Content Browser will be automatically refreshed to show new assets.\n");
+        PreviewText += TEXT("🎨 To combine sprites into atlases, use the separate 'Create Atlas' option.");
     }
     
     return FText::FromString(PreviewText);
@@ -1588,242 +1291,6 @@ FReply SSpriteOptimizationWindow::OnSelectNone()
     UpdateButtonStates();
     
     return FReply::Handled();
-}
-
-void SSpriteOptimizationWindow::OnCreateAtlasChanged(ECheckBoxState NewState)
-{
-    bool bCreateAtlas = (NewState == ECheckBoxState::Checked);
-    UpdateAtlasButtonStates();
-    
-    if (bCreateAtlas && SpriteRows.Num() > 1)
-    {
-        // Автоматически анализируем атлас при включении
-        OnAnalyzeAtlas();
-    }
-}
-
-void SSpriteOptimizationWindow::OnAtlasSizeXChanged(int32 NewValue)
-{
-    AtlasSettings.MaxAtlasSize.X = NewValue;
-    LastAtlasAnalysis = FSpriteAtlasResult(); // Сбрасываем анализ
-    UpdateAtlasUI();
-}
-
-void SSpriteOptimizationWindow::OnAtlasSizeYChanged(int32 NewValue)
-{
-    AtlasSettings.MaxAtlasSize.Y = NewValue;
-    LastAtlasAnalysis = FSpriteAtlasResult(); // Сбрасываем анализ
-    UpdateAtlasUI();
-}
-
-void SSpriteOptimizationWindow::OnAtlasPaddingChanged(int32 NewValue)
-{
-    AtlasSettings.SpritePadding = NewValue;
-    LastAtlasAnalysis = FSpriteAtlasResult(); // Сбрасываем анализ
-    UpdateAtlasUI();
-}
-
-void SSpriteOptimizationWindow::OnPackingAlgorithmChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo)
-{
-    if (SelectedItem.IsValid())
-    {
-        FString Selected = *SelectedItem;
-        if (Selected == TEXT("Simple Grid"))
-        {
-            AtlasSettings.PackingAlgorithm = EAtlasPackingAlgorithm::Simple;
-        }
-        else if (Selected == TEXT("Best Fit"))
-        {
-            AtlasSettings.PackingAlgorithm = EAtlasPackingAlgorithm::BestFit;
-        }
-        else if (Selected == TEXT("MaxRects Algorithm"))
-        {
-            AtlasSettings.PackingAlgorithm = EAtlasPackingAlgorithm::MaxRects;
-        }
-        
-        LastAtlasAnalysis = FSpriteAtlasResult(); // Сбрасываем анализ
-        UpdateAtlasUI();
-    }
-}
-
-void SSpriteOptimizationWindow::OnOptimizeSpritesFirstChanged(ECheckBoxState NewState)
-{
-    AtlasSettings.bOptimizeSpritesFirst = (NewState == ECheckBoxState::Checked);
-    LastAtlasAnalysis = FSpriteAtlasResult(); // Сбрасываем анализ
-    UpdateAtlasUI();
-}
-
-void SSpriteOptimizationWindow::OnCreateIndividualSpritesChanged(ECheckBoxState NewState)
-{
-    AtlasSettings.bCreateIndividualSprites = (NewState == ECheckBoxState::Checked);
-}
-
-void SSpriteOptimizationWindow::OnAtlasSuffixChanged(const FText& NewText, ETextCommit::Type CommitType)
-{
-    AtlasSettings.AtlasSuffix = NewText.ToString();
-}
-
-FReply SSpriteOptimizationWindow::OnAnalyzeAtlas()
-{
-    TArray<UPaperSprite*> SpritesForAtlas = GetSpritesForAtlas();
-    
-    if (SpritesForAtlas.Num() < 2)
-    {
-        ShowNotification(LOCTEXT("AtlasNeedMoreSprites", "Atlas creation requires at least 2 sprites"), 2);
-        return FReply::Handled();
-    }
-    
-    ShowNotification(LOCTEXT("AnalyzingAtlas", "Analyzing atlas..."), 0);
-    
-    LastAtlasAnalysis = USpriteOptimizer::AnalyzeSpriteAtlas(SpritesForAtlas, AtlasSettings);
-    
-    UpdateAtlasUI();
-    UpdateAtlasButtonStates();
-    
-    if (LastAtlasAnalysis.bSuccess)
-    {
-        ShowNotification(LOCTEXT("AtlasAnalysisComplete", "Atlas analysis complete!"), 1);
-    }
-    else
-    {
-        ShowNotification(FText::FromString(LastAtlasAnalysis.ErrorMessage), 2);
-    }
-    
-    return FReply::Handled();
-}
-
-FReply SSpriteOptimizationWindow::OnCreateAtlas()
-{
-    TArray<UPaperSprite*> SpritesForAtlas = GetSpritesForAtlas();
-    
-    if (SpritesForAtlas.Num() < 2)
-    {
-        ShowNotification(LOCTEXT("AtlasNeedMoreSprites", "Atlas creation requires at least 2 sprites"), 2);
-        return FReply::Handled();
-    }
-    
-    FText ProcessingText = FText::Format(LOCTEXT("CreatingAtlas", "Creating atlas from {0} sprites..."), SpritesForAtlas.Num());
-    ShowNotification(ProcessingText, 0);
-    
-    // Генерируем имя атласа
-    FString AtlasName = FString::Printf(TEXT("Atlas_%d_Sprites"), SpritesForAtlas.Num());
-    
-    // Создаем атлас
-    FSpriteAtlasResult Result = USpriteOptimizer::CreateSpriteAtlas(SpritesForAtlas, AtlasSettings, AtlasName);
-    
-    if (Result.bSuccess)
-    {
-        FText CompletionText = FText::Format(LOCTEXT("AtlasCreated", 
-            "✅ Atlas created successfully!\n"
-            "📐 Size: {0}x{1}\n"
-            "📊 Efficiency: {2}%\n"
-            "💰 Memory savings: {3}%\n"
-            "🎨 Sprites created: {4}"), 
-            Result.AtlasSize.X, Result.AtlasSize.Y,
-            FText::AsNumber(Result.PackingEfficiency, &FNumberFormattingOptions::DefaultWithGrouping()),
-            FText::AsNumber(Result.MemorySavings, &FNumberFormattingOptions::DefaultWithGrouping()),
-            Result.CreatedSprites.Num());
-            
-        ShowNotification(CompletionText, 1);
-        
-        // Обновляем Content Browser
-        USpriteOptimizer::RefreshContentBrowser();
-        
-        // ВАЖНО: Закрываем окно после создания атласа
-        FTimerHandle TimerHandle;
-        FTimerDelegate TimerDelegate;
-        TimerDelegate.BindLambda([this]()
-        {
-            // Очищаем все ссылки
-            SpriteRows.Empty();
-            OptimizationResults.Empty();
-            LastAtlasAnalysis = FSpriteAtlasResult();
-            
-            // Закрываем окно
-            TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
-            if (ParentWindow.IsValid())
-            {
-                ParentWindow->RequestDestroyWindow();
-            }
-        });
-        
-        GEditor->GetTimerManager()->SetTimer(TimerHandle, TimerDelegate, 3.0f, false);
-    }
-    else
-    {
-        ShowNotification(FText::FromString(Result.ErrorMessage), 2);
-    }
-    
-    return FReply::Handled();
-}
-
-void SSpriteOptimizationWindow::UpdateAtlasUI()
-{
-    if (AtlasAnalysisText.IsValid())
-    {
-        AtlasAnalysisText->SetText(GetAtlasAnalysisText());
-    }
-}
-
-void SSpriteOptimizationWindow::UpdateAtlasButtonStates()
-{
-    bool bAtlasEnabled = CreateAtlasCheckBox.IsValid() && CreateAtlasCheckBox->IsChecked();
-    bool bHasEnoughSprites = GetSpritesForAtlas().Num() >= 2;
-    bool bCanAnalyze = bAtlasEnabled && bHasEnoughSprites;
-    bool bCanCreate = bCanAnalyze && LastAtlasAnalysis.bSuccess;
-    
-    if (AnalyzeAtlasButton.IsValid())
-    {
-        AnalyzeAtlasButton->SetEnabled(bCanAnalyze);
-    }
-    
-    if (CreateAtlasButton.IsValid())
-    {
-        CreateAtlasButton->SetEnabled(bCanCreate);
-    }
-}
-
-FText SSpriteOptimizationWindow::GetAtlasAnalysisText() const
-{
-    if (LastAtlasAnalysis.TotalSprites == 0)
-    {
-        return LOCTEXT("NoAtlasAnalysis", "Click 'Analyze Atlas' to see atlas statistics");
-    }
-    
-    if (!LastAtlasAnalysis.bSuccess)
-    {
-        return FText::Format(LOCTEXT("AtlasAnalysisError", "❌ Analysis failed: {0}"), 
-                           FText::FromString(LastAtlasAnalysis.ErrorMessage));
-    }
-    
-    return FText::Format(LOCTEXT("AtlasAnalysisResult",
-        "📊 Atlas Analysis Results:\n"
-        "📐 Estimated size: {0}x{1} pixels\n"
-        "📦 Packing efficiency: {2}%\n"
-        "💾 Memory usage: {3} MB\n"
-        "💰 Memory savings: {4}%\n"
-        "🎨 Total sprites: {5}"),
-        LastAtlasAnalysis.AtlasSize.X, LastAtlasAnalysis.AtlasSize.Y,
-        FText::AsNumber(LastAtlasAnalysis.PackingEfficiency, &FNumberFormattingOptions::DefaultWithGrouping()),
-        FText::AsNumber((LastAtlasAnalysis.AtlasSize.X * LastAtlasAnalysis.AtlasSize.Y * 4) / (1024.0f * 1024.0f), &FNumberFormattingOptions::DefaultWithGrouping()),
-        FText::AsNumber(LastAtlasAnalysis.MemorySavings, &FNumberFormattingOptions::DefaultWithGrouping()),
-        LastAtlasAnalysis.TotalSprites
-    );
-}
-
-TArray<UPaperSprite*> SSpriteOptimizationWindow::GetSpritesForAtlas() const
-{
-    TArray<UPaperSprite*> AtlasSprites;
-    
-    for (const auto& Row : SpriteRows)
-    {
-        if (Row->bSelected && Row->OriginalSprite)
-        {
-            AtlasSprites.Add(Row->OriginalSprite.Get());
-        }
-    }
-    
-    return AtlasSprites;
 }
 
 #undef LOCTEXT_NAMESPACE

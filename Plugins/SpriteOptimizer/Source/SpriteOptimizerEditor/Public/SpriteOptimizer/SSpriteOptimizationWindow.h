@@ -54,18 +54,18 @@ public:
     static void ShowOptimizationWindow(const TArray<UPaperSprite*>& Sprites);
 
 private:
-    // Данные
+    // === ОСНОВНЫЕ ДАННЫЕ ===
     TArray<TSharedPtr<FSpriteOptimizationRow>> SpriteRows;
     TArray<FSpriteOptimizationResult> OptimizationResults;
     FSpriteOptimizationSettings CurrentSettings;
     
-    // Виджеты
+    // === ОСНОВНЫЕ ВИДЖЕТЫ ===
     TSharedPtr<SListView<TSharedPtr<FSpriteOptimizationRow>>> SpriteListView;
     TSharedPtr<STextBlock> SummaryText;
     TSharedPtr<SButton> OptimizeButton;
     TSharedPtr<SButton> PreviewButton;
     
-    // Настройки
+    // === НАСТРОЙКИ ОПТИМИЗАЦИИ ===
     TSharedPtr<SComboBox<TSharedPtr<FString>>> MaterialComboBox;
     TArray<TSharedPtr<FString>> MaterialOptions;
     TArray<UMaterialInterface*> MaterialAssets;
@@ -75,7 +75,7 @@ private:
     TSharedPtr<SCheckBox> ReplaceOriginalsCheckBox;
     TSharedPtr<SCheckBox> UseProjectSettingsCheckBox;
     
-    // Обработчики событий
+    // === ОБРАБОТЧИКИ СОБЫТИЙ ===
     FReply OnAnalyzeSprites();
     FReply OnOptimizeSprites();
     FReply OnPreviewOptimization();
@@ -85,88 +85,41 @@ private:
     FReply OnOpenProjectSettings();
     FReply OnResetToDefaults();
     
-    // Создание UI секций
+    // === СОЗДАНИЕ UI СЕКЦИЙ ===
     TSharedRef<SWidget> CreateHeaderSection();
     TSharedRef<SWidget> CreateSettingsSection();
     TSharedRef<SWidget> CreateSpriteListSection();
     TSharedRef<SWidget> CreateSummarySection();
     TSharedRef<SWidget> CreateActionSection();
     
-    // Работа с таблицей
+    // === РАБОТА С ТАБЛИЦЕЙ ===
     TSharedRef<ITableRow> GenerateSpriteRow(TSharedPtr<FSpriteOptimizationRow> Item, const TSharedRef<STableViewBase>& OwnerTable);
     void OnSpriteSelectionChanged(TSharedPtr<FSpriteOptimizationRow> Item, ESelectInfo::Type SelectInfo);
     
-    // Вспомогательные функции
+    // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     void UpdateSummary();
     void UpdateButtonStates();
     TArray<TSharedPtr<FSpriteOptimizationRow>> GetSelectedSprites() const;
     void RefreshAnalysis();
     void LoadSettingsFromProject();
+    void InitializeMaterialOptions();
     
-    // Обработчики настроек
+    // === ОБРАБОТЧИКИ НАСТРОЕК ===
     void OnMaterialChanged(const FAssetData& AssetData);
+    void OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
     void OnPixelsPerUnitChanged(float NewValue);
     void OnPaddingChanged(int32 NewValue);
     void OnCreateBackupChanged(ECheckBoxState NewState);
     void OnReplaceOriginalsChanged(ECheckBoxState NewState);
     void OnUseProjectSettingsChanged(ECheckBoxState NewState);
     
-    // Получение текста статистики
+    // === ПОЛУЧЕНИЕ ТЕКСТА СТАТИСТИКИ ===
     FText GetSummaryText() const;
     FText GetSelectedSpritesText() const;
     FText GetPreviewText() const;
     
-    // Показ уведомлений
+    // === УВЕДОМЛЕНИЯ И ПРЕДПРОСМОТР ===
     void ShowNotification(const FText& Message, int32 State = 0);
-    
-    // Создание окна предпросмотра
     void ShowOptimizationPreview();
-
-    void InitializeMaterialOptions();
-    void OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
-
     static FReply ClosePreviewWindow(TSharedPtr<SWindow> WindowToClose);
-
-    // === ATLAS UI ELEMENTS ===
-    TSharedPtr<SCheckBox> CreateAtlasCheckBox;
-    TSharedPtr<SSpinBox<int32>> AtlasSizeXSpinBox;
-    TSharedPtr<SSpinBox<int32>> AtlasSizeYSpinBox;
-    TSharedPtr<SSpinBox<int32>> AtlasPaddingSpinBox;
-    TSharedPtr<SComboBox<TSharedPtr<FString>>> PackingAlgorithmComboBox;
-    TSharedPtr<SCheckBox> OptimizeSpritesFirstCheckBox;
-    TSharedPtr<SCheckBox> CreateIndividualSpritesCheckBox;
-    TSharedPtr<SEditableTextBox> AtlasSuffixTextBox;
-    TSharedPtr<SButton> AnalyzeAtlasButton;
-    TSharedPtr<SButton> CreateAtlasButton;
-    TSharedPtr<STextBlock> AtlasAnalysisText;
-    
-    // Atlas settings and data
-    FSpriteAtlasSettings AtlasSettings;
-    FSpriteAtlasResult LastAtlasAnalysis;
-    TArray<TSharedPtr<FString>> PackingAlgorithmOptions;
-    
-    // === ATLAS METHODS ===
-    void InitializeAtlasSettings();
-    void InitializePackingAlgorithmOptions();
-    TSharedRef<SWidget> CreateAtlasSection();
-    
-    // Atlas event handlers
-    void OnCreateAtlasChanged(ECheckBoxState NewState);
-    void OnAtlasSizeXChanged(int32 NewValue);
-    void OnAtlasSizeYChanged(int32 NewValue);
-    void OnAtlasPaddingChanged(int32 NewValue);
-    void OnPackingAlgorithmChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
-    void OnOptimizeSpritesFirstChanged(ECheckBoxState NewState);
-    void OnCreateIndividualSpritesChanged(ECheckBoxState NewState);
-    void OnAtlasSuffixChanged(const FText& NewText, ETextCommit::Type CommitType);
-    
-    // Atlas actions
-    FReply OnAnalyzeAtlas();
-    FReply OnCreateAtlas();
-    
-    // Atlas helper methods
-    void UpdateAtlasUI();
-    void UpdateAtlasButtonStates();
-    FText GetAtlasAnalysisText() const;
-    TArray<UPaperSprite*> GetSpritesForAtlas() const;
 };

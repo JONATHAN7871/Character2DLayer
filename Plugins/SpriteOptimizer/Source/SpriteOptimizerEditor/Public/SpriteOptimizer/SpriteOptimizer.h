@@ -141,7 +141,7 @@ enum class EAtlasPackingAlgorithm : uint8
 };
 
 USTRUCT(BlueprintType)
-struct FSpriteAtlasSettings
+struct SPRITEOPTIMIZEREDITOR_API FSpriteAtlasSettings
 {
     GENERATED_BODY()
     
@@ -181,7 +181,7 @@ struct FSpriteAtlasSettings
 };
 
 USTRUCT(BlueprintType)
-struct FSpriteAtlasResult
+struct SPRITEOPTIMIZEREDITOR_API FSpriteAtlasResult
 {
     GENERATED_BODY()
     
@@ -286,8 +286,12 @@ public:
     static void CreateBackupIfNeeded(UObject* Asset, bool bCreateBackup);
     static void RefreshContentBrowser();
     static void ShowOptimizationNotification(const FText& Message, bool bSuccess = true);
+    
+    // НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С ПАПКАМИ
+    static FString GetAtlasAssetPath(const FString& FirstSpritePath);
+    static bool EnsureDirectoryExists(const FString& DirectoryPath);
 
-    public:
+public:
     // === ATLAS METHODS ===
     
     // Создание атласа из множества спрайтов
@@ -359,18 +363,17 @@ private:
     );
 
     static bool CopyPixelsFromSourceToAtlas(
-    UTexture2D* SourceTexture, 
-    TArray<FColor>& AtlasPixels, 
-    const FIntRect& Region, 
-    const FIntPoint& AtlasSize
+        UTexture2D* SourceTexture, 
+        TArray<FColor>& AtlasPixels, 
+        const FIntRect& Region, 
+        const FIntPoint& AtlasSize
     );
 
     static FVector2D CalculateAtlasPivotForLayering(
-    int32 OriginalTextureWidth,
-    int32 OriginalTextureHeight, 
-    const FIntRect& OriginalUsedRegion,
-    const FIntRect& AtlasRegion,
-    UPaperSprite* OriginalSprite
+        int32 OriginalTextureWidth,
+        int32 OriginalTextureHeight, 
+        const FIntRect& OriginalUsedRegion,
+        const FIntRect& AtlasRegion,
+        UPaperSprite* OriginalSprite
     );
-    
 };

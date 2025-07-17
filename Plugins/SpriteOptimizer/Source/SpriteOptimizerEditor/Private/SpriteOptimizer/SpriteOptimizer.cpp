@@ -303,16 +303,17 @@ TArray<UMaterialInterface*> USpriteOptimizer::GetAvailablePaper2DMaterials()
 {
     TArray<UMaterialInterface*> Materials;
     
-    // Список стандартных материалов Paper2D
+    // Список правильных материалов Paper2D (по вашим путям)
     TArray<FString> Paper2DMaterialPaths = {
-        TEXT("/Paper2D/DefaultSpriteMaterial.DefaultSpriteMaterial"),
-        TEXT("/Paper2D/DefaultMaskedSpriteMaterial.DefaultMaskedSpriteMaterial"),
-        TEXT("/Paper2D/DefaultTranslucentSpriteMaterial.DefaultTranslucentSpriteMaterial"),
-        TEXT("/Paper2D/DefaultUnlitSpriteMaterial.DefaultUnlitSpriteMaterial"),
-        TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"),
-        TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Opaque.Widget3DPassThrough_Opaque"),
-        TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Translucent.Widget3DPassThrough_Translucent")
+        TEXT("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial"), // ПО УМОЛЧАНИЮ
+        TEXT("/Paper2D/MaskedUnlitSpriteMaterial.MaskedUnlitSpriteMaterial"),
+        TEXT("/Paper2D/TranslucentUnlitSpriteMaterial.TranslucentUnlitSpriteMaterial"),
+        TEXT("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial"),
+        TEXT("/Paper2D/MaskedLitSpriteMaterial.MaskedLitSpriteMaterial"),
+        TEXT("/Paper2D/OpaqueLitSpriteMaterial.OpaqueLitSpriteMaterial")
     };
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Loading Paper2D materials..."));
     
     for (const FString& Path : Paper2DMaterialPaths)
     {
@@ -320,30 +321,52 @@ TArray<UMaterialInterface*> USpriteOptimizer::GetAvailablePaper2DMaterials()
         if (Material)
         {
             Materials.Add(Material);
+            UE_LOG(LogSpriteOptimizer, Log, TEXT("Loaded material: %s"), *Material->GetName());
+        }
+        else
+        {
+            UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to load material: %s"), *Path);
         }
     }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Loaded %d Paper2D materials"), Materials.Num());
     
     return Materials;
 }
 
 UMaterialInterface* USpriteOptimizer::GetDefaultPaper2DMaterial()
 {
-    // Пытаемся загрузить стандартный материал спрайта
+    // По умолчанию используем TranslucentLitSpriteMaterial как вы просили
     UMaterialInterface* Material = LoadObject<UMaterialInterface>(
         nullptr, 
-        TEXT("/Paper2D/DefaultSpriteMaterial.DefaultSpriteMaterial")
+        TEXT("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial")
     );
     
-    if (!Material)
+    if (Material)
     {
-        // Если не найден, пытаемся загрузить другой
-        Material = LoadObject<UMaterialInterface>(
-            nullptr, 
-            TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial")
-        );
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using default material: %s"), *Material->GetName());
+        return Material;
     }
     
-    return Material;
+    // Fallback - пытаемся загрузить любой другой Paper2D материал
+    TArray<FString> FallbackPaths = {
+        TEXT("/Paper2D/MaskedLitSpriteMaterial.MaskedLitSpriteMaterial"),
+        TEXT("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial"),
+        TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial")
+    };
+    
+    for (const FString& Path : FallbackPaths)
+    {
+        Material = LoadObject<UMaterialInterface>(nullptr, *Path);
+        if (Material)
+        {
+            UE_LOG(LogSpriteOptimizer, Warning, TEXT("Using fallback material: %s"), *Material->GetName());
+            return Material;
+        }
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to load any Paper2D materials!"));
+    return nullptr;
 }
 
 UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
@@ -363,6 +386,13 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
     if (NewWidth <= 0 || NewHeight <= 0)
     {
         UE_LOG(LogSpriteOptimizer, Warning, TEXT("Invalid texture size: %dx%d"), NewWidth, NewHeight);
+        return nullptr;
+    }
+    
+    // ВАЖНО: Создаем директорию если её нет
+    if (!EnsureDirectoryExists(AssetPath))
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to create directory: %s"), *AssetPath);
         return nullptr;
     }
     
@@ -409,25 +439,7 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
         return nullptr;
     }
     
-    // Настраиваем текстуру
-    NewTexture->SetPlatformData(new FTexturePlatformData());
-    NewTexture->GetPlatformData()->SizeX = NewWidth;
-    NewTexture->GetPlatformData()->SizeY = NewHeight;
-    NewTexture->GetPlatformData()->PixelFormat = PF_B8G8R8A8;
-    
-    // Создаем mip уровень
-    FTexture2DMipMap* Mip = new FTexture2DMipMap();
-    NewTexture->GetPlatformData()->Mips.Add(Mip);
-    Mip->SizeX = NewWidth;
-    Mip->SizeY = NewHeight;
-    
-    // Записываем данные
-    Mip->BulkData.Lock(LOCK_READ_WRITE);
-    void* TextureData = Mip->BulkData.Realloc(OptimizedPixels.Num() * sizeof(FColor));
-    FMemory::Memcpy(TextureData, OptimizedPixels.GetData(), OptimizedPixels.Num() * sizeof(FColor));
-    Mip->BulkData.Unlock();
-    
-    // Настраиваем источник
+    // Настраиваем текстуру через Source API
     NewTexture->Source.Init(NewWidth, NewHeight, 1, 1, TSF_BGRA8, (uint8*)OptimizedPixels.GetData());
     
     // Копируем настройки с оригинала
@@ -438,7 +450,8 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
     NewTexture->AddressY = SourceTexture->AddressY;
     
     NewTexture->UpdateResource();
-    (void)Package->MarkPackageDirty();
+    NewTexture->PostEditChange();
+    Package->MarkPackageDirty();
     
     // Сохраняем
     FSavePackageArgs SaveArgs;
@@ -451,25 +464,12 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
     if (bSaved)
     {
         FAssetRegistryModule::AssetCreated(NewTexture);
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created optimized texture: %s (%dx%d)"), *FullAssetPath, NewWidth, NewHeight);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created optimized texture: %s (%dx%d) in folder: %s"), 
+               *AssetName, NewWidth, NewHeight, *AssetPath);
     }
     else
     {
         UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to save optimized texture: %s"), *FullAssetPath);
-    }
-    
-    // В конце метода добавьте:
-    if (NewTexture)
-    {
-        // Принудительно завершаем все операции с текстурой
-        NewTexture->UpdateResource();
-        NewTexture->PostEditChange();
-        
-        // Принудительный garbage collection для очистки временных данных
-        if (GEngine)
-        {
-            GEngine->TrimMemory();
-        }
     }
     
     return NewTexture;
@@ -510,11 +510,27 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     const FVector2D CroppedTextureTopLeftInPixels(UsedRegion.Min.X, UsedRegion.Min.Y);
     const FVector2D NewPivotInPixels = OriginalPivotInPixels - CroppedTextureTopLeftInPixels;
     
-    // Определяем материал
-    UMaterialInterface* SpriteMaterial = Settings.Material;
-    if (!SpriteMaterial)
+    // ИСПРАВЛЕНО: Определяем материал правильно
+    UMaterialInterface* SpriteMaterial = nullptr;
+    
+    // 1. Сначала проверяем материал из настроек
+    if (Settings.Material)
+    {
+        SpriteMaterial = Settings.Material;
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using material from settings: %s"), *SpriteMaterial->GetName());
+    }
+    // 2. Если материал не задан, используем материал оригинального спрайта
+    else if (OriginalSprite->GetDefaultMaterial())
+    {
+        SpriteMaterial = OriginalSprite->GetDefaultMaterial();
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using original sprite material: %s"), *SpriteMaterial->GetName());
+    }
+    // 3. Если и у оригинала нет материала, используем дефолтный Paper2D
+    else
     {
         SpriteMaterial = GetDefaultPaper2DMaterial();
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using default Paper2D material: %s"), 
+               SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("NULL"));
     }
     
     // Настраиваем параметры инициализации
@@ -522,7 +538,7 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     InitParams.Texture = OptimizedTexture;
     InitParams.Offset = FIntPoint::ZeroValue;
     InitParams.Dimension = FIntPoint(OptimizedTexture->GetSizeX(), OptimizedTexture->GetSizeY());
-    InitParams.DefaultMaterialOverride = SpriteMaterial;
+    InitParams.DefaultMaterialOverride = SpriteMaterial; // ИСПРАВЛЕНО: правильный материал
     InitParams.bOverridePixelsPerUnrealUnit = true;
     InitParams.PixelsPerUnrealUnit = Settings.PixelsPerUnit;
     
@@ -532,7 +548,7 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     // Устанавливаем пивот
     NewSprite->SetPivotMode(ESpritePivotMode::Custom, NewPivotInPixels, true);
     
-    (void)Package->MarkPackageDirty();
+    Package->MarkPackageDirty();
     
     // Сохраняем
     FSavePackageArgs SaveArgs;
@@ -545,7 +561,8 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     if (bSaved)
     {
         FAssetRegistryModule::AssetCreated(NewSprite);
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created optimized sprite: %s"), *FullAssetPath);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created optimized sprite: %s with material: %s"), 
+               *FullAssetPath, SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("None"));
     }
     else
     {
@@ -561,14 +578,40 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
     
     if (!Texture)
     {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("GetTexturePixelData: Texture is null"));
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("GetTexturePixelData: Texture is null"));
         return PixelData;
     }
     
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Reading pixel data from texture: %s (%dx%d)"), 
            *Texture->GetName(), Texture->GetSizeX(), Texture->GetSizeY());
     
-    // Проверяем что текстура может быть прочитана
+    // МЕТОД 1: Попытка через Source API (самый надежный)
+    if (Texture->Source.IsValid())
+    {
+        TArray64<uint8> RawData;
+        if (Texture->Source.GetMipData(RawData, 0) && RawData.Num() > 0)
+        {
+            int32 Width = Texture->GetSizeX();
+            int32 Height = Texture->GetSizeY();
+            int32 ExpectedPixels = Width * Height;
+            
+            if (RawData.Num() >= ExpectedPixels * 4) // BGRA = 4 bytes per pixel
+            {
+                const FColor* SourcePixels = reinterpret_cast<const FColor*>(RawData.GetData());
+                PixelData.Reserve(ExpectedPixels);
+                
+                for (int32 i = 0; i < ExpectedPixels; i++)
+                {
+                    PixelData.Add(SourcePixels[i]);
+                }
+                
+                UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Source API"), PixelData.Num());
+                return PixelData;
+            }
+        }
+    }
+    
+    // МЕТОД 2: Через Platform Data (fallback)
     if (!Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.Num() == 0)
     {
         UE_LOG(LogSpriteOptimizer, Warning, TEXT("Texture %s has no platform data or mips"), *Texture->GetName());
@@ -577,16 +620,15 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
     
     FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
     
-    // ВАЖНО: Проверяем состояние блокировки перед попыткой заблокировать
+    // Проверяем состояние блокировки
     if (Mip.BulkData.IsLocked())
     {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("BulkData already locked for texture %s, skipping"), *Texture->GetName());
+        UE_LOG(LogSpriteOptimizer, Warning, TEXT("BulkData already locked for texture %s"), *Texture->GetName());
         return PixelData;
     }
     
     const void* RawData = nullptr;
     
-    // Используем try-catch для безопасности
     try
     {
         RawData = Mip.BulkData.LockReadOnly();
@@ -600,11 +642,7 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
     if (!RawData)
     {
         UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to lock texture data for %s"), *Texture->GetName());
-        // Не забываем разблокировать если lock вернул nullptr
-        if (!Mip.BulkData.IsLocked())
-        {
-            try { Mip.BulkData.Unlock(); } catch (...) {}
-        }
+        try { Mip.BulkData.Unlock(); } catch (...) {}
         return PixelData;
     }
     
@@ -612,12 +650,6 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
     int32 Height = Texture->GetSizeY();
     int32 ExpectedPixels = Width * Height;
     
-    // Проверяем формат пикселей
-    EPixelFormat PixelFormat = Texture->GetPlatformData()->PixelFormat;
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Texture %s format: %d, expected pixels: %d"), 
-           *Texture->GetName(), (int32)PixelFormat, ExpectedPixels);
-    
-    // Предполагаем формат BGRA8
     const FColor* ColorData = static_cast<const FColor*>(RawData);
     PixelData.Reserve(ExpectedPixels);
     
@@ -626,7 +658,7 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
         PixelData.Add(ColorData[i]);
     }
     
-    // ОБЯЗАТЕЛЬНО разблокируем
+    // Обязательно разблокируем
     try
     {
         Mip.BulkData.Unlock();
@@ -636,8 +668,7 @@ TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
         UE_LOG(LogSpriteOptimizer, Error, TEXT("Exception while unlocking texture data for %s"), *Texture->GetName());
     }
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels from %s"), 
-           PixelData.Num(), *Texture->GetName());
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Platform Data"), PixelData.Num());
     
     return PixelData;
 }
@@ -652,10 +683,48 @@ FString USpriteOptimizer::GetOptimizedAssetPath(const FString& OriginalPath, con
         return ProjectSettings->OptimizedAssetsPath;
     }
     
-    // Иначе возвращаем ту же директорию что и у оригинала
+    // Создаем папку "Optimized" рядом с оригинальными файлами
     FString Directory, Filename, Extension;
     FPaths::Split(OriginalPath, Directory, Filename, Extension);
-    return Directory;
+    
+    FString OptimizedDirectory = Directory + TEXT("/Optimized");
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating optimized assets in: %s"), *OptimizedDirectory);
+    
+    return OptimizedDirectory;
+}
+
+FString USpriteOptimizer::GetAtlasAssetPath(const FString& FirstSpritePath)
+{
+    FString Directory, Filename, Extension;
+    FPaths::Split(FirstSpritePath, Directory, Filename, Extension);
+    
+    FString AtlasDirectory = Directory + TEXT("/Atlas");
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas assets in: %s"), *AtlasDirectory);
+    
+    return AtlasDirectory;
+}
+
+bool USpriteOptimizer::EnsureDirectoryExists(const FString& DirectoryPath)
+{
+    // Конвертируем путь пакета в файловый путь
+    FString PackageFilename;
+    if (FPackageName::TryConvertLongPackageNameToFilename(DirectoryPath, PackageFilename))
+    {
+        FString PhysicalPath = FPaths::GetPath(PackageFilename);
+        
+        if (!FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*PhysicalPath))
+        {
+            bool bCreated = FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*PhysicalPath);
+            UE_LOG(LogSpriteOptimizer, Log, TEXT("Created directory: %s (Success: %s)"), *PhysicalPath, bCreated ? TEXT("Yes") : TEXT("No"));
+            return bCreated;
+        }
+        return true;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to convert package path to file path: %s"), *DirectoryPath);
+    return false;
 }
 
 FString USpriteOptimizer::GetOptimizedAssetName(const FString& OriginalName, const FSpriteOptimizationSettings& Settings)
@@ -741,12 +810,6 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
         return Result;
     }
     
-    if (Settings.MaxAtlasSize.X < 256 || Settings.MaxAtlasSize.Y < 256)
-    {
-        Result.ErrorMessage = TEXT("Atlas size must be at least 256x256 pixels");
-        return Result;
-    }
-    
     // Проверяем валидность спрайтов
     int32 ValidSprites = 0;
     for (UPaperSprite* Sprite : Sprites)
@@ -765,6 +828,21 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
     
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas '%s' from %d sprites (%d valid)"), 
            *AtlasName, Sprites.Num(), ValidSprites);
+    
+    // ВАЖНО: Определяем путь для сохранения атласа в папке Atlas
+    FString ActualAtlasPath;
+    if (AtlasPath.IsEmpty())
+    {
+        // Получаем путь первого спрайта и создаем папку Atlas рядом
+        FString FirstSpritePath = Sprites[0]->GetPackage()->GetName();
+        ActualAtlasPath = GetAtlasAssetPath(FirstSpritePath);
+    }
+    else
+    {
+        ActualAtlasPath = AtlasPath;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas will be created in: %s"), *ActualAtlasPath);
     
     // Получаем размеры спрайтов (оптимизированные или оригинальные)
     TArray<FIntPoint> SpriteSizes;
@@ -819,11 +897,7 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
         return Result;
     }
     
-    // Определяем путь для сохранения
-    FString ActualAtlasPath = AtlasPath.IsEmpty() ? 
-        GetOptimizedAssetPath(Sprites[0]->GetPackage()->GetName(), FSpriteOptimizationSettings()) : AtlasPath;
-    
-    // Создаем атласную текстуру
+    // Создаем атласную текстуру В ПАПКЕ ATLAS
     Result.AtlasTexture = CreateAtlasTexture(Sprites, PackedRegions, AtlasSize, AtlasName, ActualAtlasPath);
     
     if (!Result.AtlasTexture)
@@ -834,7 +908,7 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
     
     Result.AtlasTexturePath = ActualAtlasPath + TEXT("/") + AtlasName;
     
-    // Создаем отдельные спрайты если нужно
+    // Создаем отдельные спрайты если нужно В ТОЙ ЖЕ ПАПКЕ ATLAS
     if (Settings.bCreateIndividualSprites)
     {
         for (int32 i = 0; i < Sprites.Num() && i < PackedRegions.Num(); i++)
@@ -848,12 +922,13 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
                 Region, 
                 OriginalSprite,
                 SpriteName,
-                ActualAtlasPath
+                ActualAtlasPath  // ТА ЖЕ ПАПКА ДЛЯ СПРАЙТОВ
             );
             
             if (AtlasSprite)
             {
                 Result.CreatedSprites.Add(AtlasSprite);
+                UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s in folder: Atlas"), *SpriteName);
             }
         }
     }
@@ -874,7 +949,7 @@ FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
     
     Result.bSuccess = true;
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas created successfully: %dx%d, %.1f%% efficiency, %.1f%% memory savings"), 
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas created successfully in folder 'Atlas': %dx%d, %.1f%% efficiency, %.1f%% memory savings"), 
            AtlasSize.X, AtlasSize.Y, Result.PackingEfficiency, Result.MemorySavings);
     
     return Result;
@@ -1308,14 +1383,22 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
         return nullptr;
     }
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas texture %dx%d with %d sprites"), 
-           AtlasSize.X, AtlasSize.Y, Sprites.Num());
+    // ВАЖНО: Создаем директорию Atlas если её нет
+    if (!EnsureDirectoryExists(AssetPath))
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to create atlas directory: %s"), *AssetPath);
+        return nullptr;
+    }
     
-    // Создаем массив пикселей для атласа (инициализируем прозрачным)
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas texture %dx%d with %d sprites in: %s"), 
+           AtlasSize.X, AtlasSize.Y, Sprites.Num(), *AssetPath);
+    
+    // Создаем массив пикселей для атласа (инициализируем прозрачным черным)
     TArray<FColor> AtlasPixels;
-    AtlasPixels.Init(FColor(0, 0, 0, 0), AtlasSize.X * AtlasSize.Y);
+    int32 TotalPixels = AtlasSize.X * AtlasSize.Y;
+    AtlasPixels.Init(FColor(0, 0, 0, 0), TotalPixels);
     
-    // Обрабатываем каждый спрайт БЕЗ множественных вызовов GetTexturePixelData
+    // Обрабатываем каждый спрайт
     for (int32 i = 0; i < Sprites.Num(); i++)
     {
         UPaperSprite* Sprite = Sprites[i];
@@ -1333,7 +1416,7 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
                SourceTexture->GetSizeX(), SourceTexture->GetSizeY(),
                Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
         
-        // Используем альтернативный метод чтения пикселей через Source
+        // Копируем пиксели
         if (!CopyPixelsFromSourceToAtlas(SourceTexture, AtlasPixels, Region, AtlasSize))
         {
             UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to copy pixels from sprite: %s"), *Sprite->GetName());
@@ -1360,22 +1443,16 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
         return nullptr;
     }
     
-    // БЕЗОПАСНОЕ создание текстуры через Source API
+    // Создание текстуры через Source API
     AtlasTexture->Source.Init(AtlasSize.X, AtlasSize.Y, 1, 1, TSF_BGRA8, (uint8*)AtlasPixels.GetData());
     
-    // Копируем настройки с первого спрайта
-    if (Sprites.Num() > 0 && Sprites[0] && Sprites[0]->GetSourceTexture())
-    {
-        UTexture2D* FirstTexture = Sprites[0]->GetSourceTexture();
-        AtlasTexture->SRGB = FirstTexture->SRGB;
-        AtlasTexture->CompressionSettings = TC_EditorIcon; // Используем безопасный формат
-        AtlasTexture->Filter = FirstTexture->Filter;
-        AtlasTexture->AddressX = FirstTexture->AddressX;
-        AtlasTexture->AddressY = FirstTexture->AddressY;
-        
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Copied settings from %s: SRGB=%d"), 
-               *FirstTexture->GetName(), AtlasTexture->SRGB);
-    }
+    // Настройки текстуры для оптимального качества
+    AtlasTexture->SRGB = true;
+    AtlasTexture->CompressionSettings = TC_EditorIcon;
+    AtlasTexture->Filter = TF_Nearest;
+    AtlasTexture->AddressX = TA_Clamp;
+    AtlasTexture->AddressY = TA_Clamp;
+    AtlasTexture->MipGenSettings = TMGS_NoMipmaps;
     
     // Принудительно обновляем все данные
     AtlasTexture->UpdateResource();
@@ -1393,8 +1470,8 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
     if (bSaved)
     {
         FAssetRegistryModule::AssetCreated(AtlasTexture);
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully created and saved atlas texture: %s (%dx%d)"), 
-               *FullAssetPath, AtlasSize.X, AtlasSize.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully created atlas texture: %s (%dx%d) in folder: Atlas"), 
+               *AssetName, AtlasSize.X, AtlasSize.Y);
     }
     else
     {
@@ -1439,7 +1516,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         return nullptr;
     }
     
-    // ИСПРАВЛЕНИЕ: Определяем, является ли спрайт уже оптимизированным
+    // Определяем, является ли спрайт уже оптимизированным
     bool bIsAlreadyOptimized = SpriteName.Contains(TEXT("_Optimized"));
     
     FVector2D CorrectPivot;
@@ -1447,9 +1524,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     if (bIsAlreadyOptimized)
     {
         // Для уже оптимизированных спрайтов используем центральный пивот
-        // так как они уже обрезаны правильно
         CorrectPivot = FVector2D(Region.Width() * 0.5f, Region.Height() * 0.5f);
-        
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Using center pivot for optimized sprite: (%f,%f)"), 
                CorrectPivot.X, CorrectPivot.Y);
     }
@@ -1464,23 +1539,24 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
             Region,
             OriginalSprite
         );
-        
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Calculated layering pivot: (%f,%f)"), 
                CorrectPivot.X, CorrectPivot.Y);
     }
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas sprite creation for %s:"), *SpriteName);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Original texture: %dx%d"), OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Atlas region: (%d,%d) to (%d,%d)"), 
-           Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Is optimized: %s"), bIsAlreadyOptimized ? TEXT("Yes") : TEXT("No"));
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Final pivot: (%f,%f)"), CorrectPivot.X, CorrectPivot.Y);
+    // ИСПРАВЛЕНО: Безопасное получение материала для атласного спрайта
+    UMaterialInterface* SpriteMaterial = nullptr;
     
-    // Безопасное получение материала
-    UMaterialInterface* SpriteMaterial = OriginalSprite->GetDefaultMaterial();
-    if (!SpriteMaterial)
+    // Используем материал оригинального спрайта или дефолтный
+    if (OriginalSprite->GetDefaultMaterial())
+    {
+        SpriteMaterial = OriginalSprite->GetDefaultMaterial();
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using original sprite material for atlas: %s"), *SpriteMaterial->GetName());
+    }
+    else
     {
         SpriteMaterial = GetDefaultPaper2DMaterial();
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Using default material for atlas sprite: %s"), 
+               SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("NULL"));
     }
     
     // Настраиваем параметры инициализации
@@ -1488,7 +1564,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     InitParams.Texture = AtlasTexture;
     InitParams.Offset = FIntPoint(Region.Min.X, Region.Min.Y);
     InitParams.Dimension = FIntPoint(Region.Width(), Region.Height());
-    InitParams.DefaultMaterialOverride = SpriteMaterial;
+    InitParams.DefaultMaterialOverride = SpriteMaterial; // ИСПРАВЛЕНО: правильный материал
     InitParams.bOverridePixelsPerUnrealUnit = true;
     InitParams.PixelsPerUnrealUnit = OriginalSprite->GetPixelsPerUnrealUnit();
     
@@ -1511,8 +1587,9 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     if (bSaved)
     {
         FAssetRegistryModule::AssetCreated(AtlasSprite);
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s with pivot (%f,%f)"), 
-               *FullAssetPath, CorrectPivot.X, CorrectPivot.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s with material: %s and pivot (%f,%f)"), 
+               *FullAssetPath, SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("None"), 
+               CorrectPivot.X, CorrectPivot.Y);
     }
     else
     {
@@ -1530,87 +1607,94 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
 {
     if (!SourceTexture)
     {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Source texture is null"));
         return false;
     }
     
-    // ИСПРАВЛЕНИЕ: Принудительно обновляем ресурс для свежесозданных текстур
-    SourceTexture->UpdateResource();
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Copying pixels from %s (%dx%d) to region (%d,%d,%d,%d)"), 
+           *SourceTexture->GetName(),
+           SourceTexture->GetSizeX(), SourceTexture->GetSizeY(),
+           Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
     
-    // Небольшая задержка для завершения операций
-    FPlatformProcess::Sleep(0.1f);
-    
-    // Пытаемся использовать Source API (более безопасно)
-    if (SourceTexture->Source.IsValid())
-    {
-        TArray64<uint8> RawData;
-        if (SourceTexture->Source.GetMipData(RawData, 0) && RawData.Num() > 0)
-        {
-            int32 SourceWidth = SourceTexture->GetSizeX();
-            int32 SourceHeight = SourceTexture->GetSizeY();
-            
-            // Предполагаем формат BGRA8
-            const FColor* SourcePixels = reinterpret_cast<const FColor*>(RawData.GetData());
-            
-            // Копируем только нужную область
-            int32 CopiedPixels = 0;
-            for (int32 Y = 0; Y < SourceHeight && Y < Region.Height(); Y++)
-            {
-                for (int32 X = 0; X < SourceWidth && X < Region.Width(); X++)
-                {
-                    int32 SourceIndex = Y * SourceWidth + X;
-                    int32 AtlasX = Region.Min.X + X;
-                    int32 AtlasY = Region.Min.Y + Y;
-                    int32 AtlasIndex = AtlasY * AtlasSize.X + AtlasX;
-                    
-                    if (SourceIndex < RawData.Num() / 4 && 
-                        AtlasIndex < AtlasPixels.Num() &&
-                        AtlasX >= 0 && AtlasX < AtlasSize.X &&
-                        AtlasY >= 0 && AtlasY < AtlasSize.Y)
-                    {
-                        AtlasPixels[AtlasIndex] = SourcePixels[SourceIndex];
-                        CopiedPixels++;
-                    }
-                }
-            }
-            
-            UE_LOG(LogSpriteOptimizer, Log, TEXT("Copied %d pixels via Source API"), CopiedPixels);
-            return CopiedPixels > 0;
-        }
-    }
-    
-    // Fallback: используем GetTexturePixelData, но с проверкой блокировки
-    TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
-    if (SourcePixels.Num() == 0)
-    {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to read texture pixel data for %s"), *SourceTexture->GetName());
-        return false;
-    }
-    
+    // Получаем размеры исходной текстуры
     int32 SourceWidth = SourceTexture->GetSizeX();
     int32 SourceHeight = SourceTexture->GetSizeY();
     
-    int32 CopiedPixels = 0;
-    for (int32 Y = 0; Y < SourceHeight && Y < Region.Height(); Y++)
+    // Определяем, какую область копировать из исходной текстуры
+    FIntRect SourceCopyRegion(0, 0, SourceWidth, SourceHeight);
+    
+    // ВАЖНО: Если спрайт уже оптимизирован, то копируем всю текстуру
+    // Если нет - нужно найти используемую область
+    bool bIsOptimizedSprite = SourceTexture->GetName().Contains(TEXT("_Optimized"));
+    
+    if (!bIsOptimizedSprite)
     {
-        for (int32 X = 0; X < SourceWidth && X < Region.Width(); X++)
+        // Находим используемую область для неоптимизированного спрайта
+        SourceCopyRegion = FindUsedBounds(SourceTexture, 2);
+        if (SourceCopyRegion.Width() <= 0 || SourceCopyRegion.Height() <= 0)
         {
-            int32 SourceIndex = Y * SourceWidth + X;
+            UE_LOG(LogSpriteOptimizer, Warning, TEXT("No used area found in texture %s"), *SourceTexture->GetName());
+            SourceCopyRegion = FIntRect(0, 0, SourceWidth, SourceHeight);
+        }
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Source copy region: (%d,%d,%d,%d), Is optimized: %s"), 
+           SourceCopyRegion.Min.X, SourceCopyRegion.Min.Y, SourceCopyRegion.Max.X, SourceCopyRegion.Max.Y,
+           bIsOptimizedSprite ? TEXT("Yes") : TEXT("No"));
+    
+    // Получаем пиксели из исходной текстуры
+    TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
+    if (SourcePixels.Num() == 0)
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to read pixel data from %s"), *SourceTexture->GetName());
+        return false;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Read %d pixels from source texture"), SourcePixels.Num());
+    
+    // Вычисляем размеры для копирования
+    int32 CopyWidth = FMath::Min(SourceCopyRegion.Width(), Region.Width());
+    int32 CopyHeight = FMath::Min(SourceCopyRegion.Height(), Region.Height());
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Copy dimensions: %dx%d"), CopyWidth, CopyHeight);
+    
+    int32 CopiedPixels = 0;
+    
+    // Копируем пиксели построчно
+    for (int32 Y = 0; Y < CopyHeight; Y++)
+    {
+        for (int32 X = 0; X < CopyWidth; X++)
+        {
+            // Координаты в исходной текстуре
+            int32 SourceX = SourceCopyRegion.Min.X + X;
+            int32 SourceY = SourceCopyRegion.Min.Y + Y;
+            int32 SourceIndex = SourceY * SourceWidth + SourceX;
+            
+            // Координаты в атласе
             int32 AtlasX = Region.Min.X + X;
             int32 AtlasY = Region.Min.Y + Y;
             int32 AtlasIndex = AtlasY * AtlasSize.X + AtlasX;
             
-            if (SourceIndex < SourcePixels.Num() && 
-                AtlasIndex < AtlasPixels.Num() &&
+            // Проверяем границы
+            if (SourceIndex >= 0 && SourceIndex < SourcePixels.Num() && 
+                AtlasIndex >= 0 && AtlasIndex < AtlasPixels.Num() &&
                 AtlasX >= 0 && AtlasX < AtlasSize.X &&
                 AtlasY >= 0 && AtlasY < AtlasSize.Y)
             {
                 AtlasPixels[AtlasIndex] = SourcePixels[SourceIndex];
-                CopiedPixels++;
+                
+                // Считаем только непрозрачные пиксели
+                if (SourcePixels[SourceIndex].A > 0)
+                {
+                    CopiedPixels++;
+                }
             }
         }
     }
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Copied %d pixels via fallback method"), CopiedPixels);
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully copied %d visible pixels from %s"), 
+           CopiedPixels, *SourceTexture->GetName());
+    
     return CopiedPixels > 0;
 }
 
