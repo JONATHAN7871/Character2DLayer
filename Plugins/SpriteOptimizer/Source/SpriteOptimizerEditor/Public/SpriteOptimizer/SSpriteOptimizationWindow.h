@@ -123,4 +123,6 @@ private:
 
     void InitializeMaterialOptions();
     void OnMaterialComboChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
+
+    static FReply ClosePreviewWindow(TSharedPtr<SWindow> WindowToClose);
 };

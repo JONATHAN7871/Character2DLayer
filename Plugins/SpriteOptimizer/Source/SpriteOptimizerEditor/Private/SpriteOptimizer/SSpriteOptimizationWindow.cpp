@@ -1028,66 +1028,110 @@ void SSpriteOptimizationWindow::ShowNotification(const FText& Message, int32 Sta
 
 void SSpriteOptimizationWindow::ShowOptimizationPreview()
 {
-    // Добавьте проверку на пустые результаты
+    // Дополнительная проверка
     if (OptimizationResults.Num() == 0)
     {
         ShowNotification(LOCTEXT("NoOptimizationResults", "No optimization results to preview. Run optimization first."), 2);
         return;
     }
 
-    TSharedRef<SWindow> PreviewWindow = SNew(SWindow)
+    // Получаем текст превью заранее
+    FText PreviewTextContent = GetPreviewText();
+    
+    // Создаем окно с минимальной сложностью
+    TSharedPtr<SWindow> PreviewWindow = SNew(SWindow)
         .Title(LOCTEXT("OptimizationPreviewTitle", "Optimization Results Preview"))
         .SizingRule(ESizingRule::UserSized)
-        .ClientSize(FVector2D(900, 700))
-        .SupportsMaximize(true)
+        .ClientSize(FVector2D(800, 600))
+        .SupportsMaximize(false)
         .SupportsMinimize(false)
-        .Content()
+        .IsTopmostWindow(false);
+
+    if (!PreviewWindow.IsValid())
+    {
+        ShowNotification(LOCTEXT("PreviewWindowError", "Failed to create preview window"), 2);
+        return;
+    }
+
+    // Создаем содержимое окна
+    TSharedPtr<SWidget> WindowContent = SNew(SVerticalBox)
+        
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(10)
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("PreviewTitle", "Optimization Results"))
+            .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            .Justification(ETextJustify::Center)
+        ]
+        
+        + SVerticalBox::Slot()
+        .FillHeight(1.0f)
+        .Padding(10)
         [
             SNew(SBorder)
-            .Padding(20)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+            .Padding(10)
             [
-                SNew(SVerticalBox)
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 10)
+                SNew(SScrollBox)
+                + SScrollBox::Slot()
                 [
                     SNew(STextBlock)
-                    .Text(LOCTEXT("PreviewTitle", "📋 Optimization Results"))
-                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                    .Justification(ETextJustify::Center)
-                ]
-                
-                + SVerticalBox::Slot()
-                .FillHeight(1.0f)
-                .Padding(0, 10)
-                [
-                    SNew(SScrollBox)
-                    + SScrollBox::Slot()
-                    [
-                        SNew(STextBlock)
-                        .Text(GetPreviewText())
-                        .AutoWrapText(true)
-                    ]
-                ]
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 10)
-                [
-                    SNew(SButton)
-                    .Text(LOCTEXT("ClosePreview", "Close"))
-                    .OnClicked_Lambda([PreviewWindow]() -> FReply
-                    {
-                        PreviewWindow->RequestDestroyWindow();
-                        return FReply::Handled();
-                    })
-                    .HAlign(HAlign_Center)
+                    .Text(PreviewTextContent)
+                    .AutoWrapText(true)
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
                 ]
             ]
+        ]
+        
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(10)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Text(LOCTEXT("ClosePreview", "Close"))
+                .OnClicked_Static(&SSpriteOptimizationWindow::ClosePreviewWindow, PreviewWindow)
+                .HAlign(HAlign_Center)
+            ]
+            
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
         ];
+
+    if (!WindowContent.IsValid())
+    {
+        ShowNotification(LOCTEXT("PreviewContentError", "Failed to create preview content"), 2);
+        return;
+    }
+
+    PreviewWindow->SetContent(WindowContent.ToSharedRef());
     
-    FSlateApplication::Get().AddWindow(PreviewWindow);
+    // Показываем окно
+    if (FSlateApplication::IsInitialized())
+    {
+        FSlateApplication::Get().AddWindow(PreviewWindow.ToSharedRef());
+    }
+    else
+    {
+        ShowNotification(LOCTEXT("SlateNotInitialized", "UI system not ready"), 2);
+    }
+}
+
+FReply SSpriteOptimizationWindow::ClosePreviewWindow(TSharedPtr<SWindow> WindowToClose)
+{
+    if (WindowToClose.IsValid())
+    {
+        WindowToClose->RequestDestroyWindow();
+    }
+    return FReply::Handled();
 }
 
 FReply SSpriteOptimizationWindow::OnAnalyzeSprites()
@@ -1164,21 +1208,15 @@ FReply SSpriteOptimizationWindow::OnOptimizeSprites()
 
 FReply SSpriteOptimizationWindow::OnPreviewOptimization()
 {
+    // Простая проверка
     if (OptimizationResults.Num() == 0)
     {
         ShowNotification(LOCTEXT("NoOptimizationResults", "No optimization results to preview. Run optimization first."), 2);
         return FReply::Handled();
     }
     
-    try
-    {
-        ShowOptimizationPreview();
-    }
-    catch (...)
-    {
-        ShowNotification(LOCTEXT("PreviewError", "Error showing preview window"), 2);
-        UE_LOG(LogTemp, Error, TEXT("Exception in ShowOptimizationPreview"));
-    }
+    // Простой вызов без try-catch для лучшей диагностики
+    ShowOptimizationPreview();
     
     return FReply::Handled();
 }
