@@ -386,4 +386,23 @@ private:
         const FIntRect& AtlasRegion,
         UPaperSprite* OriginalSprite
     );
+
+    // Вспомогательные методы для копирования пикселей
+    static bool CopyPixelsDirect(
+        const TArray<FColor>& SourcePixels,
+        int32 SourceWidth,
+        const FIntRect& SourceRegion,
+        TArray<FColor>& AtlasPixels,
+        const FIntPoint& AtlasSize,
+        const FIntRect& AtlasRegion
+    );
+    
+    static bool CopyPixelsWithScaling(
+        const TArray<FColor>& SourcePixels,
+        int32 SourceWidth,
+        const FIntRect& SourceRegion,
+        TArray<FColor>& AtlasPixels,
+        const FIntPoint& AtlasSize,
+        const FIntRect& AtlasRegion
+    );
 };

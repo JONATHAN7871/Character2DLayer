@@ -42,10 +42,15 @@ void SAtlasCreationWindow::Construct(const FArguments& InArgs)
     InitializePackingAlgorithms();
     
     ChildSlot
+[
+    SNew(SBorder)
+    .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+    .Padding(10)
     [
-        SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(10)
+        SNew(SScrollBox)  // ДОБАВЛЕНО: Прокрутка для всего окна
+        .Orientation(Orient_Vertical)
+        
+        + SScrollBox::Slot()
         [
             SNew(SVerticalBox)
             
@@ -94,12 +99,12 @@ void SAtlasCreationWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Список спрайтов
+            // Список спрайтов - КОМПАКТНАЯ ВЕРСИЯ
             + SVerticalBox::Slot()
-            .FillHeight(0.4f)
+            .AutoHeight()
             .Padding(0, 5)
             [
-                CreateSpritesListSection()
+                CreateCompactSpritesListSection()  // ИЗМЕНЕНО: используем компактную версию
             ]
             
             + SVerticalBox::Slot()
@@ -124,7 +129,7 @@ void SAtlasCreationWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Действия
+            // Действия - ВСЕГДА ВНИЗУ
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
@@ -132,7 +137,8 @@ void SAtlasCreationWindow::Construct(const FArguments& InArgs)
                 CreateActionsSection()
             ]
         ]
-    ];
+    ]
+];
     
     // Начальное обновление UI
     UpdateButtonStates();
@@ -143,6 +149,357 @@ SAtlasCreationWindow::~SAtlasCreationWindow()
     SpriteInfos.Empty();
     LastAnalysisResult = FSpriteAtlasResult();
     UE_LOG(LogTemp, Log, TEXT("AtlasCreationWindow destroyed"));
+}
+
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactSpritesListSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(10)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("SpritesListTitle", "📋 Sprites"))
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(5, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectAll", "All"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectAllSprites)
+                    .ToolTipText(LOCTEXT("SelectAllTooltip", "Include all sprites in atlas"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(5, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectNone", "None"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectNoneSprites)
+                    .ToolTipText(LOCTEXT("SelectNoneTooltip", "Exclude all sprites from atlas"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(5, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectOptimal", "Optimal"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectOptimalSprites)
+                    .ToolTipText(LOCTEXT("SelectOptimalTooltip", "Include only sprites that benefit from optimization"))
+                ]
+            ]
+            
+            // КРАТКАЯ СВОДКА - ВСЕГДА ВИДИМАЯ
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 10)
+            [
+                SNew(SBorder)
+                .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+                .Padding(8)
+                [
+                    SAssignNew(SpritesSummaryText, STextBlock)
+                    .Text(GetSpritesSummaryText())
+                    .AutoWrapText(true)
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+                ]
+            ]
+            
+            // ДЕТАЛЬНЫЙ СПИСОК - ВСЕГДА ВИДИМЫЙ
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SNew(SBox)
+                .MaxDesiredHeight(180.0f)  // Ограничиваем высоту для компактности
+                [
+                    SNew(SBorder)
+                    .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+                    .Padding(5)
+                    [
+                        SAssignNew(SpritesListView, SListView<TSharedPtr<FAtlasSpriteInfo>>)
+                        .ListItemsSource(&SpriteInfos)
+                        .OnGenerateRow(this, &SAtlasCreationWindow::GenerateCompactSpriteRow)
+                        .OnSelectionChanged(this, &SAtlasCreationWindow::OnSpriteSelectionChanged)
+                        .SelectionMode(ESelectionMode::Multi)
+                        .HeaderRow
+                        (
+                            SNew(SHeaderRow)
+                            
+                            + SHeaderRow::Column("Include")
+                            .DefaultLabel(LOCTEXT("IncludeHeader", "✓"))
+                            .FixedWidth(30)
+                            
+                            + SHeaderRow::Column("SpriteName")
+                            .DefaultLabel(LOCTEXT("SpriteNameHeader", "Sprite"))
+                            .FillWidth(0.4f)
+                            
+                            + SHeaderRow::Column("OptimizedSize")
+                            .DefaultLabel(LOCTEXT("OptimizedSizeHeader", "Size"))
+                            .FillWidth(0.3f)
+                            
+                            + SHeaderRow::Column("Savings")
+                            .DefaultLabel(LOCTEXT("SavingsHeader", "Savings"))
+                            .FillWidth(0.3f)
+                        )
+                    ]
+                ]
+            ]
+        ];
+}
+
+TSharedRef<ITableRow> SAtlasCreationWindow::GenerateCompactSpriteRow(TSharedPtr<FAtlasSpriteInfo> Item, const TSharedRef<STableViewBase>& OwnerTable)
+{
+    return SNew(STableRow<TSharedPtr<FAtlasSpriteInfo>>, OwnerTable)
+        [
+            SNew(SHorizontalBox)
+            
+            // Checkbox включения
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .VAlign(VAlign_Center)
+            .HAlign(HAlign_Center)
+            .Padding(5, 0)
+            [
+                SNew(SCheckBox)
+                .IsChecked(Item->bIncludeInAtlas ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                .OnCheckStateChanged_Lambda([Item, this](ECheckBoxState NewState)
+                {
+                    Item->bIncludeInAtlas = (NewState == ECheckBoxState::Checked);
+                    UpdateButtonStates();
+                    
+                    // Обновляем сводку спрайтов
+                    if (SpritesSummaryText.IsValid())
+                    {
+                        SpritesSummaryText->SetText(GetSpritesSummaryText());
+                    }
+                })
+            ]
+            
+            // Имя спрайта
+            + SHorizontalBox::Slot()
+            .FillWidth(0.4f)
+            .VAlign(VAlign_Center)
+            .Padding(5, 2)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([Item]()
+                {
+                    if (Item->Sprite)
+                    {
+                        FString Name = Item->Sprite->GetName();
+                        // Убираем префикс T_ и суффикс _Sprite для краткости
+                        Name = Name.Replace(TEXT("T_"), TEXT(""));
+                        Name = Name.Replace(TEXT("_Sprite"), TEXT(""));
+                        
+                        // Сокращаем длинные имена
+                        if (Name.Len() > 15)
+                        {
+                            return FText::FromString(Name.Left(12) + TEXT("..."));
+                        }
+                        return FText::FromString(Name);
+                    }
+                    return FText::FromString(TEXT("Unknown"));
+                })
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ToolTipText_Lambda([Item]()
+                {
+                    return Item->Sprite ? FText::FromString(Item->Sprite->GetName()) : FText::FromString(TEXT("Unknown sprite"));
+                })
+            ]
+            
+            // Оптимизированный размер
+            + SHorizontalBox::Slot()
+            .FillWidth(0.3f)
+            .VAlign(VAlign_Center)
+            .Padding(5, 2)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([Item, this]()
+                {
+                    if (AtlasSettings.bOptimizeSpritesFirst && Item->AnalysisResult.bSuccess)
+                    {
+                        return FText::FromString(FString::Printf(TEXT("%.0fx%.0f"), 
+                            Item->AnalysisResult.OptimizedSize.X, Item->AnalysisResult.OptimizedSize.Y));
+                    }
+                    else if (Item->Sprite && Item->Sprite->GetSourceTexture())
+                    {
+                        UTexture2D* Texture = Item->Sprite->GetSourceTexture();
+                        return FText::FromString(FString::Printf(TEXT("%.0fx%.0f"), 
+                            (float)Texture->GetSizeX(), (float)Texture->GetSizeY()));
+                    }
+                    return FText::FromString(TEXT("N/A"));
+                })
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ColorAndOpacity_Lambda([this]()
+                {
+                    return AtlasSettings.bOptimizeSpritesFirst ? FSlateColor(FLinearColor::Green) : FSlateColor(FLinearColor::White);
+                })
+            ]
+            
+            // Экономия + статус
+            + SHorizontalBox::Slot()
+            .FillWidth(0.3f)
+            .VAlign(VAlign_Center)
+            .Padding(5, 2)
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([Item]()
+                    {
+                        if (Item->AnalysisResult.bSuccess)
+                        {
+                            return FText::FromString(FString::Printf(TEXT("%.1f%%"), Item->AnalysisResult.SavingsPercent));
+                        }
+                        return FText::FromString(TEXT("N/A"));
+                    })
+                    .ColorAndOpacity_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess) return FSlateColor(FLinearColor::Gray);
+                        if (Item->AnalysisResult.SavingsPercent > 50.0f) return FSlateColor(FLinearColor::Green);
+                        if (Item->AnalysisResult.SavingsPercent > 25.0f) return FSlateColor(FLinearColor::Yellow);
+                        return FSlateColor(FLinearColor::White);
+                    })
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(5, 0, 0, 0)
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess)
+                        {
+                            return FText::FromString(TEXT("ERROR"));
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 50.0f)
+                        {
+                            return FText::FromString(TEXT("GREAT"));
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 25.0f)
+                        {
+                            return FText::FromString(TEXT("GOOD"));
+                        }
+                        else
+                        {
+                            return FText::FromString(TEXT("POOR"));
+                        }
+                    })
+                    .ColorAndOpacity_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess) 
+                        {
+                            return FSlateColor(FLinearColor::Red);
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 50.0f) 
+                        {
+                            return FSlateColor(FLinearColor::Green);
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 25.0f) 
+                        {
+                            return FSlateColor(FLinearColor::Yellow);
+                        }
+                        else 
+                        {
+                            return FSlateColor(FLinearColor::Red);
+                        }
+                    })
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    .ToolTipText_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess)
+                        {
+                            return FText::FromString(Item->AnalysisResult.ErrorMessage);
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 50.0f)
+                        {
+                            return FText::FromString(TEXT("Excellent optimization potential"));
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 25.0f)
+                        {
+                            return FText::FromString(TEXT("Good optimization potential"));
+                        }
+                        else
+                        {
+                            return FText::FromString(TEXT("Poor optimization potential"));
+                        }
+                    })
+                ]
+            ]
+        ];
+}
+
+// Добавьте этот метод для получения краткой сводки:
+
+FText SAtlasCreationWindow::GetSpritesSummaryText() const
+{
+    int32 SelectedCount = 0;
+    int32 TotalCount = SpriteInfos.Num();
+    float TotalSavings = 0.0f;
+    int32 ValidSprites = 0;
+    
+    for (const auto& SpriteInfo : SpriteInfos)
+    {
+        if (SpriteInfo->bIncludeInAtlas)
+        {
+            SelectedCount++;
+            
+            if (SpriteInfo->AnalysisResult.bSuccess)
+            {
+                TotalSavings += SpriteInfo->AnalysisResult.SavingsPercent;
+                ValidSprites++;
+            }
+        }
+    }
+    
+    float AverageSavings = ValidSprites > 0 ? TotalSavings / ValidSprites : 0.0f;
+    
+    FString StatusEmoji = SelectedCount > 0 ? TEXT("✅") : TEXT("❌");
+    
+    if (SelectedCount == 0)
+    {
+        return FText::Format(LOCTEXT("NoSpritesSelected", 
+            "❌ No sprites selected for atlas creation. Use buttons above to select sprites."), 
+            SelectedCount, TotalCount);
+    }
+    else if (SelectedCount == TotalCount)
+    {
+        return FText::Format(LOCTEXT("AllSpritesSelected", 
+            "✅ All {0} sprites selected for atlas creation\n"
+            "💰 Average savings: {1}% per sprite\n"
+            "💡 Click 'Show Details' below to see individual sprite information"), 
+            SelectedCount, 
+            FText::AsNumber(AverageSavings, &FNumberFormattingOptions::DefaultWithGrouping()));
+    }
+    else
+    {
+        return FText::Format(LOCTEXT("PartialSpritesSelected", 
+            "✅ {0} of {1} sprites selected for atlas creation\n"
+            "💰 Average savings: {2}% per selected sprite\n"
+            "💡 Click 'Show Details' below to see individual sprite information"), 
+            SelectedCount, TotalCount,
+            FText::AsNumber(AverageSavings, &FNumberFormattingOptions::DefaultWithGrouping()));
+    }
 }
 
 void SAtlasCreationWindow::ShowAtlasCreationWindow(const TArray<UPaperSprite*>& Sprites)
@@ -531,8 +888,9 @@ TSharedRef<SWidget> SAtlasCreationWindow::CreateSpritesListSection()
                 ]
             ]
             
+            // ИСПРАВЛЕНИЕ: Ограничиваем высоту списка спрайтов чтобы он не перекрывал анализ
             + SVerticalBox::Slot()
-            .FillHeight(1.0f)
+            .MaxHeight(200.0f)  // ДОБАВЛЕНО: Максимальная высота
             .Padding(0, 5)
             [
                 SAssignNew(SpritesListView, SListView<TSharedPtr<FAtlasSpriteInfo>>)

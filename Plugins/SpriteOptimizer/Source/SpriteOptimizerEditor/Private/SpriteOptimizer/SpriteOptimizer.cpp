@@ -1198,14 +1198,14 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
             int32 OriginalIndex = SpriteData.Key;
             FIntPoint SpriteSize = SpriteData.Value;
             
-            // Ищем лучшее место для размещения
+            // УЛУЧШЕННЫЙ ПОИСК ПОЗИЦИИ: предпочитаем левый верхний угол и движемся вправо-вниз
             FIntPoint BestPosition(-1, -1);
-            int32 BestWastedSpace = INT_MAX;
+            int32 BestScore = INT_MAX;
             
-            // Сканируем возможные позиции
-            for (int32 Y = 0; Y <= CurrentHeight - SpriteSize.Y; Y += 4) // Шаг 4 для ускорения
+            // Сканируем возможные позиции - ИЗМЕНЕН ПОРЯДОК: сначала Y, потом X
+            for (int32 Y = 0; Y <= CurrentHeight - SpriteSize.Y; Y += 2) // Уменьшили шаг для точности
             {
-                for (int32 X = 0; X <= CurrentWidth - SpriteSize.X; X += 4)
+                for (int32 X = 0; X <= CurrentWidth - SpriteSize.X; X += 2)
                 {
                     FIntRect TestRect(X, Y, X + SpriteSize.X, Y + SpriteSize.Y);
                     
@@ -1213,7 +1213,7 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                     bool bOverlaps = false;
                     for (const FIntRect& Occupied : OccupiedRects)
                     {
-                        // ИСПРАВЛЕНО: ручная проверка пересечения прямоугольников
+                        // Проверка пересечения прямоугольников
                         if (!(TestRect.Max.X <= Occupied.Min.X || 
                               TestRect.Min.X >= Occupied.Max.X || 
                               TestRect.Max.Y <= Occupied.Min.Y || 
@@ -1226,13 +1226,41 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                     
                     if (!bOverlaps)
                     {
-                        // Вычисляем "потраченное пространство" (расстояние от углов)
-                        int32 WastedSpace = X + Y; // Предпочитаем позиции ближе к верхнему левому углу
+                        // УЛУЧШЕННАЯ ФУНКЦИЯ ОЦЕНКИ: предпочитаем верхний левый угол
+                        int32 Score = Y * 1000 + X; // Сначала минимизируем Y, потом X
                         
-                        if (WastedSpace < BestWastedSpace)
+                        // Бонус за компактность - если спрайт близко к другим
+                        int32 CompactnessBonus = 0;
+                        for (const FIntRect& Occupied : OccupiedRects)
+                        {
+                            // Проверяем соседство
+                            bool bIsNeighbor = false;
+                            
+                            // Сосед справа
+                            if (FMath::Abs(TestRect.Min.X - Occupied.Max.X) <= Settings.SpritePadding && 
+                                !(TestRect.Max.Y <= Occupied.Min.Y || TestRect.Min.Y >= Occupied.Max.Y))
+                            {
+                                bIsNeighbor = true;
+                            }
+                            // Сосед снизу
+                            else if (FMath::Abs(TestRect.Min.Y - Occupied.Max.Y) <= Settings.SpritePadding && 
+                                     !(TestRect.Max.X <= Occupied.Min.X || TestRect.Min.X >= Occupied.Max.X))
+                            {
+                                bIsNeighbor = true;
+                            }
+                            
+                            if (bIsNeighbor)
+                            {
+                                CompactnessBonus += 100; // Бонус за соседство
+                            }
+                        }
+                        
+                        Score -= CompactnessBonus;
+                        
+                        if (Score < BestScore)
                         {
                             BestPosition = FIntPoint(X, Y);
-                            BestWastedSpace = WastedSpace;
+                            BestScore = Score;
                         }
                     }
                 }
@@ -1266,6 +1294,9 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
             // Обновляем используемую область
             UsedWidth = FMath::Max(UsedWidth, PlacedRect.Max.X);
             UsedHeight = FMath::Max(UsedHeight, PlacedRect.Max.Y);
+            
+            UE_LOG(LogSpriteOptimizer, Verbose, TEXT("Placed sprite %d at (%d,%d) size (%d,%d)"), 
+                   OriginalIndex, BestPosition.X, BestPosition.Y, SpriteSize.X, SpriteSize.Y);
         }
         
         if (bAllSpritesPlaced)
@@ -1284,11 +1315,11 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
             // Увеличиваем размер для следующей попытки
             if (CurrentWidth <= CurrentHeight)
             {
-                CurrentWidth = FMath::Min(CurrentWidth + 128, Settings.MaxAtlasSize.X);
+                CurrentWidth = FMath::Min(CurrentWidth + 64, Settings.MaxAtlasSize.X);
             }
             else
             {
-                CurrentHeight = FMath::Min(CurrentHeight + 128, Settings.MaxAtlasSize.Y);
+                CurrentHeight = FMath::Min(CurrentHeight + 64, Settings.MaxAtlasSize.Y);
             }
             
             // Проверяем, не достигли ли максимального размера
@@ -1554,44 +1585,87 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         return nullptr;
     }
     
-    // ИСПРАВЛЕННЫЙ РАСЧЕТ ПИВОТА
+    // ПРАВИЛЬНЫЙ РАСЧЕТ ПИВОТА ДЛЯ ПОСЛОЙНОЙ КОМПОЗИЦИИ
     FVector2D CorrectPivot;
     
-    // Получаем оригинальный пивот спрайта
-    FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("=== ATLAS PIVOT COMPENSATION FOR: %s ==="), *SpriteName);
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas region: (%d,%d,%d,%d)"), Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
     
-    // Определяем используемую область оригинального спрайта
-    FIntRect OriginalUsedRegion = FindUsedBounds(OriginalTexture, 2);
+    // Определяем, использовался ли спрайт оптимизированный или оригинальный
+    bool bWasOptimized = OriginalTexture->GetName().Contains(TEXT("_Optimized"));
     
-    if (OriginalUsedRegion.Width() <= 0 || OriginalUsedRegion.Height() <= 0)
+    if (bWasOptimized)
     {
-        // Если не удалось найти используемую область, используем всю текстуру
-        OriginalUsedRegion = FIntRect(0, 0, OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
+        // СЛУЧАЙ 1: Спрайт уже был оптимизирован
+        // Пивот уже правильный, просто масштабируем
+        FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
+        FVector2D OptimizedTextureSize(OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
+        FVector2D AtlasRegionSize(Region.Width(), Region.Height());
+        
+        FVector2D ScaleFactor(
+            AtlasRegionSize.X / OptimizedTextureSize.X,
+            AtlasRegionSize.Y / OptimizedTextureSize.Y
+        );
+        
+        CorrectPivot = FVector2D(
+            OriginalPivot.X * ScaleFactor.X,
+            OriginalPivot.Y * ScaleFactor.Y
+        );
+        
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Optimized sprite: original pivot (%f,%f), final pivot (%f,%f)"), 
+               OriginalPivot.X, OriginalPivot.Y, CorrectPivot.X, CorrectPivot.Y);
     }
-    
-    // Вычисляем смещение оригинального пивота относительно используемой области
-    FVector2D PivotOffsetFromUsedRegion = OriginalPivot - FVector2D(OriginalUsedRegion.Min.X, OriginalUsedRegion.Min.Y);
-    
-    // Масштабируем смещение в соответствии с размером региона в атласе
-    FVector2D ScaleFactor(
-        float(Region.Width()) / float(OriginalUsedRegion.Width()),
-        float(Region.Height()) / float(OriginalUsedRegion.Height())
-    );
-    
-    // Вычисляем финальный пивот в координатах атласного спрайта
-    CorrectPivot = FVector2D(
-        PivotOffsetFromUsedRegion.X * ScaleFactor.X,
-        PivotOffsetFromUsedRegion.Y * ScaleFactor.Y
-    );
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Pivot calculation for %s:"), *SpriteName);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Original pivot: (%f,%f)"), OriginalPivot.X, OriginalPivot.Y);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Used region: (%d,%d,%d,%d)"), 
-           OriginalUsedRegion.Min.X, OriginalUsedRegion.Min.Y, OriginalUsedRegion.Max.X, OriginalUsedRegion.Max.Y);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Atlas region: (%d,%d,%d,%d)"), 
-           Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Scale factor: (%f,%f)"), ScaleFactor.X, ScaleFactor.Y);
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("  Final pivot: (%f,%f)"), CorrectPivot.X, CorrectPivot.Y);
+    else
+    {
+        // СЛУЧАЙ 2: КЛЮЧЕВОЕ РЕШЕНИЕ - Компенсация смещения в атласе
+        
+        // 1. Находим используемую область в оригинальной текстуре
+        FIntRect OriginalUsedRegion = FindUsedBounds(OriginalTexture, 2);
+        if (OriginalUsedRegion.Width() <= 0 || OriginalUsedRegion.Height() <= 0)
+        {
+            OriginalUsedRegion = FIntRect(0, 0, OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
+        }
+        
+        // 2. Получаем оригинальный пивот
+        FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
+        
+        // 3. КЛЮЧЕВАЯ ФОРМУЛА: Пивот в атласе = пивот относительно используемой области
+        FVector2D PivotRelativeToUsedRegion = OriginalPivot - FVector2D(OriginalUsedRegion.Min.X, OriginalUsedRegion.Min.Y);
+        
+        // 4. Масштабируем к размеру региона в атласе (если отличается)
+        FVector2D ScaleFactor(
+            float(Region.Width()) / float(OriginalUsedRegion.Width()),
+            float(Region.Height()) / float(OriginalUsedRegion.Height())
+        );
+        
+        CorrectPivot = FVector2D(
+            PivotRelativeToUsedRegion.X * ScaleFactor.X,
+            PivotRelativeToUsedRegion.Y * ScaleFactor.Y
+        );
+        
+        // 5. ВАЖНО: Добавляем смещение чтобы компенсировать разное расположение в атласе
+        // Это гарантирует, что все спрайты будут выровнены одинаково при размещении в одной точке
+        
+        // Находим "базовую позицию" - где должен быть первый спрайт
+        // Все остальные спрайты будут выровнены относительно этой позиции
+        
+        // Для этого используем смещение от левого верхнего угла атласа
+        // Все спрайты должны иметь одинаковое смещение от их позиции в атласе
+        
+        // Добавляем смещение позиции региона в атласе к пивоту
+        CorrectPivot.X += Region.Min.X;
+        CorrectPivot.Y += Region.Min.Y;
+        
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Original sprite compensation:"));
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Original pivot: (%f,%f)"), OriginalPivot.X, OriginalPivot.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Used region: (%d,%d,%d,%d)"), 
+               OriginalUsedRegion.Min.X, OriginalUsedRegion.Min.Y, OriginalUsedRegion.Max.X, OriginalUsedRegion.Max.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Pivot relative to used region: (%f,%f)"), 
+               PivotRelativeToUsedRegion.X, PivotRelativeToUsedRegion.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Scale factor: (%f,%f)"), ScaleFactor.X, ScaleFactor.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Atlas region offset: (%d,%d)"), Region.Min.X, Region.Min.Y);
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("  Final compensated pivot: (%f,%f)"), CorrectPivot.X, CorrectPivot.Y);
+    }
     
     // Безопасное получение материала для атласного спрайта
     UMaterialInterface* SpriteMaterial = nullptr;
@@ -1620,7 +1694,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     // Инициализируем спрайт
     AtlasSprite->InitializeSprite(InitParams, false);
     
-    // Устанавливаем правильный пивот
+    // Устанавливаем правильный компенсированный пивот
     AtlasSprite->SetPivotMode(ESpritePivotMode::Custom, CorrectPivot, true);
     
     Package->MarkPackageDirty();
@@ -1636,7 +1710,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     if (bSaved)
     {
         FAssetRegistryModule::AssetCreated(AtlasSprite);
-        UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s with pivot (%f,%f)"), 
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("✅ Created atlas sprite: %s with compensated pivot (%f,%f)"), 
                *FullAssetPath, CorrectPivot.X, CorrectPivot.Y);
     }
     else
@@ -1668,27 +1742,35 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
     int32 SourceWidth = SourceTexture->GetSizeX();
     int32 SourceHeight = SourceTexture->GetSizeY();
     
-    // Определяем, какую область копировать из исходной текстуры
-    FIntRect SourceCopyRegion(0, 0, SourceWidth, SourceHeight);
+    // УЛУЧШЕННОЕ ОПРЕДЕЛЕНИЕ ОБЛАСТИ КОПИРОВАНИЯ
+    FIntRect SourceCopyRegion;
     
-    // ВАЖНО: Если спрайт уже оптимизирован, то копируем всю текстуру
-    // Если нет - нужно найти используемую область
-    bool bIsOptimizedSprite = SourceTexture->GetName().Contains(TEXT("_Optimized"));
+    // Проверяем, является ли это оптимизированной текстурой
+    bool bIsOptimizedTexture = SourceTexture->GetName().Contains(TEXT("_Optimized"));
     
-    if (!bIsOptimizedSprite)
+    if (bIsOptimizedTexture)
     {
-        // Находим используемую область для неоптимизированного спрайта
+        // Для оптимизированных текстур копируем всю текстуру целиком
+        // так как она уже обрезана до нужного размера
+        SourceCopyRegion = FIntRect(0, 0, SourceWidth, SourceHeight);
+        
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Source is optimized texture - using full texture region: (%d,%d,%d,%d)"), 
+               SourceCopyRegion.Min.X, SourceCopyRegion.Min.Y, SourceCopyRegion.Max.X, SourceCopyRegion.Max.Y);
+    }
+    else
+    {
+        // Для неоптимизированных текстур находим используемую область
         SourceCopyRegion = FindUsedBounds(SourceTexture, 2);
+        
         if (SourceCopyRegion.Width() <= 0 || SourceCopyRegion.Height() <= 0)
         {
-            UE_LOG(LogSpriteOptimizer, Warning, TEXT("No used area found in texture %s"), *SourceTexture->GetName());
+            UE_LOG(LogSpriteOptimizer, Warning, TEXT("No used area found in texture %s, using full texture"), *SourceTexture->GetName());
             SourceCopyRegion = FIntRect(0, 0, SourceWidth, SourceHeight);
         }
+        
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Source is original texture - using used bounds region: (%d,%d,%d,%d)"), 
+               SourceCopyRegion.Min.X, SourceCopyRegion.Min.Y, SourceCopyRegion.Max.X, SourceCopyRegion.Max.Y);
     }
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Source copy region: (%d,%d,%d,%d), Is optimized: %s"), 
-           SourceCopyRegion.Min.X, SourceCopyRegion.Min.Y, SourceCopyRegion.Max.X, SourceCopyRegion.Max.Y,
-           bIsOptimizedSprite ? TEXT("Yes") : TEXT("No"));
     
     // Получаем пиксели из исходной текстуры
     TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
@@ -1701,12 +1783,46 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Read %d pixels from source texture"), SourcePixels.Num());
     
     // Вычисляем размеры для копирования
-    int32 CopyWidth = FMath::Min(SourceCopyRegion.Width(), Region.Width());
-    int32 CopyHeight = FMath::Min(SourceCopyRegion.Height(), Region.Height());
+    int32 SourceCopyWidth = SourceCopyRegion.Width();
+    int32 SourceCopyHeight = SourceCopyRegion.Height();
+    int32 AtlasRegionWidth = Region.Width();
+    int32 AtlasRegionHeight = Region.Height();
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Copy dimensions: %dx%d"), CopyWidth, CopyHeight);
+    // ВАЖНО: Определяем способ копирования
+    bool bNeedsScaling = (SourceCopyWidth != AtlasRegionWidth) || (SourceCopyHeight != AtlasRegionHeight);
     
+    if (bNeedsScaling)
+    {
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Scaling needed: source (%dx%d) -> atlas region (%dx%d)"), 
+               SourceCopyWidth, SourceCopyHeight, AtlasRegionWidth, AtlasRegionHeight);
+        
+        // Копирование с масштабированием (может быть нужно для особых случаев)
+        return CopyPixelsWithScaling(SourcePixels, SourceWidth, SourceCopyRegion, 
+                                   AtlasPixels, AtlasSize, Region);
+    }
+    else
+    {
+        UE_LOG(LogSpriteOptimizer, Log, TEXT("Direct copy: source (%dx%d) == atlas region (%dx%d)"), 
+               SourceCopyWidth, SourceCopyHeight, AtlasRegionWidth, AtlasRegionHeight);
+        
+        // Прямое копирование без масштабирования
+        return CopyPixelsDirect(SourcePixels, SourceWidth, SourceCopyRegion, 
+                              AtlasPixels, AtlasSize, Region);
+    }
+}
+
+// Вспомогательный метод для прямого копирования
+bool USpriteOptimizer::CopyPixelsDirect(
+    const TArray<FColor>& SourcePixels,
+    int32 SourceWidth,
+    const FIntRect& SourceRegion,
+    TArray<FColor>& AtlasPixels,
+    const FIntPoint& AtlasSize,
+    const FIntRect& AtlasRegion)
+{
     int32 CopiedPixels = 0;
+    int32 CopyWidth = FMath::Min(SourceRegion.Width(), AtlasRegion.Width());
+    int32 CopyHeight = FMath::Min(SourceRegion.Height(), AtlasRegion.Height());
     
     // Копируем пиксели построчно
     for (int32 Y = 0; Y < CopyHeight; Y++)
@@ -1714,13 +1830,13 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
         for (int32 X = 0; X < CopyWidth; X++)
         {
             // Координаты в исходной текстуре
-            int32 SourceX = SourceCopyRegion.Min.X + X;
-            int32 SourceY = SourceCopyRegion.Min.Y + Y;
+            int32 SourceX = SourceRegion.Min.X + X;
+            int32 SourceY = SourceRegion.Min.Y + Y;
             int32 SourceIndex = SourceY * SourceWidth + SourceX;
             
             // Координаты в атласе
-            int32 AtlasX = Region.Min.X + X;
-            int32 AtlasY = Region.Min.Y + Y;
+            int32 AtlasX = AtlasRegion.Min.X + X;
+            int32 AtlasY = AtlasRegion.Min.Y + Y;
             int32 AtlasIndex = AtlasY * AtlasSize.X + AtlasX;
             
             // Проверяем границы
@@ -1740,9 +1856,62 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
         }
     }
     
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully copied %d visible pixels from %s"), 
-           CopiedPixels, *SourceTexture->GetName());
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Direct copy completed: %d visible pixels copied"), CopiedPixels);
+    return CopiedPixels > 0;
+}
+
+// Вспомогательный метод для копирования с масштабированием
+bool USpriteOptimizer::CopyPixelsWithScaling(
+    const TArray<FColor>& SourcePixels,
+    int32 SourceWidth,
+    const FIntRect& SourceRegion,
+    TArray<FColor>& AtlasPixels,
+    const FIntPoint& AtlasSize,
+    const FIntRect& AtlasRegion)
+{
+    int32 CopiedPixels = 0;
     
+    float ScaleX = float(SourceRegion.Width()) / float(AtlasRegion.Width());
+    float ScaleY = float(SourceRegion.Height()) / float(AtlasRegion.Height());
+    
+    // Копируем с масштабированием
+    for (int32 AtlasY = 0; AtlasY < AtlasRegion.Height(); AtlasY++)
+    {
+        for (int32 AtlasX = 0; AtlasX < AtlasRegion.Width(); AtlasX++)
+        {
+            // Находим соответствующий пиксель в исходной текстуре
+            int32 SourceX = SourceRegion.Min.X + FMath::RoundToInt(AtlasX * ScaleX);
+            int32 SourceY = SourceRegion.Min.Y + FMath::RoundToInt(AtlasY * ScaleY);
+            
+            // Проверяем границы исходной текстуры
+            if (SourceX >= SourceRegion.Min.X && SourceX < SourceRegion.Max.X &&
+                SourceY >= SourceRegion.Min.Y && SourceY < SourceRegion.Max.Y)
+            {
+                int32 SourceIndex = SourceY * SourceWidth + SourceX;
+                
+                // Координаты в атласе
+                int32 FinalAtlasX = AtlasRegion.Min.X + AtlasX;
+                int32 FinalAtlasY = AtlasRegion.Min.Y + AtlasY;
+                int32 AtlasIndex = FinalAtlasY * AtlasSize.X + FinalAtlasX;
+                
+                // Проверяем границы атласа
+                if (SourceIndex >= 0 && SourceIndex < SourcePixels.Num() &&
+                    AtlasIndex >= 0 && AtlasIndex < AtlasPixels.Num() &&
+                    FinalAtlasX >= 0 && FinalAtlasX < AtlasSize.X &&
+                    FinalAtlasY >= 0 && FinalAtlasY < AtlasSize.Y)
+                {
+                    AtlasPixels[AtlasIndex] = SourcePixels[SourceIndex];
+                    
+                    if (SourcePixels[SourceIndex].A > 0)
+                    {
+                        CopiedPixels++;
+                    }
+                }
+            }
+        }
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Scaled copy completed: %d visible pixels copied"), CopiedPixels);
     return CopiedPixels > 0;
 }
 

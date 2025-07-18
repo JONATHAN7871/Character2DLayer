@@ -87,6 +87,14 @@ private:
     TSharedPtr<SButton> AnalyzeButton;
     TSharedPtr<SButton> CreateAtlasButton;
     TSharedPtr<SButton> PreviewButton;
+
+    // НОВЫЕ UI элементы для компактного отображения
+    TSharedPtr<STextBlock> SpritesSummaryText;
+    
+    // НОВЫЕ методы
+    TSharedRef<SWidget> CreateCompactSpritesListSection();
+    TSharedRef<ITableRow> GenerateCompactSpriteRow(TSharedPtr<FAtlasSpriteInfo> Item, const TSharedRef<STableViewBase>& OwnerTable);
+    FText GetSpritesSummaryText() const;
     
     // Методы создания UI
     TSharedRef<SWidget> CreateHeaderSection();
