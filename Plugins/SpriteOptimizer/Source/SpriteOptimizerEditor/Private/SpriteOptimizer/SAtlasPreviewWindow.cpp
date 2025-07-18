@@ -1,5 +1,3 @@
-// Создайте новый файл: SAtlasPreviewWindow.cpp
-
 #include "SpriteOptimizer/SAtlasPreviewWindow.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -7,23 +5,21 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SSeparator.h"
-#include "Widgets/Layout/SUniformGridPanel.h"
 #include "Styling/AppStyle.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Rendering/DrawElements.h"
 #include "Engine/Texture2D.h"
-#include "Fonts/FontMeasure.h"
 
 #define LOCTEXT_NAMESPACE "SAtlasPreviewWindow"
 
 void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
 {
-    // Сохраняем данные
+    // Save data
     CurrentSettings = InArgs._AtlasSettings;
     CurrentAnalysis = InArgs._AnalysisResult;
     AtlasSize = CurrentAnalysis.AtlasSize;
     
-    // Инициализируем данные для предпросмотра
+    // Initialize preview data
     InitializePreviewData();
     
     ChildSlot
@@ -34,7 +30,7 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
         [
             SNew(SVerticalBox)
             
-            // Компактный заголовок
+            // Compact header
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
@@ -53,7 +49,7 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Компактная информация в одну строку
+            // Compact information in one line
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
@@ -73,7 +69,7 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Предпросмотр
+            // Preview
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
             .Padding(0, 5)
@@ -88,7 +84,7 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Компактные действия
+            // Compact actions
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
@@ -153,6 +149,89 @@ TSharedRef<SWidget> SAtlasPreviewWindow::CreateCompactPreviewSection()
         ];
 }
 
+TSharedRef<SWidget> SAtlasPreviewWindow::CreateAtlasCanvas()
+{
+    float DisplayScale = CalculateDisplayScale();
+    
+    return SNew(SAtlasCanvas)
+        .PreviewSprites(PreviewSprites)
+        .AtlasSize(AtlasSize)
+        .DisplayScale(DisplayScale);
+}
+
+void SAtlasPreviewWindow::ShowAtlasPreview(
+    const TArray<UPaperSprite*>& Sprites,
+    const FSpriteAtlasSettings& Settings,
+    const FSpriteAtlasResult& Analysis)
+{
+    if (Sprites.Num() < 2 || !Analysis.bSuccess)
+    {
+        return;
+    }
+    
+    TSharedRef<SWindow> PreviewWindow = SNew(SWindow)
+        .Title(FText::Format(LOCTEXT("AtlasPreviewTitle", "Atlas Preview - {0}x{1}"), 
+                           Analysis.AtlasSize.X, Analysis.AtlasSize.Y))
+        .SizingRule(ESizingRule::UserSized)
+        .ClientSize(FVector2D(600, 500))
+        .SupportsMaximize(true)
+        .SupportsMinimize(false)
+        .Content()
+        [
+            SNew(SAtlasPreviewWindow)
+            .Sprites(Sprites)
+            .AtlasSettings(Settings)
+            .AnalysisResult(Analysis)
+        ];
+    
+    FSlateApplication::Get().AddWindow(PreviewWindow);
+}
+
+void SAtlasPreviewWindow::InitializePreviewData()
+{
+    PreviewSprites.Empty();
+    
+    // Create preview data based on analysis
+    if (CurrentAnalysis.SpriteRegions.Num() > 0)
+    {
+        for (int32 i = 0; i < CurrentAnalysis.SpriteRegions.Num(); i++)
+        {
+            const FIntRect& Region = CurrentAnalysis.SpriteRegions[i];
+            
+            // Create preview data
+            FAtlasPreviewSprite PreviewSprite;
+            PreviewSprite.Region = Region;
+            PreviewSprite.SpriteName = FString::Printf(TEXT("Sprite_%d"), i + 1);
+            
+            // Generate color for each sprite
+            float Hue = (float(i) / float(FMath::Max(1, CurrentAnalysis.SpriteRegions.Num()))) * 360.0f;
+            PreviewSprite.BorderColor = FLinearColor::MakeFromHSV8(
+                uint8(Hue), 
+                200,  // Saturation
+                255   // Value
+            );
+            
+            PreviewSprites.Add(PreviewSprite);
+        }
+    }
+}
+
+float SAtlasPreviewWindow::CalculateDisplayScale() const
+{
+    // Maximum canvas size in window
+    const float MaxCanvasSize = 400.0f;
+    
+    // Calculate scale based on atlas size
+    float ScaleX = MaxCanvasSize / float(AtlasSize.X);
+    float ScaleY = MaxCanvasSize / float(AtlasSize.Y);
+    
+    // Use smaller scale so atlas fits
+    float Scale = FMath::Min(ScaleX, ScaleY);
+    
+    // Limit scale to reasonable bounds
+    return FMath::Clamp(Scale, 0.1f, 2.0f);
+}
+
 FText SAtlasPreviewWindow::GetCompactAtlasInfoText() const
 {
     FString AlgorithmName;
@@ -181,307 +260,6 @@ FText SAtlasPreviewWindow::GetCompactAtlasInfoText() const
     );
 }
 
-// Показать компактное окно предпросмотра
-void SAtlasPreviewWindow::ShowAtlasPreview(
-    const TArray<UPaperSprite*>& Sprites,
-    const FSpriteAtlasSettings& Settings,
-    const FSpriteAtlasResult& Analysis)
-{
-    if (Sprites.Num() < 2 || !Analysis.bSuccess)
-    {
-        return;
-    }
-    
-    TSharedRef<SWindow> PreviewWindow = SNew(SWindow)
-        .Title(FText::Format(LOCTEXT("AtlasPreviewTitle", "Atlas Preview - {0}x{1}"), 
-                           Analysis.AtlasSize.X, Analysis.AtlasSize.Y))
-        .SizingRule(ESizingRule::UserSized)
-        .ClientSize(FVector2D(600, 500))  // Меньший размер окна
-        .SupportsMaximize(true)
-        .SupportsMinimize(false)
-        .Content()
-        [
-            SNew(SAtlasPreviewWindow)
-            .Sprites(Sprites)
-            .AtlasSettings(Settings)
-            .AnalysisResult(Analysis)
-        ];
-    
-    FSlateApplication::Get().AddWindow(PreviewWindow);
-}
-
-TSharedRef<SWidget> SAtlasPreviewWindow::CreateHeaderSection()
-{
-    return SNew(SVerticalBox)
-        
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        [
-            SNew(STextBlock)
-            .Text(LOCTEXT("PreviewTitle", "🔍 Atlas Preview"))
-            .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-            .Justification(ETextJustify::Center)
-        ]
-        
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(0, 5)
-        [
-            SNew(STextBlock)
-            .Text(LOCTEXT("PreviewSubtitle", "Preview how sprites will be arranged in the atlas before creation"))
-            .Justification(ETextJustify::Center)
-            .AutoWrapText(true)
-        ];
-}
-
-TSharedRef<SWidget> SAtlasPreviewWindow::CreateInfoSection()
-{
-    return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-        .Padding(10)
-        [
-            SNew(SHorizontalBox)
-            
-            // Левая колонка - информация об атласе
-            + SHorizontalBox::Slot()
-            .FillWidth(0.5f)
-            .Padding(5)
-            [
-                SNew(SVerticalBox)
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                [
-                    SNew(STextBlock)
-                    .Text(LOCTEXT("AtlasInfoTitle", "📊 Atlas Information"))
-                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                ]
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 5)
-                [
-                    SAssignNew(InfoText, STextBlock)
-                    .Text(GetAtlasInfoText())
-                    .AutoWrapText(true)
-                ]
-            ]
-            
-            // Правая колонка - список спрайтов
-            + SHorizontalBox::Slot()
-            .FillWidth(0.5f)
-            .Padding(5)
-            [
-                SNew(SVerticalBox)
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                [
-                    SNew(STextBlock)
-                    .Text(LOCTEXT("SpriteListTitle", "🎨 Sprites in Atlas"))
-                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-                ]
-                
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0, 5)
-                [
-                    SNew(STextBlock)
-                    .Text(GetSpriteListText())
-                    .AutoWrapText(true)
-                ]
-            ]
-        ];
-}
-
-TSharedRef<SWidget> SAtlasPreviewWindow::CreatePreviewSection()
-{
-    return SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-        .Padding(10)
-        [
-            SNew(SVerticalBox)
-            
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            [
-                SNew(STextBlock)
-                .Text(LOCTEXT("PreviewCanvasTitle", "🖼️ Atlas Layout Preview"))
-                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
-            ]
-            
-            + SVerticalBox::Slot()
-            .FillHeight(1.0f)
-            .Padding(0, 10)
-            [
-                SAssignNew(PreviewScrollBox, SScrollBox)
-                .Orientation(Orient_Vertical)
-                
-                + SScrollBox::Slot()
-                [
-                    SNew(SHorizontalBox)
-                    
-                    + SHorizontalBox::Slot()
-                    .AutoWidth()
-                    .HAlign(HAlign_Center)
-                    [
-                        CreateAtlasCanvas()
-                    ]
-                ]
-            ]
-        ];
-}
-
-TSharedRef<SWidget> SAtlasPreviewWindow::CreateAtlasCanvas()
-{
-    float DisplayScale = CalculateDisplayScale();
-    
-    return SNew(SAtlasCanvas)
-        .PreviewSprites(PreviewSprites)
-        .AtlasSize(AtlasSize)
-        .DisplayScale(DisplayScale);
-}
-
-TSharedRef<SWidget> SAtlasPreviewWindow::CreateActionsSection()
-{
-    return SNew(SVerticalBox)
-        
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(10, 5)
-        [
-            SNew(STextBlock)
-            .Text(LOCTEXT("PreviewInstructions", 
-                "📋 This preview shows how sprites will be arranged in the atlas.\n"
-                "✅ If you're satisfied with the layout, close this window and click 'Create Atlas' in the main window.\n"
-                "⚙️ If you want to adjust settings, close this window and modify parameters, then preview again."))
-            .Justification(ETextJustify::Center)
-            .AutoWrapText(true)
-            .Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
-        ]
-        
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(10)
-        [
-            SNew(SHorizontalBox)
-            
-            + SHorizontalBox::Slot()
-            .FillWidth(1.0f)
-            
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                SAssignNew(CloseButton, SButton)
-                .Text(LOCTEXT("ClosePreview", "✖️ Close Preview"))
-                .OnClicked(this, &SAtlasPreviewWindow::OnCloseWindow)
-                .HAlign(HAlign_Center)
-                .ToolTipText(LOCTEXT("ClosePreviewTooltip", "Close preview and return to atlas creation window"))
-            ]
-            
-            + SHorizontalBox::Slot()
-            .FillWidth(1.0f)
-        ];
-}
-
-void SAtlasPreviewWindow::InitializePreviewData()
-{
-    PreviewSprites.Empty();
-    
-    // Создаем данные для предпросмотра на основе анализа
-    if (CurrentAnalysis.SpriteRegions.Num() > 0)
-    {
-        for (int32 i = 0; i < CurrentAnalysis.SpriteRegions.Num(); i++)
-        {
-            const FIntRect& Region = CurrentAnalysis.SpriteRegions[i];
-            
-            // Создаем данные для предпросмотра
-            FAtlasPreviewSprite PreviewSprite;
-            PreviewSprite.Region = Region;
-            PreviewSprite.SpriteName = FString::Printf(TEXT("Sprite_%d"), i + 1);
-            
-            // Генерируем цвет для каждого спрайта
-            float Hue = (float(i) / float(FMath::Max(1, CurrentAnalysis.SpriteRegions.Num()))) * 360.0f;
-            PreviewSprite.BorderColor = FLinearColor::MakeFromHSV8(
-                uint8(Hue), 
-                200,  // Saturation
-                255   // Value
-            );
-            
-            PreviewSprites.Add(PreviewSprite);
-        }
-    }
-}
-
-float SAtlasPreviewWindow::CalculateDisplayScale() const
-{
-    // Максимальный размер canvas в окне
-    const float MaxCanvasSize = 400.0f;
-    
-    // Вычисляем масштаб на основе размера атласа
-    float ScaleX = MaxCanvasSize / float(AtlasSize.X);
-    float ScaleY = MaxCanvasSize / float(AtlasSize.Y);
-    
-    // Используем меньший масштаб, чтобы атлас поместился
-    float Scale = FMath::Min(ScaleX, ScaleY);
-    
-    // Ограничиваем масштаб разумными пределами
-    return FMath::Clamp(Scale, 0.1f, 2.0f);
-}
-
-FText SAtlasPreviewWindow::GetAtlasInfoText() const
-{
-    FString AlgorithmName;
-    switch (CurrentSettings.PackingAlgorithm)
-    {
-        case EAtlasPackingAlgorithm::Simple:
-            AlgorithmName = TEXT("Simple Grid");
-            break;
-        case EAtlasPackingAlgorithm::BestFit:
-            AlgorithmName = TEXT("Best Fit");
-            break;
-        case EAtlasPackingAlgorithm::MaxRects:
-            AlgorithmName = TEXT("MaxRects");
-            break;
-        default:
-            AlgorithmName = TEXT("Unknown");
-            break;
-    }
-    
-    return FText::Format(LOCTEXT("AtlasInfoFormat",
-        "📐 Atlas size: {0}x{1} pixels\n"
-        "📦 Packing efficiency: {2}%\n"
-        "💾 Estimated memory: {3} MB\n"
-        "💰 Memory savings: {4}%\n"
-        "🎨 Total sprites: {5}\n"
-        "⚙️ Algorithm: {6}"),
-        FText::AsNumber(AtlasSize.X),
-        FText::AsNumber(AtlasSize.Y),
-        FText::AsNumber(CurrentAnalysis.PackingEfficiency),
-        FText::AsNumber((AtlasSize.X * AtlasSize.Y * 4) / (1024.0f * 1024.0f)),
-        FText::AsNumber(CurrentAnalysis.MemorySavings),
-        FText::AsNumber(CurrentAnalysis.TotalSprites),
-        FText::FromString(AlgorithmName)
-    );
-}
-
-FText SAtlasPreviewWindow::GetSpriteListText() const
-{
-    FString SpriteList;
-    
-    for (int32 i = 0; i < PreviewSprites.Num(); i++)
-    {
-        const FAtlasPreviewSprite& Sprite = PreviewSprites[i];
-        SpriteList += FString::Printf(TEXT("• %s: %dx%d at (%d,%d)\n"),
-            *Sprite.SpriteName,
-            Sprite.Region.Width(), Sprite.Region.Height(),
-            Sprite.Region.Min.X, Sprite.Region.Min.Y
-        );
-    }
-    
-    return FText::FromString(SpriteList);
-}
-
 FReply SAtlasPreviewWindow::OnCloseWindow()
 {
     TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
@@ -492,7 +270,7 @@ FReply SAtlasPreviewWindow::OnCloseWindow()
     return FReply::Handled();
 }
 
-// === РЕАЛИЗАЦИЯ КАСТОМНОГО CANVAS ===
+// === CUSTOM CANVAS IMPLEMENTATION ===
 
 void SAtlasCanvas::Construct(const FArguments& InArgs)
 {
@@ -513,24 +291,24 @@ int32 SAtlasCanvas::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeo
                            const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
                            int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-    // Рисуем фон атласа
+    // Draw atlas background
     FSlateDrawElement::MakeBox(
         OutDrawElements,
         LayerId,
         AllottedGeometry.ToPaintGeometry(),
         FAppStyle::GetBrush("WhiteBrush"),
         ESlateDrawEffect::None,
-        FLinearColor(0.1f, 0.1f, 0.1f, 1.0f) // Темно-серый фон
+        FLinearColor(0.1f, 0.1f, 0.1f, 1.0f) // Dark gray background
     );
     
     LayerId++;
     
-    // Рисуем каждый спрайт как прямоугольник
+    // Draw each sprite as rectangle
     for (int32 i = 0; i < SpriteData.Num(); i++)
     {
         const FAtlasPreviewSprite& Sprite = SpriteData[i];
         
-        // Вычисляем позицию и размер в пикселях canvas
+        // Calculate position and size in canvas pixels
         FVector2D Position(
             Sprite.Region.Min.X * Scale,
             Sprite.Region.Min.Y * Scale
@@ -541,30 +319,30 @@ int32 SAtlasCanvas::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeo
             Sprite.Region.Height() * Scale
         );
         
-        // Рисуем заполненный прямоугольник спрайта
+        // Draw filled sprite rectangle
         FSlateDrawElement::MakeBox(
             OutDrawElements,
             LayerId,
             AllottedGeometry.ToPaintGeometry(Size, FSlateLayoutTransform(Position)),
             FAppStyle::GetBrush("WhiteBrush"),
             ESlateDrawEffect::None,
-            Sprite.BorderColor.CopyWithNewOpacity(0.3f) // Полупрозрачная заливка
+            Sprite.BorderColor.CopyWithNewOpacity(0.3f) // Semi-transparent fill
         );
         
-        // Рисуем рамку спрайта
+        // Draw sprite border
         FSlateDrawElement::MakeBox(
             OutDrawElements,
             LayerId + 1,
             AllottedGeometry.ToPaintGeometry(Size, FSlateLayoutTransform(Position)),
             FAppStyle::GetBrush("Border"),
             ESlateDrawEffect::None,
-            Sprite.BorderColor // Яркая рамка
+            Sprite.BorderColor // Bright border
         );
         
-        // Рисуем номер спрайта в центре (только для достаточно больших спрайтов)
+        // Draw sprite number in center (only for large enough sprites)
         if (Size.X > 30 && Size.Y > 20)
         {
-            FVector2D TextPosition = Position + Size * 0.5f - FVector2D(5, 5); // Примерный центр
+            FVector2D TextPosition = Position + Size * 0.5f - FVector2D(5, 5); // Approximate center
             
             FSlateDrawElement::MakeText(
                 OutDrawElements,

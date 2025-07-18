@@ -9,7 +9,6 @@
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Layout/SBorder.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "PaperSprite.h"
 
@@ -53,17 +52,17 @@ public:
     virtual ~SAtlasCreationWindow();
     void Construct(const FArguments& InArgs);
     
-    // Статический метод для показа окна
     static void ShowAtlasCreationWindow(const TArray<UPaperSprite*>& Sprites);
 
 private:
-    // Данные
+    // Main data
     TArray<TSharedPtr<FAtlasSpriteInfo>> SpriteInfos;
     FSpriteAtlasSettings AtlasSettings;
     FSpriteAtlasResult LastAnalysisResult;
     TArray<TSharedPtr<FString>> PackingAlgorithmOptions;
+    FString CurrentAtlasName;
     
-    // UI элементы - основные настройки
+    // UI widgets - atlas settings
     TSharedPtr<SEditableTextBox> AtlasNameTextBox;
     TSharedPtr<SSpinBox<int32>> MaxWidthSpinBox;
     TSharedPtr<SSpinBox<int32>> MaxHeightSpinBox;
@@ -71,40 +70,34 @@ private:
     TSharedPtr<SComboBox<TSharedPtr<FString>>> PackingAlgorithmComboBox;
     TSharedPtr<SEditableTextBox> AtlasSuffixTextBox;
     
-    // UI элементы - опции
+    // UI widgets - options
     TSharedPtr<SCheckBox> OptimizeSpritesFirstCheckBox;
     TSharedPtr<SCheckBox> CreateIndividualSpritesCheckBox;
     TSharedPtr<SCheckBox> PowerOfTwoCheckBox;
     TSharedPtr<SCheckBox> SquareAtlasCheckBox;
-    TSharedPtr<SCheckBox> PreserveQualityCheckBox;      // НОВОЕ
-    TSharedPtr<SCheckBox> ForceSmoothingCheckBox;       // НОВОЕ
+    TSharedPtr<SCheckBox> PreserveQualityCheckBox;
+    TSharedPtr<SCheckBox> ForceSmoothingCheckBox;
     
-    // UI элементы - список спрайтов
+    // UI widgets - sprite list and analysis
     TSharedPtr<SListView<TSharedPtr<FAtlasSpriteInfo>>> SpritesListView;
-    
-    // UI элементы - анализ и действия
+    TSharedPtr<STextBlock> SpritesSummaryText;
     TSharedPtr<STextBlock> AnalysisResultText;
     TSharedPtr<SButton> AnalyzeButton;
     TSharedPtr<SButton> CreateAtlasButton;
     TSharedPtr<SButton> PreviewButton;
-
-    // НОВЫЕ UI элементы для компактного отображения
-    TSharedPtr<STextBlock> SpritesSummaryText;
     
-    // НОВЫЕ методы
-    TSharedRef<SWidget> CreateCompactSpritesListSection();
+    // UI creation methods
+    TSharedRef<SWidget> CreateCompactHeaderSection();
+    TSharedRef<SWidget> CreateCompactAtlasSettingsSection();
+    TSharedRef<SWidget> CreateCompactSpritesSection();
+    TSharedRef<SWidget> CreateCompactAnalysisSection();
+    TSharedRef<SWidget> CreateCompactActionSection();
+    
+    // Sprite list methods
     TSharedRef<ITableRow> GenerateCompactSpriteRow(TSharedPtr<FAtlasSpriteInfo> Item, const TSharedRef<STableViewBase>& OwnerTable);
-    FText GetSpritesSummaryText() const;
+    void OnSpriteSelectionChanged(TSharedPtr<FAtlasSpriteInfo> Item, ESelectInfo::Type SelectInfo);
     
-    // Методы создания UI
-    TSharedRef<SWidget> CreateHeaderSection();
-    TSharedRef<SWidget> CreateAtlasSettingsSection();
-    TSharedRef<SWidget> CreateSpriteOptionsSection();
-    TSharedRef<SWidget> CreateSpritesListSection();
-    TSharedRef<SWidget> CreateAnalysisSection();
-    TSharedRef<SWidget> CreateActionsSection();
-    
-    // Обработчики событий - настройки атласа
+    // Atlas settings event handlers
     void OnAtlasNameChanged(const FText& NewText, ETextCommit::Type CommitType);
     void OnMaxWidthChanged(int32 NewValue);
     void OnMaxHeightChanged(int32 NewValue);
@@ -112,15 +105,15 @@ private:
     void OnPackingAlgorithmChanged(TSharedPtr<FString> SelectedItem, ESelectInfo::Type SelectInfo);
     void OnAtlasSuffixChanged(const FText& NewText, ETextCommit::Type CommitType);
     
-    // Обработчики событий - опции
+    // Options event handlers
     void OnOptimizeSpritesFirstChanged(ECheckBoxState NewState);
     void OnCreateIndividualSpritesChanged(ECheckBoxState NewState);
     void OnPowerOfTwoChanged(ECheckBoxState NewState);
     void OnSquareAtlasChanged(ECheckBoxState NewState);
-    void OnPreserveQualityChanged(ECheckBoxState NewState);     // НОВОЕ
-    void OnForceSmoothingChanged(ECheckBoxState NewState);      // НОВОЕ
+    void OnPreserveQualityChanged(ECheckBoxState NewState);
+    void OnForceSmoothingChanged(ECheckBoxState NewState);
     
-    // Обработчики событий - действия
+    // Action event handlers
     FReply OnAnalyzeAtlas();
     FReply OnCreateAtlas();
     FReply OnPreviewAtlas();
@@ -129,33 +122,17 @@ private:
     FReply OnSelectOptimalSprites();
     FReply OnResetToDefaults();
     
-    // Работа со списком спрайтов
-    TSharedRef<ITableRow> GenerateSpriteRow(TSharedPtr<FAtlasSpriteInfo> Item, const TSharedRef<STableViewBase>& OwnerTable);
-    void OnSpriteSelectionChanged(TSharedPtr<FAtlasSpriteInfo> Item, ESelectInfo::Type SelectInfo);
-    
-    // Вспомогательные методы
+    // Helper methods
     void InitializePackingAlgorithms();
     void LoadDefaultSettings();
     void UpdateAnalysisDisplay();
     void UpdateButtonStates();
     TArray<UPaperSprite*> GetSelectedSprites() const;
-    FText GetAnalysisText() const;
-    FText GetAtlasInfoText() const;
-    
-    // Валидация
     bool ValidateSettings() const;
     FText GetValidationErrorText() const;
-    
-    // Уведомления
     void ShowNotification(const FText& Message, bool bSuccess = true);
     
-    // Данные для UI
-    FString CurrentAtlasName;
-
-    TSharedRef<SWidget> CreateCompactHeaderSection();
-    TSharedRef<SWidget> CreateCompactAtlasSettingsSection();
-    TSharedRef<SWidget> CreateCompactSpritesSection();
-    TSharedRef<SWidget> CreateCompactAnalysisSection();
-    TSharedRef<SWidget> CreateCompactActionSection();
+    // Text getters
     FText GetCompactAnalysisText() const;
+    FText GetSpritesSummaryText() const;
 };

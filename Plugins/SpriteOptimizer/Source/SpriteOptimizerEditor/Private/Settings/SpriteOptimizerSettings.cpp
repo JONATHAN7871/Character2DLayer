@@ -4,7 +4,7 @@
 
 USpriteOptimizerSettings::USpriteOptimizerSettings()
 {
-	// Устанавливаем настройки по умолчанию
+	// Set default settings
 	DefaultMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Paper2D/DefaultSpriteMaterial.DefaultSpriteMaterial")));
 	DefaultPixelsPerUnit = 1.0f;
 	DefaultPadding = 2;

@@ -1,5 +1,3 @@
-// Создайте новый файл: SAtlasPreviewWindow.h
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -33,7 +31,7 @@ struct FAtlasPreviewSprite
         Region = InRegion;
         SpriteName = InSprite ? InSprite->GetName() : TEXT("Unknown");
         
-        // Генерируем случайный цвет для рамки каждого спрайта
+        // Generate random color for each sprite border
         BorderColor = FLinearColor(
             FMath::RandRange(0.3f, 1.0f),
             FMath::RandRange(0.3f, 1.0f), 
@@ -54,7 +52,6 @@ public:
 
     void Construct(const FArguments& InArgs);
     
-    // Статический метод для показа окна предпросмотра
     static void ShowAtlasPreview(
         const TArray<UPaperSprite*>& Sprites,
         const FSpriteAtlasSettings& Settings,
@@ -62,43 +59,32 @@ public:
     );
 
 private:
-    // Данные для предпросмотра
+    // Preview data
     TArray<FAtlasPreviewSprite> PreviewSprites;
-    FIntPoint AtlasSize;
+    FIntPoint AtlasSize = FIntPoint::ZeroValue;
     FSpriteAtlasSettings CurrentSettings;
     FSpriteAtlasResult CurrentAnalysis;
     
-    // UI элементы
+    // UI widgets
     TSharedPtr<SScrollBox> PreviewScrollBox;
-    TSharedPtr<STextBlock> InfoText;
     TSharedPtr<SButton> CloseButton;
-    TSharedPtr<SButton> CreateAtlasButton;
     
-    // Создание UI секций
-    TSharedRef<SWidget> CreateHeaderSection();
-    TSharedRef<SWidget> CreatePreviewSection();
-    TSharedRef<SWidget> CreateInfoSection();
-    TSharedRef<SWidget> CreateActionsSection();
-    
-    // Кастомный виджет для рисования атласа
+    // UI creation methods
+    TSharedRef<SWidget> CreateCompactPreviewSection();
     TSharedRef<SWidget> CreateAtlasCanvas();
     
-    // Обработчики событий
+    // Event handlers
     FReply OnCloseWindow();
     
-    // Вспомогательные методы
+    // Helper methods
     void InitializePreviewData();
-    FText GetAtlasInfoText() const;
-    FText GetSpriteListText() const;
-    
-    // Расчет масштаба для отображения
     float CalculateDisplayScale() const;
-
-    TSharedRef<SWidget> CreateCompactPreviewSection();
+    
+    // Text getters
     FText GetCompactAtlasInfoText() const;
 };
 
-// Кастомный виджет для рисования атласа
+// Custom widget for drawing atlas
 class SAtlasCanvas : public SLeafWidget
 {
 public:
@@ -119,6 +105,6 @@ public:
 
 private:
     TArray<FAtlasPreviewSprite> SpriteData;
-    FIntPoint AtlasResolution;
-    float Scale;
+    FIntPoint AtlasResolution = FIntPoint::ZeroValue;
+    float Scale = 1.0f;
 };

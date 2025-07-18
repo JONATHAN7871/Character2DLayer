@@ -10,10 +10,10 @@ void FSpriteOptimizerEditorModule::StartupModule()
 {
 	UE_LOG(LogTemp, Log, TEXT("SpriteOptimizer: Module starting up"));
 	
-	// Инициализируем действия и расширения меню
+	// Initialize menu extensions and actions
 	InitializeMenuExtensions();
 	
-	// Регистрируем настройки проекта
+	// Register project settings
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 	{
 		SettingsModule->RegisterSettings("Project", "Plugins", "SpriteOptimizer",
@@ -28,10 +28,10 @@ void FSpriteOptimizerEditorModule::ShutdownModule()
 {
 	UE_LOG(LogTemp, Log, TEXT("SpriteOptimizer: Module shutting down"));
 	
-	// Очищаем расширения меню
+	// Cleanup menu extensions
 	ShutdownMenuExtensions();
 	
-	// Отменяем регистрацию настроек
+	// Unregister settings
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 	{
 		SettingsModule->UnregisterSettings("Project", "Plugins", "SpriteOptimizer");
@@ -40,13 +40,13 @@ void FSpriteOptimizerEditorModule::ShutdownModule()
 
 void FSpriteOptimizerEditorModule::InitializeMenuExtensions()
 {
-	// Инициализируем действия для Content Browser
+	// Initialize Content Browser actions
 	FSpriteOptimizerActions::Initialize();
 }
 
 void FSpriteOptimizerEditorModule::ShutdownMenuExtensions()
 {
-	// Очищаем действия Content Browser
+	// Cleanup Content Browser actions
 	FSpriteOptimizerActions::Shutdown();
 }
 

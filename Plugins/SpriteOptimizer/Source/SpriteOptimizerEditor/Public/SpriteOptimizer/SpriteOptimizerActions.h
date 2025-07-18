@@ -6,23 +6,22 @@
 #include "PaperSprite.h"
 #include "ToolMenuSection.h"
 #include "Framework/Commands/Commands.h"
-#include "Runtime/Slate/Public/Framework/Commands/Commands.h"
 
 class FUICommandInfo;
 
-// Команды для оптимизатора спрайтов
+// Commands for sprite optimizer
 class FSpriteOptimizerCommands : public TCommands<FSpriteOptimizerCommands>
 {
 public:
 	FSpriteOptimizerCommands();
 
-	// Команда для оптимизации спрайтов
+	// Command for sprite optimization
 	TSharedPtr<FUICommandInfo> OptimizeSprites;
 
 	virtual void RegisterCommands() override;
 };
 
-// Расширение действий для Paper Sprite в Content Browser
+// Content Browser context menu extension for Paper Sprites
 class FSpriteOptimizerActions
 {
 public:
@@ -30,23 +29,16 @@ public:
 	static void Shutdown();
 
 private:
-	// Добавление пунктов меню в Content Browser
+	// Content Browser menu extension
 	static void ExtendContentBrowserContextMenu();
     
-	// === ОБРАБОТЧИКИ КОМАНД ОПТИМИЗАЦИИ ===
+	// Optimization command handlers
 	static void ExecuteOptimizeSprites(const struct FToolMenuContext& Context);
 	static bool CanExecuteOptimizeSprites(const struct FToolMenuContext& Context);
     
-	// === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
-	// Получение выбранных спрайтов из контекста
+	// Helper methods
 	static TArray<UPaperSprite*> GetSelectedSpritesFromContext(const struct FToolMenuContext& Context);
-    
-	// Проверка, является ли ассет спрайтом
 	static bool IsAssetSprite(const FAssetData& AssetData);
-    
-	// Подсчет количества спрайтов среди выбранных ассетов
 	static int32 CountSpritesInSelection(const TArray<FAssetData>& SelectedAssets);
-    
-	// Делегат для расширения меню
 	static TSharedRef<FExtender> OnExtendContentBrowserAssetSelectionMenu(const TArray<FAssetData>& SelectedAssets);
 };

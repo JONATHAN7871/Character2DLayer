@@ -1,6 +1,6 @@
 #include "SpriteOptimizer/SpriteOptimizerActions.h"
 #include "SpriteOptimizer/SSpriteOptimizationWindow.h"
-#include "SpriteOptimizer/SAtlasCreationWindow.h"  // НОВЫЙ ИМПОРТ
+#include "SpriteOptimizer/SAtlasCreationWindow.h"
 #include "Framework/Commands/UICommandList.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
@@ -28,45 +28,45 @@ void FSpriteOptimizerCommands::RegisterCommands()
 
 void FSpriteOptimizerActions::Initialize()
 {
-    // Регистрируем команды
+    // Register commands
     FSpriteOptimizerCommands::Register();
     
-    // Расширяем Content Browser меню
+    // Extend Content Browser menu
     ExtendContentBrowserContextMenu();
 }
 
 void FSpriteOptimizerActions::Shutdown()
 {
-    // Отменяем регистрацию команд
+    // Unregister commands
     FSpriteOptimizerCommands::Unregister();
 }
 
 void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
 {
-    // Получаем меню Content Browser
+    // Get Content Browser menu
     UToolMenus* ToolMenus = UToolMenus::Get();
     if (!ToolMenus)
     {
         return;
     }
     
-    // Расширяем контекстное меню для ассетов
+    // Extend context menu for assets
     UToolMenu* Menu = ToolMenus->ExtendMenu("ContentBrowser.AssetContextMenu");
     if (!Menu)
     {
         return;
     }
     
-    // Добавляем секцию в самый верх меню
+    // Add section at the top of menu
     FToolMenuSection& Section = Menu->FindOrAddSection("GetAssetActions");
     
-    // Добавляем действие оптимизации спрайтов
+    // Add sprite optimization action
     Section.AddDynamicEntry("SpriteOptimizerDynamic", FNewToolMenuSectionDelegate::CreateLambda([](FToolMenuSection& InSection)
     {
-        // Проверяем контекст
+        // Check context
         if (const UContentBrowserAssetContextMenuContext* Context = InSection.FindContext<UContentBrowserAssetContextMenuContext>())
         {
-            // Проверяем есть ли выбранные спрайты
+            // Check for selected sprites
             TArray<UPaperSprite*> SelectedSprites;
             int32 SpriteCount = 0;
             
@@ -82,7 +82,7 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                 }
             }
             
-            // === ОПТИМИЗАЦИЯ СПРАЙТОВ ===
+            // === SPRITE OPTIMIZATION ===
             if (SpriteCount > 0)
             {
                 FToolUIAction OptimizeUIAction;
@@ -103,14 +103,12 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                 );
             }
             
-            // === СОЗДАНИЕ АТЛАСА ===
-            // Добавляем пункт создания атласа для множественных спрайтов
+            // === ATLAS CREATION ===
             if (SpriteCount > 1)
             {
                 FToolUIAction AtlasUIAction;
                 AtlasUIAction.ExecuteAction = FToolMenuExecuteAction::CreateLambda([SelectedSprites](const FToolMenuContext&)
                 {
-                    // ИЗМЕНЕНО: Вызываем новое окно создания атласа
                     SAtlasCreationWindow::ShowAtlasCreationWindow(SelectedSprites);
                 });
                 
@@ -128,12 +126,11 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                     EUserInterfaceActionType::Button
                 );
                 
-                // === БЫСТРОЕ СОЗДАНИЕ АТЛАСА ===
-                // Добавляем опцию быстрого создания атласа с настройками по умолчанию
+                // === QUICK ATLAS CREATION ===
                 FToolUIAction QuickAtlasUIAction;
                 QuickAtlasUIAction.ExecuteAction = FToolMenuExecuteAction::CreateLambda([SelectedSprites](const FToolMenuContext&)
                 {
-                    // Быстрое создание атласа с настройками по умолчанию
+                    // Quick atlas creation with default settings
                     FSpriteAtlasSettings DefaultSettings;
                     DefaultSettings.bOptimizeSpritesFirst = true;
                     DefaultSettings.bCreateIndividualSprites = true;
@@ -143,7 +140,7 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                     
                     FString AtlasName = FString::Printf(TEXT("QuickAtlas_%d_Sprites"), SelectedSprites.Num());
                     
-                    // Показываем уведомление о начале процесса
+                    // Show start notification
                     USpriteOptimizer::ShowOptimizationNotification(
                         FText::Format(LOCTEXT("QuickAtlasStarted", "🔄 Creating quick atlas from {0} sprites..."), SelectedSprites.Num()), 
                         true
@@ -187,7 +184,7 @@ void FSpriteOptimizerActions::ExtendContentBrowserContextMenu()
                 );
             }
             
-            // === СЕПАРАТОР ===
+            // === SEPARATOR ===
             if (SpriteCount > 0)
             {
                 InSection.AddSeparator("SpriteOptimizerSeparator");
@@ -202,7 +199,6 @@ void FSpriteOptimizerActions::ExecuteOptimizeSprites(const FToolMenuContext& Con
     
     if (SelectedSprites.Num() > 0)
     {
-        // Открываем окно оптимизации (БЕЗ функций атласа)
         SSpriteOptimizationWindow::ShowOptimizationWindow(SelectedSprites);
     }
 }
@@ -256,7 +252,7 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
 {
     TSharedRef<FExtender> Extender = MakeShared<FExtender>();
     
-    // Проверяем, есть ли среди выбранных ассетов спрайты
+    // Check for sprites in selection
     int32 SpriteCount = CountSpritesInSelection(SelectedAssets);
     
     if (SpriteCount > 0)
@@ -267,7 +263,7 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
             nullptr,
             FMenuExtensionDelegate::CreateLambda([SelectedAssets, SpriteCount](FMenuBuilder& MenuBuilder)
             {
-                // Собираем спрайты
+                // Collect sprites
                 TArray<UPaperSprite*> Sprites;
                 for (const FAssetData& AssetData : SelectedAssets)
                 {
@@ -282,7 +278,7 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
                 
                 if (Sprites.Num() > 0)
                 {
-                    // === МЕНЮ ОПТИМИЗАЦИИ ===
+                    // === OPTIMIZATION MENU ===
                     FText OptimizeMenuLabel = Sprites.Num() == 1 ? 
                         LOCTEXT("OptimizeSpritesSingle", "🚀 Optimize Sprite") :
                         FText::Format(LOCTEXT("OptimizeSpriteMultiple", "🚀 Optimize {0} Sprites"), Sprites.Num());
@@ -297,7 +293,7 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
                         }))
                     );
                     
-                    // === МЕНЮ АТЛАСА ===
+                    // === ATLAS MENU ===
                     if (Sprites.Num() > 1)
                     {
                         MenuBuilder.AddMenuEntry(
@@ -306,7 +302,6 @@ TSharedRef<FExtender> FSpriteOptimizerActions::OnExtendContentBrowserAssetSelect
                             FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.Create"),
                             FUIAction(FExecuteAction::CreateLambda([Sprites]()
                             {
-                                // ИЗМЕНЕНО: Вызываем новое окно создания атласа
                                 SAtlasCreationWindow::ShowAtlasCreationWindow(Sprites);
                             }))
                         );

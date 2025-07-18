@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "PaperSprite.h"
-#include "SpriteEditorOnlyTypes.h"
 #include "Engine/Texture2D.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Materials/MaterialInterface.h"

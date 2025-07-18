@@ -6,14 +6,14 @@
 class FSpriteOptimizerEditorModule : public IModuleInterface
 {
 public:
-	/** IModuleInterface implementation */
+	// IModuleInterface implementation
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
 private:
-	/** Инициализация UI расширений */
+	// Initialize UI extensions
 	void InitializeMenuExtensions();
 	
-	/** Очистка UI расширений */
+	// Cleanup UI extensions
 	void ShutdownMenuExtensions();
 };
