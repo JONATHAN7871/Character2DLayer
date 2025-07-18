@@ -1,3 +1,5 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "SpriteOptimizer/SSpriteOptimizationWindow.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "Settings/SpriteOptimizerSettings.h"
@@ -7,7 +9,6 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Views/SHeaderRow.h"
 #include "Widgets/Layout/SSeparator.h"
-#include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Styling/AppStyle.h"
 #include "Framework/Application/SlateApplication.h"

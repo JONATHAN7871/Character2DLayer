@@ -1,4 +1,6 @@
-﻿#include "SpriteOptimizerEditorModule.h"
+﻿// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
+#include "SpriteOptimizerEditorModule.h"
 #include "SpriteOptimizer/SpriteOptimizerActions.h"
 #include "Settings/SpriteOptimizerSettings.h"
 #include "ISettingsModule.h"

@@ -1,9 +1,9 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "SpriteOptimizer/SpriteOptimizerActions.h"
 #include "SpriteOptimizer/SSpriteOptimizationWindow.h"
 #include "SpriteOptimizer/SAtlasCreationWindow.h"
 #include "Framework/Commands/UICommandList.h"
-#include "ContentBrowserModule.h"
-#include "IContentBrowserSingleton.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "ToolMenus.h"
 #include "PaperSprite.h"

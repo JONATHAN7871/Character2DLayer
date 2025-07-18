@@ -1,3 +1,5 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "SpriteOptimizer/SAtlasPreviewWindow.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "Widgets/Layout/SScrollBox.h"

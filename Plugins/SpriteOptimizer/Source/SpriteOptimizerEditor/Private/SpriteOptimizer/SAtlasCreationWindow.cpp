@@ -1,3 +1,5 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "SpriteOptimizer/SAtlasCreationWindow.h"
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "SpriteOptimizer/SAtlasPreviewWindow.h"

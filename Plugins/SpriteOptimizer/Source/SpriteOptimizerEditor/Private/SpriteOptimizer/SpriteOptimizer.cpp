@@ -1,3 +1,5 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "SpriteOptimizer/SpriteOptimizer.h"
 #include "Settings/SpriteOptimizerSettings.h"
 #include "UObject/ConstructorHelpers.h"
@@ -19,6 +21,8 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogSpriteOptimizer, Log, All);
 
+// === SETTINGS IMPLEMENTATION ===
+
 void FSpriteOptimizationSettings::LoadFromProjectSettings()
 {
     const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
@@ -35,13 +39,15 @@ void FSpriteOptimizationSettings::LoadFromProjectSettings()
     }
 }
 
+// === CORE OPTIMIZATION FUNCTIONS ===
+
 TArray<FSpriteOptimizationResult> USpriteOptimizer::OptimizeSprites(
     const TArray<UPaperSprite*>& Sprites, 
     const FSpriteOptimizationSettings& Settings)
 {
     TArray<FSpriteOptimizationResult> Results;
     
-    // Загружаем настройки из проекта если нужно
+    // Load project settings if needed
     FSpriteOptimizationSettings WorkingSettings = Settings;
     WorkingSettings.LoadFromProjectSettings();
     
@@ -71,7 +77,7 @@ TArray<FSpriteOptimizationResult> USpriteOptimizer::OptimizeSprites(
     
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Completed optimization of %d sprites"), Results.Num());
     
-    // Показываем уведомление если включено в настройках
+    // Show notification if enabled in settings
     const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
     if (ProjectSettings && ProjectSettings->bShowOptimizationNotifications)
     {
@@ -88,7 +94,7 @@ TArray<FSpriteOptimizationResult> USpriteOptimizer::OptimizeSprites(
         ShowOptimizationNotification(NotificationText, SuccessCount > 0);
     }
     
-    // Обновляем Content Browser если включено в настройках
+    // Refresh Content Browser if enabled in settings
     if (ProjectSettings && ProjectSettings->bAutoRefreshContentBrowser)
     {
         RefreshContentBrowser();
@@ -120,7 +126,7 @@ FSpriteOptimizationResult USpriteOptimizer::OptimizeSingleSprite(
     
     Result.OriginalTexture = SourceTexture;
     
-    // Находим использованную область
+    // Find used region
     Result.UsedRegion = FindUsedBounds(SourceTexture, Settings.Padding);
     
     if (Result.UsedRegion.Width() <= 0 || Result.UsedRegion.Height() <= 0)
@@ -129,7 +135,7 @@ FSpriteOptimizationResult USpriteOptimizer::OptimizeSingleSprite(
         return Result;
     }
     
-    // Проверяем, стоит ли оптимизировать
+    // Check if optimization is worthwhile
     float UsagePercent = (float)(Result.UsedRegion.Width() * Result.UsedRegion.Height()) / 
                         (SourceTexture->GetSizeX() * SourceTexture->GetSizeY()) * 100.0f;
     
@@ -139,18 +145,18 @@ FSpriteOptimizationResult USpriteOptimizer::OptimizeSingleSprite(
         return Result;
     }
     
-    // Определяем пути для сохранения
+    // Determine asset paths
     FString OriginalPackagePath = Sprite->GetPackage()->GetName();
     FString OptimizedPath = GetOptimizedAssetPath(OriginalPackagePath, Settings);
     FString OptimizedName = GetOptimizedAssetName(Sprite->GetName(), Settings);
     
-    // Создаем backup если нужно
+    // Create backup if needed
     if (Settings.bCreateBackup && !Settings.bReplaceOriginals)
     {
         CreateBackupIfNeeded(Sprite, Settings.bCreateBackup);
     }
     
-    // Создаем оптимизированную текстуру
+    // Create optimized texture
     Result.OptimizedTexture = CreateOptimizedTexture(
         SourceTexture, 
         Result.UsedRegion, 
@@ -164,10 +170,9 @@ FSpriteOptimizationResult USpriteOptimizer::OptimizeSingleSprite(
         return Result;
     }
     
-    // Сохраняем путь к текстуре
     Result.OptimizedTexturePath = OptimizedPath + TEXT("/") + OptimizedName + TEXT("_Tex");
     
-    // Создаем оптимизированный спрайт
+    // Create optimized sprite
     Result.OptimizedSprite = CreateOptimizedSprite(
         Result.OptimizedTexture,
         Sprite,
@@ -183,10 +188,9 @@ FSpriteOptimizationResult USpriteOptimizer::OptimizeSingleSprite(
         return Result;
     }
     
-    // Сохраняем путь к спрайту
     Result.OptimizedSpritePath = OptimizedPath + TEXT("/") + OptimizedName;
     
-    // Вычисляем статистику
+    // Calculate statistics
     Result.CalculateStats();
     Result.bSuccess = true;
     
@@ -218,7 +222,7 @@ FSpriteOptimizationResult USpriteOptimizer::AnalyzeSprite(UPaperSprite* Sprite)
     Result.OriginalTexture = SourceTexture;
     Result.UsedRegion = FindUsedBounds(SourceTexture, 2);
     
-    // Симулируем оптимизированную текстуру для подсчетов
+    // Simulate optimized texture for calculations
     if (Result.UsedRegion.Width() > 0 && Result.UsedRegion.Height() > 0)
     {
         int32 OriginalPixels = SourceTexture->GetSizeX() * SourceTexture->GetSizeY();
@@ -244,6 +248,284 @@ FSpriteOptimizationResult USpriteOptimizer::AnalyzeSprite(UPaperSprite* Sprite)
     return Result;
 }
 
+// === ATLAS CREATION FUNCTIONS ===
+
+FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
+    const TArray<UPaperSprite*>& Sprites,
+    const FSpriteAtlasSettings& Settings,
+    const FString& AtlasName,
+    const FString& AtlasPath)
+{
+    FSpriteAtlasResult Result;
+    Result.TotalSprites = Sprites.Num();
+    
+    // Validation
+    if (Sprites.Num() == 0)
+    {
+        Result.ErrorMessage = TEXT("No sprites provided for atlas creation");
+        return Result;
+    }
+    
+    if (Sprites.Num() == 1)
+    {
+        Result.ErrorMessage = TEXT("Atlas requires at least 2 sprites. Use regular optimization for single sprites.");
+        return Result;
+    }
+    
+    if (AtlasName.IsEmpty())
+    {
+        Result.ErrorMessage = TEXT("Atlas name cannot be empty");
+        return Result;
+    }
+    
+    // Check sprite validity
+    int32 ValidSprites = 0;
+    for (UPaperSprite* Sprite : Sprites)
+    {
+        if (Sprite && Sprite->GetSourceTexture())
+        {
+            ValidSprites++;
+        }
+    }
+    
+    if (ValidSprites < 2)
+    {
+        Result.ErrorMessage = FString::Printf(TEXT("Only %d valid sprites found. Need at least 2."), ValidSprites);
+        return Result;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas '%s' from %d sprites (%d valid)"), 
+           *AtlasName, Sprites.Num(), ValidSprites);
+    
+    // Determine atlas path
+    FString ActualAtlasPath;
+    if (AtlasPath.IsEmpty())
+    {
+        FString FirstSpritePath = Sprites[0]->GetPackage()->GetName();
+        ActualAtlasPath = GetAtlasAssetPath(FirstSpritePath);
+    }
+    else
+    {
+        ActualAtlasPath = AtlasPath;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas will be created in: %s"), *ActualAtlasPath);
+    
+    // Get sprite sizes (optimized or original)
+    TArray<FIntPoint> SpriteSizes;
+    if (Settings.bOptimizeSpritesFirst)
+    {
+        SpriteSizes = GetOptimizedSpriteSizes(Sprites, Settings.SpritePadding);
+    }
+    else
+    {
+        for (UPaperSprite* Sprite : Sprites)
+        {
+            if (Sprite && Sprite->GetSourceTexture())
+            {
+                UTexture2D* SourceTexture = Sprite->GetSourceTexture();
+                SpriteSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
+            }
+        }
+    }
+    
+    if (SpriteSizes.Num() == 0)
+    {
+        Result.ErrorMessage = TEXT("No valid sprites found");
+        return Result;
+    }
+    
+    // Pack sprites
+    FIntPoint AtlasSize;
+    TArray<FIntRect> PackedRegions;
+    
+    switch (Settings.PackingAlgorithm)
+    {
+        case EAtlasPackingAlgorithm::Simple:
+            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
+            break;
+        case EAtlasPackingAlgorithm::BestFit:
+            PackedRegions = PackSprites_BestFit(SpriteSizes, Settings, AtlasSize);
+            break;
+        case EAtlasPackingAlgorithm::MaxRects:
+            PackedRegions = PackSprites_MaxRects(SpriteSizes, Settings, AtlasSize);
+            break;
+        default:
+            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
+            break;
+    }
+    
+    // Check atlas size limits
+    if (AtlasSize.X > Settings.MaxAtlasSize.X || AtlasSize.Y > Settings.MaxAtlasSize.Y)
+    {
+        Result.ErrorMessage = FString::Printf(TEXT("Atlas size (%dx%d) exceeds maximum (%dx%d)"), 
+                                            AtlasSize.X, AtlasSize.Y, 
+                                            Settings.MaxAtlasSize.X, Settings.MaxAtlasSize.Y);
+        return Result;
+    }
+    
+    // Create atlas texture
+    Result.AtlasTexture = CreateAtlasTexture(Sprites, PackedRegions, AtlasSize, AtlasName, ActualAtlasPath);
+    
+    if (!Result.AtlasTexture)
+    {
+        Result.ErrorMessage = TEXT("Failed to create atlas texture");
+        return Result;
+    }
+    
+    Result.AtlasTexturePath = ActualAtlasPath + TEXT("/") + AtlasName;
+    
+    // Create individual sprites if needed
+    if (Settings.bCreateIndividualSprites)
+    {
+        for (int32 i = 0; i < Sprites.Num() && i < PackedRegions.Num(); i++)
+        {
+            UPaperSprite* OriginalSprite = Sprites[i];
+            const FIntRect& Region = PackedRegions[i];
+            
+            FString SpriteName = OriginalSprite->GetName() + Settings.AtlasSuffix;
+            UPaperSprite* AtlasSprite = CreateSpriteFromAtlas(
+                Result.AtlasTexture, 
+                Region, 
+                OriginalSprite,
+                SpriteName,
+                ActualAtlasPath
+            );
+            
+            if (AtlasSprite)
+            {
+                Result.CreatedSprites.Add(AtlasSprite);
+                UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s in folder: Atlas"), *SpriteName);
+            }
+        }
+    }
+    
+    // Fill results
+    Result.SpriteRegions = PackedRegions;
+    Result.AtlasSize = AtlasSize;
+    Result.PackingEfficiency = CalculatePackingEfficiency(SpriteSizes, AtlasSize);
+    
+    // Calculate memory savings
+    float OriginalMemory = 0.0f;
+    for (UPaperSprite* Sprite : Sprites)
+    {
+        if (Sprite && Sprite->GetSourceTexture())
+        {
+            UTexture2D* OriginalTexture = Sprite->GetSourceTexture();
+            int32 OriginalPixels = OriginalTexture->GetSizeX() * OriginalTexture->GetSizeY();
+            OriginalMemory += (OriginalPixels * 4) / (1024.0f * 1024.0f);
+        }
+    }
+    float AtlasMemory = (AtlasSize.X * AtlasSize.Y * 4) / (1024.0f * 1024.0f);
+    Result.MemorySavings = OriginalMemory > 0 ? ((OriginalMemory - AtlasMemory) / OriginalMemory) * 100.0f : 0.0f;
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Memory calculation: Original=%.2fMB, Atlas=%.2fMB, Savings=%.1f%%"), 
+           OriginalMemory, AtlasMemory, Result.MemorySavings);
+    
+    Result.bSuccess = true;
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas created successfully in folder 'Atlas': %dx%d, %.1f%% efficiency, %.1f%% memory savings"), 
+           AtlasSize.X, AtlasSize.Y, Result.PackingEfficiency, Result.MemorySavings);
+    
+    return Result;
+}
+
+FSpriteAtlasResult USpriteOptimizer::AnalyzeSpriteAtlas(
+    const TArray<UPaperSprite*>& Sprites,
+    const FSpriteAtlasSettings& Settings)
+{
+    FSpriteAtlasResult Result;
+    Result.TotalSprites = Sprites.Num();
+    
+    if (Sprites.Num() == 0)
+    {
+        Result.ErrorMessage = TEXT("No sprites provided for analysis");
+        return Result;
+    }
+    
+    // Get sprite sizes
+    TArray<FIntPoint> SpriteSizes = Settings.bOptimizeSpritesFirst ?
+        GetOptimizedSpriteSizes(Sprites, Settings.SpritePadding) :
+        TArray<FIntPoint>();
+    
+    if (!Settings.bOptimizeSpritesFirst)
+    {
+        for (UPaperSprite* Sprite : Sprites)
+        {
+            if (Sprite && Sprite->GetSourceTexture())
+            {
+                UTexture2D* SourceTexture = Sprite->GetSourceTexture();
+                SpriteSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
+            }
+        }
+    }
+    
+    if (SpriteSizes.Num() == 0)
+    {
+        Result.ErrorMessage = TEXT("No valid sprites found");
+        return Result;
+    }
+    
+    // Simulate packing
+    FIntPoint AtlasSize;
+    TArray<FIntRect> PackedRegions;
+    
+    switch (Settings.PackingAlgorithm)
+    {
+        case EAtlasPackingAlgorithm::Simple:
+            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
+            break;
+        case EAtlasPackingAlgorithm::BestFit:
+            PackedRegions = PackSprites_BestFit(SpriteSizes, Settings, AtlasSize);
+            break;
+        case EAtlasPackingAlgorithm::MaxRects:
+            PackedRegions = PackSprites_MaxRects(SpriteSizes, Settings, AtlasSize);
+            break;
+        default:
+            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
+            break;
+    }
+    
+    // Fill analysis results
+    Result.AtlasSize = AtlasSize;
+    Result.SpriteRegions = PackedRegions;
+    Result.PackingEfficiency = CalculatePackingEfficiency(SpriteSizes, AtlasSize);
+    
+    // Calculate memory savings
+    float OriginalMemory = 0.0f;
+    for (UPaperSprite* Sprite : Sprites)
+    {
+        if (Sprite && Sprite->GetSourceTexture())
+        {
+            UTexture2D* OriginalTexture = Sprite->GetSourceTexture();
+            int32 OriginalPixels = OriginalTexture->GetSizeX() * OriginalTexture->GetSizeY();
+            OriginalMemory += (OriginalPixels * 4) / (1024.0f * 1024.0f);
+        }
+    }
+    float AtlasMemory = (AtlasSize.X * AtlasSize.Y * 4) / (1024.0f * 1024.0f);
+    Result.MemorySavings = OriginalMemory > 0 ? ((OriginalMemory - AtlasMemory) / OriginalMemory) * 100.0f : 0.0f;
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Analysis memory calculation: Original=%.2fMB, Atlas=%.2fMB, Savings=%.1f%%"), 
+           OriginalMemory, AtlasMemory, Result.MemorySavings);
+    
+    // Check limits
+    if (AtlasSize.X > Settings.MaxAtlasSize.X || AtlasSize.Y > Settings.MaxAtlasSize.Y)
+    {
+        Result.ErrorMessage = FString::Printf(TEXT("Atlas size (%dx%d) exceeds maximum (%dx%d)"), 
+                                            AtlasSize.X, AtlasSize.Y, 
+                                            Settings.MaxAtlasSize.X, Settings.MaxAtlasSize.Y);
+        Result.bSuccess = false;
+    }
+    else
+    {
+        Result.bSuccess = true;
+    }
+    
+    return Result;
+}
+
+// === UTILITY FUNCTIONS ===
+
 FIntRect USpriteOptimizer::FindUsedBounds(UTexture2D* Texture, int32 Padding)
 {
     if (!Texture)
@@ -261,7 +543,7 @@ FIntRect USpriteOptimizer::FindUsedBounds(UTexture2D* Texture, int32 Padding)
     int32 Width = Texture->GetSizeX();
     int32 Height = Texture->GetSizeY();
     
-    // Находим границы непрозрачных пикселей
+    // Find bounds of non-transparent pixels
     int32 MinX = Width, MaxX = 0;
     int32 MinY = Height, MaxY = 0;
     bool FoundContent = false;
@@ -272,8 +554,8 @@ FIntRect USpriteOptimizer::FindUsedBounds(UTexture2D* Texture, int32 Padding)
         {
             const FColor& Pixel = PixelData[Y * Width + X];
             
-            // Если пиксель не полностью прозрачный
-            if (Pixel.A > 10) // небольшой порог для сглаживания
+            // If pixel is not fully transparent
+            if (Pixel.A > 10) // Small threshold for anti-aliasing
             {
                 MinX = FMath::Min(MinX, X);
                 MaxX = FMath::Max(MaxX, X);
@@ -290,7 +572,7 @@ FIntRect USpriteOptimizer::FindUsedBounds(UTexture2D* Texture, int32 Padding)
         return FIntRect(0, 0, 0, 0);
     }
     
-    // Добавляем padding
+    // Add padding
     MinX = FMath::Max(0, MinX - Padding);
     MinY = FMath::Max(0, MinY - Padding);
     MaxX = FMath::Min(Width - 1, MaxX + Padding);
@@ -303,9 +585,9 @@ TArray<UMaterialInterface*> USpriteOptimizer::GetAvailablePaper2DMaterials()
 {
     TArray<UMaterialInterface*> Materials;
     
-    // Список правильных материалов Paper2D (по вашим путям)
+    // List of correct Paper2D materials
     TArray<FString> Paper2DMaterialPaths = {
-        TEXT("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial"), // ПО УМОЛЧАНИЮ
+        TEXT("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial"),
         TEXT("/Paper2D/MaskedUnlitSpriteMaterial.MaskedUnlitSpriteMaterial"),
         TEXT("/Paper2D/TranslucentUnlitSpriteMaterial.TranslucentUnlitSpriteMaterial"),
         TEXT("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial"),
@@ -336,7 +618,7 @@ TArray<UMaterialInterface*> USpriteOptimizer::GetAvailablePaper2DMaterials()
 
 UMaterialInterface* USpriteOptimizer::GetDefaultPaper2DMaterial()
 {
-    // По умолчанию используем TranslucentLitSpriteMaterial как вы просили
+    // Use TranslucentLitSpriteMaterial as default
     UMaterialInterface* Material = LoadObject<UMaterialInterface>(
         nullptr, 
         TEXT("/Paper2D/TranslucentLitSpriteMaterial.TranslucentLitSpriteMaterial")
@@ -348,7 +630,7 @@ UMaterialInterface* USpriteOptimizer::GetDefaultPaper2DMaterial()
         return Material;
     }
     
-    // Fallback - пытаемся загрузить любой другой Paper2D материал
+    // Fallback materials
     TArray<FString> FallbackPaths = {
         TEXT("/Paper2D/MaskedLitSpriteMaterial.MaskedLitSpriteMaterial"),
         TEXT("/Paper2D/OpaqueUnlitSpriteMaterial.OpaqueUnlitSpriteMaterial"),
@@ -368,6 +650,34 @@ UMaterialInterface* USpriteOptimizer::GetDefaultPaper2DMaterial()
     UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to load any Paper2D materials!"));
     return nullptr;
 }
+
+void USpriteOptimizer::RefreshContentBrowser()
+{
+    FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    IContentBrowserSingleton& ContentBrowserSingleton = ContentBrowserModule.Get();
+    ContentBrowserSingleton.SyncBrowserToAssets(TArray<FAssetData>());
+}
+
+void USpriteOptimizer::ShowOptimizationNotification(const FText& Message, bool bSuccess)
+{
+    FNotificationInfo Info(Message);
+    Info.bFireAndForget = true;
+    Info.FadeOutDuration = 3.0f;
+    Info.ExpireDuration = 5.0f;
+    
+    if (bSuccess)
+    {
+        Info.Image = FAppStyle::GetBrush(TEXT("NotificationList.SuccessImage"));
+    }
+    else
+    {
+        Info.Image = FAppStyle::GetBrush(TEXT("NotificationList.FailImage"));
+    }
+    
+    FSlateNotificationManager::Get().AddNotification(Info);
+}
+
+// === OPTIMIZATION HELPERS ===
 
 UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
     UTexture2D* SourceTexture, 
@@ -389,21 +699,21 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
         return nullptr;
     }
     
-    // ВАЖНО: Создаем директорию если её нет
+    // Create directory if needed
     if (!EnsureDirectoryExists(AssetPath))
     {
         UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to create directory: %s"), *AssetPath);
         return nullptr;
     }
     
-    // Получаем пиксели из оригинальной текстуры
+    // Get pixels from original texture
     TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
     if (SourcePixels.Num() == 0)
     {
         return nullptr;
     }
     
-    // Извлекаем нужную область
+    // Extract used region
     TArray<FColor> OptimizedPixels;
     OptimizedPixels.Reserve(NewWidth * NewHeight);
     
@@ -424,7 +734,7 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
         }
     }
     
-    // Создаем пакет для новой текстуры
+    // Create package for new texture
     FString FullAssetPath = AssetPath + TEXT("/") + AssetName;
     FString PackageName = FullAssetPath;
     
@@ -439,10 +749,10 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
         return nullptr;
     }
     
-    // Настраиваем текстуру через Source API
+    // Set up texture via Source API
     NewTexture->Source.Init(NewWidth, NewHeight, 1, 1, TSF_BGRA8, (uint8*)OptimizedPixels.GetData());
     
-    // Копируем настройки с оригинала
+    // Copy settings from original
     NewTexture->SRGB = SourceTexture->SRGB;
     NewTexture->CompressionSettings = SourceTexture->CompressionSettings;
     NewTexture->Filter = SourceTexture->Filter;
@@ -451,9 +761,9 @@ UTexture2D* USpriteOptimizer::CreateOptimizedTexture(
     
     NewTexture->UpdateResource();
     NewTexture->PostEditChange();
-    Package->MarkPackageDirty();
+    (void)Package->MarkPackageDirty();
     
-    // Сохраняем
+    // Save
     FSavePackageArgs SaveArgs;
     SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
     SaveArgs.SaveFlags = SAVE_NoError;
@@ -488,7 +798,7 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
         return nullptr;
     }
     
-    // Создаем пакет для спрайта
+    // Create package for sprite
     FString FullAssetPath = AssetPath + TEXT("/") + AssetName;
     FString PackageName = FullAssetPath;
     
@@ -503,29 +813,26 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
         return nullptr;
     }
     
-    // Вычисляем новый пивот
+    // Calculate new pivot
     UTexture2D* OriginalTexture = OriginalSprite->GetSourceTexture();
     const FVector2D OriginalTextureSize(OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
-    const FVector2D OriginalPivotInPixels = OriginalTextureSize * 0.5f; // Предполагаем центральный пивот
+    const FVector2D OriginalPivotInPixels = OriginalTextureSize * 0.5f;
     const FVector2D CroppedTextureTopLeftInPixels(UsedRegion.Min.X, UsedRegion.Min.Y);
     const FVector2D NewPivotInPixels = OriginalPivotInPixels - CroppedTextureTopLeftInPixels;
     
-    // ИСПРАВЛЕНО: Определяем материал правильно
-    UMaterialInterface* SpriteMaterial = nullptr;
+    // Determine material
+    UMaterialInterface* SpriteMaterial;
     
-    // 1. Сначала проверяем материал из настроек
     if (Settings.Material)
     {
         SpriteMaterial = Settings.Material;
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Using material from settings: %s"), *SpriteMaterial->GetName());
     }
-    // 2. Если материал не задан, используем материал оригинального спрайта
     else if (OriginalSprite->GetDefaultMaterial())
     {
         SpriteMaterial = OriginalSprite->GetDefaultMaterial();
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Using original sprite material: %s"), *SpriteMaterial->GetName());
     }
-    // 3. Если и у оригинала нет материала, используем дефолтный Paper2D
     else
     {
         SpriteMaterial = GetDefaultPaper2DMaterial();
@@ -533,24 +840,24 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
                SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("NULL"));
     }
     
-    // Настраиваем параметры инициализации
+    // Set up initialization parameters
     FSpriteAssetInitParameters InitParams;
     InitParams.Texture = OptimizedTexture;
     InitParams.Offset = FIntPoint::ZeroValue;
     InitParams.Dimension = FIntPoint(OptimizedTexture->GetSizeX(), OptimizedTexture->GetSizeY());
-    InitParams.DefaultMaterialOverride = SpriteMaterial; // ИСПРАВЛЕНО: правильный материал
+    InitParams.DefaultMaterialOverride = SpriteMaterial;
     InitParams.bOverridePixelsPerUnrealUnit = true;
     InitParams.PixelsPerUnrealUnit = Settings.PixelsPerUnit;
     
-    // Инициализируем спрайт
+    // Initialize sprite
     NewSprite->InitializeSprite(InitParams, false);
     
-    // Устанавливаем пивот
+    // Set pivot
     NewSprite->SetPivotMode(ESpritePivotMode::Custom, NewPivotInPixels, true);
     
-    Package->MarkPackageDirty();
+    (void)Package->MarkPackageDirty();
     
-    // Сохраняем
+    // Save
     FSavePackageArgs SaveArgs;
     SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
     SaveArgs.SaveFlags = SAVE_NoError;
@@ -572,490 +879,7 @@ UPaperSprite* USpriteOptimizer::CreateOptimizedSprite(
     return NewSprite;
 }
 
-TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
-{
-    TArray<FColor> PixelData;
-    
-    if (!Texture)
-    {
-        UE_LOG(LogSpriteOptimizer, Error, TEXT("GetTexturePixelData: Texture is null"));
-        return PixelData;
-    }
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Reading pixel data from texture: %s (%dx%d)"), 
-           *Texture->GetName(), Texture->GetSizeX(), Texture->GetSizeY());
-    
-    // МЕТОД 1: Попытка через Source API (самый надежный)
-    if (Texture->Source.IsValid())
-    {
-        TArray64<uint8> RawData;
-        if (Texture->Source.GetMipData(RawData, 0) && RawData.Num() > 0)
-        {
-            int32 Width = Texture->GetSizeX();
-            int32 Height = Texture->GetSizeY();
-            int32 ExpectedPixels = Width * Height;
-            
-            if (RawData.Num() >= ExpectedPixels * 4) // BGRA = 4 bytes per pixel
-            {
-                const FColor* SourcePixels = reinterpret_cast<const FColor*>(RawData.GetData());
-                PixelData.Reserve(ExpectedPixels);
-                
-                for (int32 i = 0; i < ExpectedPixels; i++)
-                {
-                    PixelData.Add(SourcePixels[i]);
-                }
-                
-                UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Source API"), PixelData.Num());
-                return PixelData;
-            }
-        }
-    }
-    
-    // МЕТОД 2: Через Platform Data (fallback)
-    if (!Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.Num() == 0)
-    {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("Texture %s has no platform data or mips"), *Texture->GetName());
-        return PixelData;
-    }
-    
-    FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
-    
-    // Проверяем состояние блокировки
-    if (Mip.BulkData.IsLocked())
-    {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("BulkData already locked for texture %s"), *Texture->GetName());
-        return PixelData;
-    }
-    
-    const void* RawData = nullptr;
-    
-    try
-    {
-        RawData = Mip.BulkData.LockReadOnly();
-    }
-    catch (...)
-    {
-        UE_LOG(LogSpriteOptimizer, Error, TEXT("Exception while locking texture data for %s"), *Texture->GetName());
-        return PixelData;
-    }
-    
-    if (!RawData)
-    {
-        UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to lock texture data for %s"), *Texture->GetName());
-        try { Mip.BulkData.Unlock(); } catch (...) {}
-        return PixelData;
-    }
-    
-    int32 Width = Texture->GetSizeX();
-    int32 Height = Texture->GetSizeY();
-    int32 ExpectedPixels = Width * Height;
-    
-    const FColor* ColorData = static_cast<const FColor*>(RawData);
-    PixelData.Reserve(ExpectedPixels);
-    
-    for (int32 i = 0; i < ExpectedPixels; i++)
-    {
-        PixelData.Add(ColorData[i]);
-    }
-    
-    // Обязательно разблокируем
-    try
-    {
-        Mip.BulkData.Unlock();
-    }
-    catch (...)
-    {
-        UE_LOG(LogSpriteOptimizer, Error, TEXT("Exception while unlocking texture data for %s"), *Texture->GetName());
-    }
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Platform Data"), PixelData.Num());
-    
-    return PixelData;
-}
-
-FString USpriteOptimizer::GetOptimizedAssetPath(const FString& OriginalPath, const FSpriteOptimizationSettings& Settings)
-{
-    const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
-    
-    // Если указан кастомный путь в настройках проекта, используем его
-    if (ProjectSettings && !ProjectSettings->OptimizedAssetsPath.IsEmpty())
-    {
-        return ProjectSettings->OptimizedAssetsPath;
-    }
-    
-    // Создаем папку "Optimized" рядом с оригинальными файлами
-    FString Directory, Filename, Extension;
-    FPaths::Split(OriginalPath, Directory, Filename, Extension);
-    
-    FString OptimizedDirectory = Directory + TEXT("/Optimized");
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating optimized assets in: %s"), *OptimizedDirectory);
-    
-    return OptimizedDirectory;
-}
-
-FString USpriteOptimizer::GetAtlasAssetPath(const FString& FirstSpritePath)
-{
-    FString Directory, Filename, Extension;
-    FPaths::Split(FirstSpritePath, Directory, Filename, Extension);
-    
-    FString AtlasDirectory = Directory + TEXT("/Atlas");
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas assets in: %s"), *AtlasDirectory);
-    
-    return AtlasDirectory;
-}
-
-bool USpriteOptimizer::EnsureDirectoryExists(const FString& DirectoryPath)
-{
-    // Конвертируем путь пакета в файловый путь
-    FString PackageFilename;
-    if (FPackageName::TryConvertLongPackageNameToFilename(DirectoryPath, PackageFilename))
-    {
-        FString PhysicalPath = FPaths::GetPath(PackageFilename);
-        
-        if (!FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*PhysicalPath))
-        {
-            bool bCreated = FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*PhysicalPath);
-            UE_LOG(LogSpriteOptimizer, Log, TEXT("Created directory: %s (Success: %s)"), *PhysicalPath, bCreated ? TEXT("Yes") : TEXT("No"));
-            return bCreated;
-        }
-        return true;
-    }
-    
-    UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to convert package path to file path: %s"), *DirectoryPath);
-    return false;
-}
-
-FString USpriteOptimizer::GetOptimizedAssetName(const FString& OriginalName, const FSpriteOptimizationSettings& Settings)
-{
-    const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
-    
-    // Используем суффикс из настроек проекта
-    FString Suffix = TEXT("_Optimized");
-    if (ProjectSettings && !ProjectSettings->OptimizedAssetsSuffix.IsEmpty())
-    {
-        Suffix = ProjectSettings->OptimizedAssetsSuffix;
-    }
-    
-    return OriginalName + Suffix;
-}
-
-void USpriteOptimizer::CreateBackupIfNeeded(UObject* Asset, bool bCreateBackup)
-{
-    if (!bCreateBackup || !Asset)
-    {
-        return;
-    }
-    
-    // В этой простой реализации просто логируем
-    // В полной версии можно создать копию с суффиксом "_Backup"
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Backup requested for asset: %s"), *Asset->GetName());
-}
-
-void USpriteOptimizer::RefreshContentBrowser()
-{
-    // Обновляем Content Browser
-    FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
-    IContentBrowserSingleton& ContentBrowserSingleton = ContentBrowserModule.Get();
-    ContentBrowserSingleton.SyncBrowserToAssets(TArray<FAssetData>());
-}
-
-void USpriteOptimizer::ShowOptimizationNotification(const FText& Message, bool bSuccess)
-{
-    FNotificationInfo Info(Message);
-    Info.bFireAndForget = true;
-    Info.FadeOutDuration = 3.0f;
-    Info.ExpireDuration = 5.0f;
-    
-    if (bSuccess)
-    {
-        Info.Image = FAppStyle::GetBrush(TEXT("NotificationList.SuccessImage"));
-    }
-    else
-    {
-        Info.Image = FAppStyle::GetBrush(TEXT("NotificationList.FailImage"));
-    }
-    
-    FSlateNotificationManager::Get().AddNotification(Info);
-}
-
-// === ATLAS IMPLEMENTATION ===
-
-FSpriteAtlasResult USpriteOptimizer::CreateSpriteAtlas(
-    const TArray<UPaperSprite*>& Sprites,
-    const FSpriteAtlasSettings& Settings,
-    const FString& AtlasName,
-    const FString& AtlasPath)
-{
-    FSpriteAtlasResult Result;
-    Result.TotalSprites = Sprites.Num();
-    
-    // Расширенная валидация
-    if (Sprites.Num() == 0)
-    {
-        Result.ErrorMessage = TEXT("No sprites provided for atlas creation");
-        return Result;
-    }
-    
-    if (Sprites.Num() == 1)
-    {
-        Result.ErrorMessage = TEXT("Atlas requires at least 2 sprites. Use regular optimization for single sprites.");
-        return Result;
-    }
-    
-    if (AtlasName.IsEmpty())
-    {
-        Result.ErrorMessage = TEXT("Atlas name cannot be empty");
-        return Result;
-    }
-    
-    // Проверяем валидность спрайтов
-    int32 ValidSprites = 0;
-    for (UPaperSprite* Sprite : Sprites)
-    {
-        if (Sprite && Sprite->GetSourceTexture())
-        {
-            ValidSprites++;
-        }
-    }
-    
-    if (ValidSprites < 2)
-    {
-        Result.ErrorMessage = FString::Printf(TEXT("Only %d valid sprites found. Need at least 2."), ValidSprites);
-        return Result;
-    }
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas '%s' from %d sprites (%d valid)"), 
-           *AtlasName, Sprites.Num(), ValidSprites);
-    
-    // ВАЖНО: Определяем путь для сохранения атласа в папке Atlas
-    FString ActualAtlasPath;
-    if (AtlasPath.IsEmpty())
-    {
-        // Получаем путь первого спрайта и создаем папку Atlas рядом
-        FString FirstSpritePath = Sprites[0]->GetPackage()->GetName();
-        ActualAtlasPath = GetAtlasAssetPath(FirstSpritePath);
-    }
-    else
-    {
-        ActualAtlasPath = AtlasPath;
-    }
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas will be created in: %s"), *ActualAtlasPath);
-    
-    // Получаем размеры спрайтов (оптимизированные или оригинальные)
-    TArray<FIntPoint> SpriteSizes;
-    if (Settings.bOptimizeSpritesFirst)
-    {
-        SpriteSizes = GetOptimizedSpriteSizes(Sprites, Settings.SpritePadding);
-    }
-    else
-    {
-        for (UPaperSprite* Sprite : Sprites)
-        {
-            if (Sprite && Sprite->GetSourceTexture())
-            {
-                UTexture2D* SourceTexture = Sprite->GetSourceTexture();
-                SpriteSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
-            }
-        }
-    }
-    
-    if (SpriteSizes.Num() == 0)
-    {
-        Result.ErrorMessage = TEXT("No valid sprites found");
-        return Result;
-    }
-    
-    // Упаковываем спрайты
-    FIntPoint AtlasSize;
-    TArray<FIntRect> PackedRegions;
-    
-    switch (Settings.PackingAlgorithm)
-    {
-        case EAtlasPackingAlgorithm::Simple:
-            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
-            break;
-        case EAtlasPackingAlgorithm::BestFit:
-            PackedRegions = PackSprites_BestFit(SpriteSizes, Settings, AtlasSize);
-            break;
-        case EAtlasPackingAlgorithm::MaxRects:
-            PackedRegions = PackSprites_MaxRects(SpriteSizes, Settings, AtlasSize);
-            break;
-        default:
-            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
-            break;
-    }
-    
-    // Проверяем размер атласа
-    if (AtlasSize.X > Settings.MaxAtlasSize.X || AtlasSize.Y > Settings.MaxAtlasSize.Y)
-    {
-        Result.ErrorMessage = FString::Printf(TEXT("Atlas size (%dx%d) exceeds maximum (%dx%d)"), 
-                                            AtlasSize.X, AtlasSize.Y, 
-                                            Settings.MaxAtlasSize.X, Settings.MaxAtlasSize.Y);
-        return Result;
-    }
-    
-    // Создаем атласную текстуру В ПАПКЕ ATLAS
-    Result.AtlasTexture = CreateAtlasTexture(Sprites, PackedRegions, AtlasSize, AtlasName, ActualAtlasPath);
-    
-    if (!Result.AtlasTexture)
-    {
-        Result.ErrorMessage = TEXT("Failed to create atlas texture");
-        return Result;
-    }
-    
-    Result.AtlasTexturePath = ActualAtlasPath + TEXT("/") + AtlasName;
-    
-    // Создаем отдельные спрайты если нужно В ТОЙ ЖЕ ПАПКЕ ATLAS
-    if (Settings.bCreateIndividualSprites)
-    {
-        for (int32 i = 0; i < Sprites.Num() && i < PackedRegions.Num(); i++)
-        {
-            UPaperSprite* OriginalSprite = Sprites[i];
-            const FIntRect& Region = PackedRegions[i];
-            
-            FString SpriteName = OriginalSprite->GetName() + Settings.AtlasSuffix;
-            UPaperSprite* AtlasSprite = CreateSpriteFromAtlas(
-                Result.AtlasTexture, 
-                Region, 
-                OriginalSprite,
-                SpriteName,
-                ActualAtlasPath  // ТА ЖЕ ПАПКА ДЛЯ СПРАЙТОВ
-            );
-            
-            if (AtlasSprite)
-            {
-                Result.CreatedSprites.Add(AtlasSprite);
-                UE_LOG(LogSpriteOptimizer, Log, TEXT("Created atlas sprite: %s in folder: Atlas"), *SpriteName);
-            }
-        }
-    }
-    
-    // Заполняем результаты
-    Result.SpriteRegions = PackedRegions;
-    Result.AtlasSize = AtlasSize;
-    Result.PackingEfficiency = CalculatePackingEfficiency(SpriteSizes, AtlasSize);
-    
-    // Вычисляем экономию памяти
-    float OriginalMemory = 0.0f;
-    for (UPaperSprite* Sprite : Sprites)
-    {
-        if (Sprite && Sprite->GetSourceTexture())
-        {
-            UTexture2D* OriginalTexture = Sprite->GetSourceTexture();
-            int32 OriginalPixels = OriginalTexture->GetSizeX() * OriginalTexture->GetSizeY();
-            OriginalMemory += (OriginalPixels * 4) / (1024.0f * 1024.0f); // RGBA, MB
-        }
-    }
-    float AtlasMemory = (AtlasSize.X * AtlasSize.Y * 4) / (1024.0f * 1024.0f);
-    Result.MemorySavings = OriginalMemory > 0 ? ((OriginalMemory - AtlasMemory) / OriginalMemory) * 100.0f : 0.0f;
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Memory calculation: Original=%.2fMB, Atlas=%.2fMB, Savings=%.1f%%"), 
-           OriginalMemory, AtlasMemory, Result.MemorySavings);
-    
-    Result.bSuccess = true;
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas created successfully in folder 'Atlas': %dx%d, %.1f%% efficiency, %.1f%% memory savings"), 
-           AtlasSize.X, AtlasSize.Y, Result.PackingEfficiency, Result.MemorySavings);
-    
-    return Result;
-}
-
-FSpriteAtlasResult USpriteOptimizer::AnalyzeSpriteAtlas(
-    const TArray<UPaperSprite*>& Sprites,
-    const FSpriteAtlasSettings& Settings)
-{
-    FSpriteAtlasResult Result;
-    Result.TotalSprites = Sprites.Num();
-    
-    if (Sprites.Num() == 0)
-    {
-        Result.ErrorMessage = TEXT("No sprites provided for analysis");
-        return Result;
-    }
-    
-    // Получаем размеры спрайтов
-    TArray<FIntPoint> SpriteSizes = Settings.bOptimizeSpritesFirst ?
-        GetOptimizedSpriteSizes(Sprites, Settings.SpritePadding) :
-        TArray<FIntPoint>();
-    
-    if (!Settings.bOptimizeSpritesFirst)
-    {
-        for (UPaperSprite* Sprite : Sprites)
-        {
-            if (Sprite && Sprite->GetSourceTexture())
-            {
-                UTexture2D* SourceTexture = Sprite->GetSourceTexture();
-                SpriteSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
-            }
-        }
-    }
-    
-    if (SpriteSizes.Num() == 0)
-    {
-        Result.ErrorMessage = TEXT("No valid sprites found");
-        return Result;
-    }
-    
-    // Симулируем упаковку
-    FIntPoint AtlasSize;
-    TArray<FIntRect> PackedRegions;
-    
-    switch (Settings.PackingAlgorithm)
-    {
-        case EAtlasPackingAlgorithm::Simple:
-            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
-            break;
-        case EAtlasPackingAlgorithm::BestFit:
-            PackedRegions = PackSprites_BestFit(SpriteSizes, Settings, AtlasSize);
-            break;
-        case EAtlasPackingAlgorithm::MaxRects:
-            PackedRegions = PackSprites_MaxRects(SpriteSizes, Settings, AtlasSize);
-            break;
-        default:
-            PackedRegions = PackSprites_Simple(SpriteSizes, Settings, AtlasSize);
-            break;
-    }
-    
-    // Заполняем результаты анализа
-    Result.AtlasSize = AtlasSize;
-    Result.SpriteRegions = PackedRegions;
-    Result.PackingEfficiency = CalculatePackingEfficiency(SpriteSizes, AtlasSize);
-    
-    // Вычисляем экономию памяти
-    float OriginalMemory = 0.0f;
-    for (UPaperSprite* Sprite : Sprites)
-    {
-        if (Sprite && Sprite->GetSourceTexture())
-        {
-            UTexture2D* OriginalTexture = Sprite->GetSourceTexture();
-            int32 OriginalPixels = OriginalTexture->GetSizeX() * OriginalTexture->GetSizeY();
-            OriginalMemory += (OriginalPixels * 4) / (1024.0f * 1024.0f);
-        }
-    }
-    float AtlasMemory = (AtlasSize.X * AtlasSize.Y * 4) / (1024.0f * 1024.0f);
-    Result.MemorySavings = OriginalMemory > 0 ? ((OriginalMemory - AtlasMemory) / OriginalMemory) * 100.0f : 0.0f;
-    
-    UE_LOG(LogSpriteOptimizer, Log, TEXT("Analysis memory calculation: Original=%.2fMB, Atlas=%.2fMB, Savings=%.1f%%"), 
-           OriginalMemory, AtlasMemory, Result.MemorySavings);
-    
-    // Проверяем ограничения
-    if (AtlasSize.X > Settings.MaxAtlasSize.X || AtlasSize.Y > Settings.MaxAtlasSize.Y)
-    {
-        Result.ErrorMessage = FString::Printf(TEXT("Atlas size (%dx%d) exceeds maximum (%dx%d)"), 
-                                            AtlasSize.X, AtlasSize.Y, 
-                                            Settings.MaxAtlasSize.X, Settings.MaxAtlasSize.Y);
-        Result.bSuccess = false;
-    }
-    else
-    {
-        Result.bSuccess = true;
-    }
-    
-    return Result;
-}
+// === ATLAS PACKING ALGORITHMS ===
 
 TArray<FIntRect> USpriteOptimizer::PackSprites_Simple(
     const TArray<FIntPoint>& SpriteSizes, 
@@ -1070,7 +894,7 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_Simple(
         return PackedRegions;
     }
     
-    // Простая сетка - вычисляем оптимальную компоновку
+    // Simple grid layout
     int32 SpritesPerRow = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(SpriteSizes.Num())));
     
     int32 CurrentX = 0;
@@ -1082,20 +906,19 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_Simple(
     {
         const FIntPoint& SpriteSize = SpriteSizes[i];
         
-        // Проверяем, помещается ли спрайт в текущую строку
+        // Check if we need a new row
         if (i > 0 && i % SpritesPerRow == 0)
         {
-            // Переходим на новую строку
             CurrentY += MaxRowHeight + Settings.SpritePadding;
             CurrentX = 0;
             MaxRowHeight = 0;
         }
         
-        // Добавляем регион
+        // Add region
         FIntRect Region(CurrentX, CurrentY, CurrentX + SpriteSize.X, CurrentY + SpriteSize.Y);
         PackedRegions.Add(Region);
         
-        // Обновляем позицию и размеры
+        // Update positions and sizes
         CurrentX += SpriteSize.X + Settings.SpritePadding;
         MaxRowHeight = FMath::Max(MaxRowHeight, SpriteSize.Y);
         MaxAtlasWidth = FMath::Max(MaxAtlasWidth, CurrentX);
@@ -1122,36 +945,32 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
         return PackedRegions;
     }
     
-    // Сортируем спрайты по площади (большие первыми) для лучшей упаковки
+    // Sort sprites by height, then width, then area (largest first)
     TArray<TPair<int32, FIntPoint>> SortedSprites;
     for (int32 i = 0; i < SpriteSizes.Num(); i++)
     {
         SortedSprites.Add(TPair<int32, FIntPoint>(i, SpriteSizes[i]));
     }
     
-    // УЛУЧШЕННАЯ СОРТИРОВКА: сначала по высоте, потом по площади
     SortedSprites.Sort([](const TPair<int32, FIntPoint>& A, const TPair<int32, FIntPoint>& B)
     {
-        // Сначала сортируем по высоте (высокие первыми)
         if (A.Value.Y != B.Value.Y)
         {
             return A.Value.Y > B.Value.Y;
         }
-        // Потом по ширине
         if (A.Value.X != B.Value.X)
         {
             return A.Value.X > B.Value.X;
         }
-        // И наконец по площади
         int32 AreaA = A.Value.X * A.Value.Y;
         int32 AreaB = B.Value.X * B.Value.Y;
         return AreaA > AreaB;
     });
     
-    // Инициализируем результат правильным размером
+    // Initialize result with correct size
     PackedRegions.Init(FIntRect(0, 0, 0, 0), SpriteSizes.Num());
     
-    // УЛУЧШЕННЫЙ АЛГОРИТМ: начинаем с более компактного размера
+    // Calculate initial atlas size estimate
     int32 TotalArea = 0;
     int32 MaxWidth = 0;
     int32 MaxHeight = 0;
@@ -1163,14 +982,12 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
         MaxHeight = FMath::Max(MaxHeight, Size.Y);
     }
     
-    // Начальный размер основан на общей площади с коэффициентом упаковки
-    float PackingEfficiencyFactor = 1.3f; // 30% запас на неидеальную упаковку
+    float PackingEfficiencyFactor = 1.3f;
     int32 EstimatedSize = FMath::CeilToInt(FMath::Sqrt(TotalArea * PackingEfficiencyFactor));
     
     int32 CurrentWidth = FMath::Max(EstimatedSize, MaxWidth);
     int32 CurrentHeight = FMath::Max(EstimatedSize, MaxHeight);
     
-    // Убеждаемся что размер не меньше минимального
     CurrentWidth = FMath::Max(CurrentWidth, 256);
     CurrentHeight = FMath::Max(CurrentHeight, 256);
     
@@ -1183,7 +1000,6 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
     
     while (!bPackingSuccessful && Attempts < MaxAttempts)
     {
-        // Список занятых прямоугольников (для избежания перекрытий)
         TArray<FIntRect> OccupiedRects;
         TArray<FIntRect> TempPackedRegions;
         TempPackedRegions.Init(FIntRect(0, 0, 0, 0), SpriteSizes.Num());
@@ -1192,28 +1008,26 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
         int32 UsedWidth = 0;
         int32 UsedHeight = 0;
         
-        // Пытаемся разместить все спрайты
+        // Try to place all sprites
         for (const auto& SpriteData : SortedSprites)
         {
             int32 OriginalIndex = SpriteData.Key;
             FIntPoint SpriteSize = SpriteData.Value;
             
-            // УЛУЧШЕННЫЙ ПОИСК ПОЗИЦИИ: предпочитаем левый верхний угол и движемся вправо-вниз
             FIntPoint BestPosition(-1, -1);
             int32 BestScore = INT_MAX;
             
-            // Сканируем возможные позиции - ИЗМЕНЕН ПОРЯДОК: сначала Y, потом X
-            for (int32 Y = 0; Y <= CurrentHeight - SpriteSize.Y; Y += 2) // Уменьшили шаг для точности
+            // Scan for best position
+            for (int32 Y = 0; Y <= CurrentHeight - SpriteSize.Y; Y += 2)
             {
                 for (int32 X = 0; X <= CurrentWidth - SpriteSize.X; X += 2)
                 {
                     FIntRect TestRect(X, Y, X + SpriteSize.X, Y + SpriteSize.Y);
                     
-                    // Проверяем пересечение с уже размещенными спрайтами
+                    // Check for overlaps
                     bool bOverlaps = false;
                     for (const FIntRect& Occupied : OccupiedRects)
                     {
-                        // Проверка пересечения прямоугольников
                         if (!(TestRect.Max.X <= Occupied.Min.X || 
                               TestRect.Min.X >= Occupied.Max.X || 
                               TestRect.Max.Y <= Occupied.Min.Y || 
@@ -1226,23 +1040,20 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                     
                     if (!bOverlaps)
                     {
-                        // УЛУЧШЕННАЯ ФУНКЦИЯ ОЦЕНКИ: предпочитаем верхний левый угол
-                        int32 Score = Y * 1000 + X; // Сначала минимизируем Y, потом X
+                        // Score: prefer top-left positions
+                        int32 Score = Y * 1000 + X;
                         
-                        // Бонус за компактность - если спрайт близко к другим
+                        // Bonus for compactness
                         int32 CompactnessBonus = 0;
                         for (const FIntRect& Occupied : OccupiedRects)
                         {
-                            // Проверяем соседство
                             bool bIsNeighbor = false;
                             
-                            // Сосед справа
                             if (FMath::Abs(TestRect.Min.X - Occupied.Max.X) <= Settings.SpritePadding && 
                                 !(TestRect.Max.Y <= Occupied.Min.Y || TestRect.Min.Y >= Occupied.Max.Y))
                             {
                                 bIsNeighbor = true;
                             }
-                            // Сосед снизу
                             else if (FMath::Abs(TestRect.Min.Y - Occupied.Max.Y) <= Settings.SpritePadding && 
                                      !(TestRect.Max.X <= Occupied.Min.X || TestRect.Min.X >= Occupied.Max.X))
                             {
@@ -1251,7 +1062,7 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                             
                             if (bIsNeighbor)
                             {
-                                CompactnessBonus += 100; // Бонус за соседство
+                                CompactnessBonus += 100;
                             }
                         }
                         
@@ -1272,7 +1083,7 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                 break;
             }
             
-            // Размещаем спрайт с учетом padding
+            // Place sprite with padding
             FIntRect PlacedRect(
                 BestPosition.X, 
                 BestPosition.Y, 
@@ -1280,7 +1091,6 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                 BestPosition.Y + SpriteSize.Y
             );
             
-            // Добавляем padding к занятому пространству
             FIntRect OccupiedRect(
                 BestPosition.X, 
                 BestPosition.Y, 
@@ -1291,7 +1101,6 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
             TempPackedRegions[OriginalIndex] = PlacedRect;
             OccupiedRects.Add(OccupiedRect);
             
-            // Обновляем используемую область
             UsedWidth = FMath::Max(UsedWidth, PlacedRect.Max.X);
             UsedHeight = FMath::Max(UsedHeight, PlacedRect.Max.Y);
             
@@ -1312,7 +1121,7 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
         }
         else
         {
-            // Увеличиваем размер для следующей попытки
+            // Increase size for next attempt
             if (CurrentWidth <= CurrentHeight)
             {
                 CurrentWidth = FMath::Min(CurrentWidth + 64, Settings.MaxAtlasSize.X);
@@ -1322,11 +1131,9 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                 CurrentHeight = FMath::Min(CurrentHeight + 64, Settings.MaxAtlasSize.Y);
             }
             
-            // Проверяем, не достигли ли максимального размера
             if (CurrentWidth >= Settings.MaxAtlasSize.X && CurrentHeight >= Settings.MaxAtlasSize.Y)
             {
                 UE_LOG(LogSpriteOptimizer, Warning, TEXT("Reached maximum atlas size, trying Simple algorithm"));
-                // Fallback к простому алгоритму
                 return PackSprites_Simple(SpriteSizes, Settings, OutAtlasSize);
             }
         }
@@ -1340,7 +1147,6 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_BestFit(
                TEXT("Failed to pack %d sprites within max atlas size %dx%d after %d attempts"), 
                SpriteSizes.Num(), Settings.MaxAtlasSize.X, Settings.MaxAtlasSize.Y, Attempts);
         
-        // Fallback к простому алгоритму
         return PackSprites_Simple(SpriteSizes, Settings, OutAtlasSize);
     }
     
@@ -1352,64 +1158,12 @@ TArray<FIntRect> USpriteOptimizer::PackSprites_MaxRects(
     const FSpriteAtlasSettings& Settings, 
     FIntPoint& OutAtlasSize)
 {
-    // Для простоты используем BestFit алгоритм
-    // В полной реализации здесь был бы настоящий MaxRects
+    // For simplicity, use BestFit algorithm
     UE_LOG(LogSpriteOptimizer, Log, TEXT("MaxRects algorithm using BestFit implementation"));
     return PackSprites_BestFit(SpriteSizes, Settings, OutAtlasSize);
 }
 
-float USpriteOptimizer::CalculatePackingEfficiency(
-    const TArray<FIntPoint>& SpriteSizes, 
-    const FIntPoint& AtlasSize)
-{
-    if (AtlasSize.X <= 0 || AtlasSize.Y <= 0)
-    {
-        return 0.0f;
-    }
-    
-    // Вычисляем общую площадь спрайтов
-    int32 TotalSpriteArea = 0;
-    for (const FIntPoint& Size : SpriteSizes)
-    {
-        TotalSpriteArea += Size.X * Size.Y;
-    }
-    
-    // Вычисляем площадь атласа
-    int32 AtlasArea = AtlasSize.X * AtlasSize.Y;
-    
-    // Возвращаем эффективность в процентах
-    return AtlasArea > 0 ? (static_cast<float>(TotalSpriteArea) / AtlasArea) * 100.0f : 0.0f;
-}
-
-TArray<FIntPoint> USpriteOptimizer::GetOptimizedSpriteSizes(
-    const TArray<UPaperSprite*>& Sprites,
-    int32 Padding)
-{
-    TArray<FIntPoint> OptimizedSizes;
-    
-    for (UPaperSprite* Sprite : Sprites)
-    {
-        if (!Sprite || !Sprite->GetSourceTexture())
-        {
-            continue;
-        }
-        
-        // Анализируем спрайт и получаем оптимизированный размер
-        FSpriteOptimizationResult Analysis = AnalyzeSprite(Sprite);
-        if (Analysis.bSuccess && Analysis.OptimizedSize.X > 0 && Analysis.OptimizedSize.Y > 0)
-        {
-            OptimizedSizes.Add(FIntPoint(Analysis.OptimizedSize.X, Analysis.OptimizedSize.Y));
-        }
-        else
-        {
-            // Если анализ не удался, используем оригинальный размер
-            UTexture2D* SourceTexture = Sprite->GetSourceTexture();
-            OptimizedSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
-        }
-    }
-    
-    return OptimizedSizes;
-}
+// === ATLAS CREATION HELPERS ===
 
 UTexture2D* USpriteOptimizer::CreateAtlasTexture(
     const TArray<UPaperSprite*>& Sprites,
@@ -1431,7 +1185,7 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
         return nullptr;
     }
     
-    // ВАЖНО: Создаем директорию Atlas если её нет
+    // Create Atlas directory if needed
     if (!EnsureDirectoryExists(AssetPath))
     {
         UE_LOG(LogSpriteOptimizer, Error, TEXT("Failed to create atlas directory: %s"), *AssetPath);
@@ -1441,12 +1195,12 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas texture %dx%d with %d sprites in: %s"), 
            AtlasSize.X, AtlasSize.Y, Sprites.Num(), *AssetPath);
     
-    // Создаем массив пикселей для атласа (инициализируем прозрачным черным)
+    // Create pixel array for atlas (initialize with transparent black)
     TArray<FColor> AtlasPixels;
     int32 TotalPixels = AtlasSize.X * AtlasSize.Y;
     AtlasPixels.Init(FColor(0, 0, 0, 0), TotalPixels);
     
-    // Обрабатываем каждый спрайт
+    // Process each sprite
     for (int32 i = 0; i < Sprites.Num(); i++)
     {
         UPaperSprite* Sprite = Sprites[i];
@@ -1464,14 +1218,14 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
                SourceTexture->GetSizeX(), SourceTexture->GetSizeY(),
                Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
         
-        // Копируем пиксели
+        // Copy pixels
         if (!CopyPixelsFromSourceToAtlas(SourceTexture, AtlasPixels, Region, AtlasSize))
         {
             UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to copy pixels from sprite: %s"), *Sprite->GetName());
         }
     }
     
-    // Создаем пакет для новой текстуры
+    // Create package for new texture
     FString FullAssetPath = AssetPath + TEXT("/") + AssetName;
     FString PackageName = FullAssetPath;
     
@@ -1491,44 +1245,42 @@ UTexture2D* USpriteOptimizer::CreateAtlasTexture(
         return nullptr;
     }
     
-    // Создание текстуры через Source API
+    // Create texture via Source API
     AtlasTexture->Source.Init(AtlasSize.X, AtlasSize.Y, 1, 1, TSF_BGRA8, (uint8*)AtlasPixels.GetData());
     
-    // ИСПРАВЛЕНО: Копируем настройки с первого спрайта для сохранения качества
+    // Copy settings from first sprite to preserve quality
     if (Sprites.Num() > 0 && Sprites[0] && Sprites[0]->GetSourceTexture())
     {
         UTexture2D* FirstTexture = Sprites[0]->GetSourceTexture();
         
-        // Копируем настройки фильтрации и сжатия с оригинала
         AtlasTexture->SRGB = FirstTexture->SRGB;
-        AtlasTexture->CompressionSettings = FirstTexture->CompressionSettings; // ИЗМЕНЕНО: копируем с оригинала
-        AtlasTexture->Filter = FirstTexture->Filter; // ИЗМЕНЕНО: копируем фильтрацию с оригинала
+        AtlasTexture->CompressionSettings = FirstTexture->CompressionSettings;
+        AtlasTexture->Filter = FirstTexture->Filter;
         AtlasTexture->AddressX = FirstTexture->AddressX;
         AtlasTexture->AddressY = FirstTexture->AddressY;
-        AtlasTexture->MipGenSettings = FirstTexture->MipGenSettings; // ИЗМЕНЕНО: копируем настройки мипмапов
+        AtlasTexture->MipGenSettings = FirstTexture->MipGenSettings;
         
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Copied texture settings from %s: SRGB=%d, Compression=%d, Filter=%d"), 
                *FirstTexture->GetName(), AtlasTexture->SRGB, (int32)AtlasTexture->CompressionSettings, (int32)AtlasTexture->Filter);
     }
     else
     {
-        // Fallback настройки для сглаженных изображений
+        // Fallback settings
         AtlasTexture->SRGB = true;
-        AtlasTexture->CompressionSettings = TC_Default; // Стандартное сжатие
-        AtlasTexture->Filter = TF_Bilinear; // Сглаженная фильтрация
+        AtlasTexture->CompressionSettings = TC_Default;
+        AtlasTexture->Filter = TF_Bilinear;
         AtlasTexture->AddressX = TA_Clamp;
         AtlasTexture->AddressY = TA_Clamp;
-        AtlasTexture->MipGenSettings = TMGS_FromTextureGroup; // Стандартные мипмапы
+        AtlasTexture->MipGenSettings = TMGS_FromTextureGroup;
         
         UE_LOG(LogSpriteOptimizer, Warning, TEXT("Using fallback texture settings for atlas"));
     }
     
-    // Принудительно обновляем все данные
     AtlasTexture->UpdateResource();
     AtlasTexture->PostEditChange();
-    Package->MarkPackageDirty();
+    (void)Package->MarkPackageDirty();
     
-    // Сохраняем
+    // Save
     FSavePackageArgs SaveArgs;
     SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
     SaveArgs.SaveFlags = SAVE_NoError;
@@ -1562,7 +1314,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         return nullptr;
     }
     
-    // Создаем пакет для спрайта
+    // Create package for sprite
     FString FullAssetPath = AssetPath + TEXT("/") + SpriteName;
     FString PackageName = FullAssetPath;
     
@@ -1577,7 +1329,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         return nullptr;
     }
     
-    // Получаем данные оригинального спрайта
+    // Get original sprite data
     UTexture2D* OriginalTexture = OriginalSprite->GetSourceTexture();
     if (!OriginalTexture)
     {
@@ -1585,19 +1337,17 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         return nullptr;
     }
     
-    // ПРАВИЛЬНЫЙ РАСЧЕТ ПИВОТА ДЛЯ ПОСЛОЙНОЙ КОМПОЗИЦИИ
+    // Calculate correct pivot for layering
     FVector2D CorrectPivot;
     
     UE_LOG(LogSpriteOptimizer, Log, TEXT("=== ATLAS PIVOT COMPENSATION FOR: %s ==="), *SpriteName);
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Atlas region: (%d,%d,%d,%d)"), Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
     
-    // Определяем, использовался ли спрайт оптимизированный или оригинальный
     bool bWasOptimized = OriginalTexture->GetName().Contains(TEXT("_Optimized"));
     
     if (bWasOptimized)
     {
-        // СЛУЧАЙ 1: Спрайт уже был оптимизирован
-        // Пивот уже правильный, просто масштабируем
+        // Case 1: Sprite was already optimized
         FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
         FVector2D OptimizedTextureSize(OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
         FVector2D AtlasRegionSize(Region.Width(), Region.Height());
@@ -1617,22 +1367,22 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     }
     else
     {
-        // СЛУЧАЙ 2: КЛЮЧЕВОЕ РЕШЕНИЕ - Компенсация смещения в атласе
+        // Case 2: Compensate for atlas offset
         
-        // 1. Находим используемую область в оригинальной текстуре
+        // Find used region in original texture
         FIntRect OriginalUsedRegion = FindUsedBounds(OriginalTexture, 2);
         if (OriginalUsedRegion.Width() <= 0 || OriginalUsedRegion.Height() <= 0)
         {
             OriginalUsedRegion = FIntRect(0, 0, OriginalTexture->GetSizeX(), OriginalTexture->GetSizeY());
         }
         
-        // 2. Получаем оригинальный пивот
+        // Get original pivot
         FVector2D OriginalPivot = OriginalSprite->GetPivotPosition();
         
-        // 3. КЛЮЧЕВАЯ ФОРМУЛА: Пивот в атласе = пивот относительно используемой области
+        // Pivot relative to used region
         FVector2D PivotRelativeToUsedRegion = OriginalPivot - FVector2D(OriginalUsedRegion.Min.X, OriginalUsedRegion.Min.Y);
         
-        // 4. Масштабируем к размеру региона в атласе (если отличается)
+        // Scale to atlas region size
         FVector2D ScaleFactor(
             float(Region.Width()) / float(OriginalUsedRegion.Width()),
             float(Region.Height()) / float(OriginalUsedRegion.Height())
@@ -1643,16 +1393,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
             PivotRelativeToUsedRegion.Y * ScaleFactor.Y
         );
         
-        // 5. ВАЖНО: Добавляем смещение чтобы компенсировать разное расположение в атласе
-        // Это гарантирует, что все спрайты будут выровнены одинаково при размещении в одной точке
-        
-        // Находим "базовую позицию" - где должен быть первый спрайт
-        // Все остальные спрайты будут выровнены относительно этой позиции
-        
-        // Для этого используем смещение от левого верхнего угла атласа
-        // Все спрайты должны иметь одинаковое смещение от их позиции в атласе
-        
-        // Добавляем смещение позиции региона в атласе к пивоту
+        // Add atlas region offset for proper alignment
         CorrectPivot.X += Region.Min.X;
         CorrectPivot.Y += Region.Min.Y;
         
@@ -1667,7 +1408,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
         UE_LOG(LogSpriteOptimizer, Log, TEXT("  Final compensated pivot: (%f,%f)"), CorrectPivot.X, CorrectPivot.Y);
     }
     
-    // Безопасное получение материала для атласного спрайта
+    // Get material for atlas sprite
     UMaterialInterface* SpriteMaterial = nullptr;
     
     if (OriginalSprite->GetDefaultMaterial())
@@ -1682,7 +1423,7 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
                SpriteMaterial ? *SpriteMaterial->GetName() : TEXT("NULL"));
     }
     
-    // Настраиваем параметры инициализации
+    // Set up initialization parameters
     FSpriteAssetInitParameters InitParams;
     InitParams.Texture = AtlasTexture;
     InitParams.Offset = FIntPoint(Region.Min.X, Region.Min.Y);
@@ -1691,15 +1432,15 @@ UPaperSprite* USpriteOptimizer::CreateSpriteFromAtlas(
     InitParams.bOverridePixelsPerUnrealUnit = true;
     InitParams.PixelsPerUnrealUnit = OriginalSprite->GetPixelsPerUnrealUnit();
     
-    // Инициализируем спрайт
+    // Initialize sprite
     AtlasSprite->InitializeSprite(InitParams, false);
     
-    // Устанавливаем правильный компенсированный пивот
+    // Set correct compensated pivot
     AtlasSprite->SetPivotMode(ESpritePivotMode::Custom, CorrectPivot, true);
     
-    Package->MarkPackageDirty();
+    (void)Package->MarkPackageDirty();
     
-    // Сохраняем
+    // Save
     FSavePackageArgs SaveArgs;
     SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
     SaveArgs.SaveFlags = SAVE_NoError;
@@ -1738,20 +1479,18 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
            SourceTexture->GetSizeX(), SourceTexture->GetSizeY(),
            Region.Min.X, Region.Min.Y, Region.Max.X, Region.Max.Y);
     
-    // Получаем размеры исходной текстуры
+    // Get source texture dimensions
     int32 SourceWidth = SourceTexture->GetSizeX();
     int32 SourceHeight = SourceTexture->GetSizeY();
     
-    // УЛУЧШЕННОЕ ОПРЕДЕЛЕНИЕ ОБЛАСТИ КОПИРОВАНИЯ
+    // Determine copy region
     FIntRect SourceCopyRegion;
     
-    // Проверяем, является ли это оптимизированной текстурой
     bool bIsOptimizedTexture = SourceTexture->GetName().Contains(TEXT("_Optimized"));
     
     if (bIsOptimizedTexture)
     {
-        // Для оптимизированных текстур копируем всю текстуру целиком
-        // так как она уже обрезана до нужного размера
+        // For optimized textures, copy entire texture
         SourceCopyRegion = FIntRect(0, 0, SourceWidth, SourceHeight);
         
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Source is optimized texture - using full texture region: (%d,%d,%d,%d)"), 
@@ -1759,7 +1498,7 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
     }
     else
     {
-        // Для неоптимизированных текстур находим используемую область
+        // For original textures, find used area
         SourceCopyRegion = FindUsedBounds(SourceTexture, 2);
         
         if (SourceCopyRegion.Width() <= 0 || SourceCopyRegion.Height() <= 0)
@@ -1772,7 +1511,7 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
                SourceCopyRegion.Min.X, SourceCopyRegion.Min.Y, SourceCopyRegion.Max.X, SourceCopyRegion.Max.Y);
     }
     
-    // Получаем пиксели из исходной текстуры
+    // Get pixels from source texture
     TArray<FColor> SourcePixels = GetTexturePixelData(SourceTexture);
     if (SourcePixels.Num() == 0)
     {
@@ -1782,13 +1521,13 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
     
     UE_LOG(LogSpriteOptimizer, Log, TEXT("Read %d pixels from source texture"), SourcePixels.Num());
     
-    // Вычисляем размеры для копирования
+    // Calculate copy dimensions
     int32 SourceCopyWidth = SourceCopyRegion.Width();
     int32 SourceCopyHeight = SourceCopyRegion.Height();
     int32 AtlasRegionWidth = Region.Width();
     int32 AtlasRegionHeight = Region.Height();
     
-    // ВАЖНО: Определяем способ копирования
+    // Determine if scaling is needed
     bool bNeedsScaling = (SourceCopyWidth != AtlasRegionWidth) || (SourceCopyHeight != AtlasRegionHeight);
     
     if (bNeedsScaling)
@@ -1796,7 +1535,6 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Scaling needed: source (%dx%d) -> atlas region (%dx%d)"), 
                SourceCopyWidth, SourceCopyHeight, AtlasRegionWidth, AtlasRegionHeight);
         
-        // Копирование с масштабированием (может быть нужно для особых случаев)
         return CopyPixelsWithScaling(SourcePixels, SourceWidth, SourceCopyRegion, 
                                    AtlasPixels, AtlasSize, Region);
     }
@@ -1805,13 +1543,11 @@ bool USpriteOptimizer::CopyPixelsFromSourceToAtlas(
         UE_LOG(LogSpriteOptimizer, Log, TEXT("Direct copy: source (%dx%d) == atlas region (%dx%d)"), 
                SourceCopyWidth, SourceCopyHeight, AtlasRegionWidth, AtlasRegionHeight);
         
-        // Прямое копирование без масштабирования
         return CopyPixelsDirect(SourcePixels, SourceWidth, SourceCopyRegion, 
                               AtlasPixels, AtlasSize, Region);
     }
 }
 
-// Вспомогательный метод для прямого копирования
 bool USpriteOptimizer::CopyPixelsDirect(
     const TArray<FColor>& SourcePixels,
     int32 SourceWidth,
@@ -1824,22 +1560,22 @@ bool USpriteOptimizer::CopyPixelsDirect(
     int32 CopyWidth = FMath::Min(SourceRegion.Width(), AtlasRegion.Width());
     int32 CopyHeight = FMath::Min(SourceRegion.Height(), AtlasRegion.Height());
     
-    // Копируем пиксели построчно
+    // Copy pixels row by row
     for (int32 Y = 0; Y < CopyHeight; Y++)
     {
         for (int32 X = 0; X < CopyWidth; X++)
         {
-            // Координаты в исходной текстуре
+            // Source texture coordinates
             int32 SourceX = SourceRegion.Min.X + X;
             int32 SourceY = SourceRegion.Min.Y + Y;
             int32 SourceIndex = SourceY * SourceWidth + SourceX;
             
-            // Координаты в атласе
+            // Atlas coordinates
             int32 AtlasX = AtlasRegion.Min.X + X;
             int32 AtlasY = AtlasRegion.Min.Y + Y;
             int32 AtlasIndex = AtlasY * AtlasSize.X + AtlasX;
             
-            // Проверяем границы
+            // Bounds checking
             if (SourceIndex >= 0 && SourceIndex < SourcePixels.Num() && 
                 AtlasIndex >= 0 && AtlasIndex < AtlasPixels.Num() &&
                 AtlasX >= 0 && AtlasX < AtlasSize.X &&
@@ -1847,7 +1583,7 @@ bool USpriteOptimizer::CopyPixelsDirect(
             {
                 AtlasPixels[AtlasIndex] = SourcePixels[SourceIndex];
                 
-                // Считаем только непрозрачные пиксели
+                // Count only non-transparent pixels
                 if (SourcePixels[SourceIndex].A > 0)
                 {
                     CopiedPixels++;
@@ -1860,7 +1596,6 @@ bool USpriteOptimizer::CopyPixelsDirect(
     return CopiedPixels > 0;
 }
 
-// Вспомогательный метод для копирования с масштабированием
 bool USpriteOptimizer::CopyPixelsWithScaling(
     const TArray<FColor>& SourcePixels,
     int32 SourceWidth,
@@ -1874,27 +1609,27 @@ bool USpriteOptimizer::CopyPixelsWithScaling(
     float ScaleX = float(SourceRegion.Width()) / float(AtlasRegion.Width());
     float ScaleY = float(SourceRegion.Height()) / float(AtlasRegion.Height());
     
-    // Копируем с масштабированием
+    // Copy with scaling
     for (int32 AtlasY = 0; AtlasY < AtlasRegion.Height(); AtlasY++)
     {
         for (int32 AtlasX = 0; AtlasX < AtlasRegion.Width(); AtlasX++)
         {
-            // Находим соответствующий пиксель в исходной текстуре
+            // Find corresponding pixel in source texture
             int32 SourceX = SourceRegion.Min.X + FMath::RoundToInt(AtlasX * ScaleX);
             int32 SourceY = SourceRegion.Min.Y + FMath::RoundToInt(AtlasY * ScaleY);
             
-            // Проверяем границы исходной текстуры
+            // Check source texture bounds
             if (SourceX >= SourceRegion.Min.X && SourceX < SourceRegion.Max.X &&
                 SourceY >= SourceRegion.Min.Y && SourceY < SourceRegion.Max.Y)
             {
                 int32 SourceIndex = SourceY * SourceWidth + SourceX;
                 
-                // Координаты в атласе
+                // Atlas coordinates
                 int32 FinalAtlasX = AtlasRegion.Min.X + AtlasX;
                 int32 FinalAtlasY = AtlasRegion.Min.Y + AtlasY;
                 int32 AtlasIndex = FinalAtlasY * AtlasSize.X + FinalAtlasX;
                 
-                // Проверяем границы атласа
+                // Check atlas bounds
                 if (SourceIndex >= 0 && SourceIndex < SourcePixels.Num() &&
                     AtlasIndex >= 0 && AtlasIndex < AtlasPixels.Num() &&
                     FinalAtlasX >= 0 && FinalAtlasX < AtlasSize.X &&
@@ -1915,6 +1650,162 @@ bool USpriteOptimizer::CopyPixelsWithScaling(
     return CopiedPixels > 0;
 }
 
+// === UTILITY HELPERS ===
+
+TArray<FColor> USpriteOptimizer::GetTexturePixelData(UTexture2D* Texture)
+{
+    TArray<FColor> PixelData;
+    
+    if (!Texture)
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("GetTexturePixelData: Texture is null"));
+        return PixelData;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Reading pixel data from texture: %s (%dx%d)"), 
+           *Texture->GetName(), Texture->GetSizeX(), Texture->GetSizeY());
+    
+    // Method 1: Try Source API (most reliable)
+    if (Texture->Source.IsValid())
+    {
+        TArray64<uint8> RawData;
+        if (Texture->Source.GetMipData(RawData, 0) && RawData.Num() > 0)
+        {
+            int32 Width = Texture->GetSizeX();
+            int32 Height = Texture->GetSizeY();
+            int32 ExpectedPixels = Width * Height;
+            
+            if (RawData.Num() >= ExpectedPixels * 4) // BGRA = 4 bytes per pixel
+            {
+                const FColor* SourcePixels = reinterpret_cast<const FColor*>(RawData.GetData());
+                PixelData.Reserve(ExpectedPixels);
+                
+                for (int32 i = 0; i < ExpectedPixels; i++)
+                {
+                    PixelData.Add(SourcePixels[i]);
+                }
+                
+                UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Source API"), PixelData.Num());
+                return PixelData;
+            }
+        }
+    }
+    
+    // Method 2: Platform Data fallback
+    if (!Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.Num() == 0)
+    {
+        UE_LOG(LogSpriteOptimizer, Warning, TEXT("Texture %s has no platform data or mips"), *Texture->GetName());
+        return PixelData;
+    }
+    
+    FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+    
+    // Check lock state
+    if (Mip.BulkData.IsLocked())
+    {
+        UE_LOG(LogSpriteOptimizer, Warning, TEXT("BulkData already locked for texture %s"), *Texture->GetName());
+        return PixelData;
+    }
+    
+    const void* RawData;
+    
+    try
+    {
+        RawData = Mip.BulkData.LockReadOnly();
+    }
+    catch (...)
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Exception while locking texture data for %s"), *Texture->GetName());
+        return PixelData;
+    }
+    
+    if (!RawData)
+    {
+        UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to lock texture data for %s"), *Texture->GetName());
+        try { Mip.BulkData.Unlock(); } catch (...) {}
+        return PixelData;
+    }
+    
+    int32 Width = Texture->GetSizeX();
+    int32 Height = Texture->GetSizeY();
+    int32 ExpectedPixels = Width * Height;
+    
+    const FColor* ColorData = static_cast<const FColor*>(RawData);
+    PixelData.Reserve(ExpectedPixels);
+    
+    for (int32 i = 0; i < ExpectedPixels; i++)
+    {
+        PixelData.Add(ColorData[i]);
+    }
+    
+    // Always unlock
+    try
+    {
+        Mip.BulkData.Unlock();
+    }
+    catch (...)
+    {
+        UE_LOG(LogSpriteOptimizer, Error, TEXT("Exception while unlocking texture data for %s"), *Texture->GetName());
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Successfully read %d pixels via Platform Data"), PixelData.Num());
+    
+    return PixelData;
+}
+
+float USpriteOptimizer::CalculatePackingEfficiency(
+    const TArray<FIntPoint>& SpriteSizes, 
+    const FIntPoint& AtlasSize)
+{
+    if (AtlasSize.X <= 0 || AtlasSize.Y <= 0)
+    {
+        return 0.0f;
+    }
+    
+    // Calculate total sprite area
+    int32 TotalSpriteArea = 0;
+    for (const FIntPoint& Size : SpriteSizes)
+    {
+        TotalSpriteArea += Size.X * Size.Y;
+    }
+    
+    // Calculate atlas area
+    int32 AtlasArea = AtlasSize.X * AtlasSize.Y;
+    
+    // Return efficiency percentage
+    return AtlasArea > 0 ? (static_cast<float>(TotalSpriteArea) / AtlasArea) * 100.0f : 0.0f;
+}
+
+TArray<FIntPoint> USpriteOptimizer::GetOptimizedSpriteSizes(
+    const TArray<UPaperSprite*>& Sprites,
+    int32 Padding)
+{
+    TArray<FIntPoint> OptimizedSizes;
+    
+    for (UPaperSprite* Sprite : Sprites)
+    {
+        if (!Sprite || !Sprite->GetSourceTexture())
+        {
+            continue;
+        }
+        
+        // Analyze sprite and get optimized size
+        FSpriteOptimizationResult Analysis = AnalyzeSprite(Sprite);
+        if (Analysis.bSuccess && Analysis.OptimizedSize.X > 0 && Analysis.OptimizedSize.Y > 0)
+        {
+            OptimizedSizes.Add(FIntPoint(Analysis.OptimizedSize.X, Analysis.OptimizedSize.Y));
+        }
+        else
+        {
+            // If analysis failed, use original size
+            UTexture2D* SourceTexture = Sprite->GetSourceTexture();
+            OptimizedSizes.Add(FIntPoint(SourceTexture->GetSizeX(), SourceTexture->GetSizeY()));
+        }
+    }
+    
+    return OptimizedSizes;
+}
+
 FVector2D USpriteOptimizer::CalculateAtlasPivotForLayering(
     int32 OriginalTextureWidth,
     int32 OriginalTextureHeight,
@@ -1922,23 +1813,22 @@ FVector2D USpriteOptimizer::CalculateAtlasPivotForLayering(
     const FIntRect& AtlasRegion,
     UPaperSprite* OriginalSprite)
 {
-    // Шаг 1: Определяем центр оригинальной текстуры (предполагаем центральный пивот)
+    // Calculate center of original texture (assume central pivot)
     FVector2D OriginalTextureCenter(OriginalTextureWidth * 0.5f, OriginalTextureHeight * 0.5f);
     
-    // Шаг 2: Находим центр использованной области в оригинальной текстуре
+    // Find center of used region in original texture
     FVector2D UsedRegionCenter(
         OriginalUsedRegion.Min.X + OriginalUsedRegion.Width() * 0.5f,
         OriginalUsedRegion.Min.Y + OriginalUsedRegion.Height() * 0.5f
     );
     
-    // Шаг 3: Вычисляем смещение от центра оригинальной текстуры до центра используемой области
+    // Calculate offset from original texture center to used region center
     FVector2D OffsetFromOriginalCenter = UsedRegionCenter - OriginalTextureCenter;
     
-    // Шаг 4: Центр нового спрайта из атласа
+    // Center of new atlas sprite
     FVector2D AtlasSpriteSizeHalf(AtlasRegion.Width() * 0.5f, AtlasRegion.Height() * 0.5f);
     
-    // Шаг 5: Вычисляем пивот который компенсирует смещение
-    // Пивот должен быть в центре атласного спрайта МИНУС смещение от оригинала
+    // Calculate pivot that compensates for offset
     FVector2D CorrectPivot = AtlasSpriteSizeHalf - OffsetFromOriginalCenter;
     
     UE_LOG(LogSpriteOptimizer, Verbose, TEXT("Pivot calculation:"));
@@ -1949,4 +1839,86 @@ FVector2D USpriteOptimizer::CalculateAtlasPivotForLayering(
     UE_LOG(LogSpriteOptimizer, Verbose, TEXT("  Final pivot: (%f,%f)"), CorrectPivot.X, CorrectPivot.Y);
     
     return CorrectPivot;
+}
+
+// === PATH AND ASSET HELPERS ===
+
+FString USpriteOptimizer::GetOptimizedAssetPath(const FString& OriginalPath, const FSpriteOptimizationSettings& Settings)
+{
+    const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
+    
+    // Use custom path from project settings if specified
+    if (ProjectSettings && !ProjectSettings->OptimizedAssetsPath.IsEmpty())
+    {
+        return ProjectSettings->OptimizedAssetsPath;
+    }
+    
+    // Create "Optimized" folder next to original files
+    FString Directory, Filename, Extension;
+    FPaths::Split(OriginalPath, Directory, Filename, Extension);
+    
+    FString OptimizedDirectory = Directory + TEXT("/Optimized");
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating optimized assets in: %s"), *OptimizedDirectory);
+    
+    return OptimizedDirectory;
+}
+
+FString USpriteOptimizer::GetAtlasAssetPath(const FString& FirstSpritePath)
+{
+    FString Directory, Filename, Extension;
+    FPaths::Split(FirstSpritePath, Directory, Filename, Extension);
+    
+    FString AtlasDirectory = Directory + TEXT("/Atlas");
+    
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Creating atlas assets in: %s"), *AtlasDirectory);
+    
+    return AtlasDirectory;
+}
+
+FString USpriteOptimizer::GetOptimizedAssetName(const FString& OriginalName, const FSpriteOptimizationSettings& Settings)
+{
+    const USpriteOptimizerSettings* ProjectSettings = GetDefault<USpriteOptimizerSettings>();
+    
+    // Use suffix from project settings
+    FString Suffix = TEXT("_Optimized");
+    if (ProjectSettings && !ProjectSettings->OptimizedAssetsSuffix.IsEmpty())
+    {
+        Suffix = ProjectSettings->OptimizedAssetsSuffix;
+    }
+    
+    return OriginalName + Suffix;
+}
+
+bool USpriteOptimizer::EnsureDirectoryExists(const FString& DirectoryPath)
+{
+    // Convert package path to file path
+    FString PackageFilename;
+    if (FPackageName::TryConvertLongPackageNameToFilename(DirectoryPath, PackageFilename))
+    {
+        FString PhysicalPath = FPaths::GetPath(PackageFilename);
+        
+        if (!FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*PhysicalPath))
+        {
+            bool bCreated = FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*PhysicalPath);
+            UE_LOG(LogSpriteOptimizer, Log, TEXT("Created directory: %s (Success: %s)"), *PhysicalPath, bCreated ? TEXT("Yes") : TEXT("No"));
+            return bCreated;
+        }
+        return true;
+    }
+    
+    UE_LOG(LogSpriteOptimizer, Warning, TEXT("Failed to convert package path to file path: %s"), *DirectoryPath);
+    return false;
+}
+
+void USpriteOptimizer::CreateBackupIfNeeded(UObject* Asset, bool bCreateBackup)
+{
+    if (!bCreateBackup || !Asset)
+    {
+        return;
+    }
+    
+    // In this simple implementation, just log
+    // Full version could create copy with "_Backup" suffix
+    UE_LOG(LogSpriteOptimizer, Log, TEXT("Backup requested for asset: %s"), *Asset->GetName());
 }

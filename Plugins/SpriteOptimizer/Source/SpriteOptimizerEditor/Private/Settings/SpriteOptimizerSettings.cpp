@@ -1,3 +1,5 @@
+// Copyright 2025, CRAFTCODE, All Rights Reserved.
+
 #include "Settings/SpriteOptimizerSettings.h"
 
 #define LOCTEXT_NAMESPACE "SpriteOptimizerSettings"
