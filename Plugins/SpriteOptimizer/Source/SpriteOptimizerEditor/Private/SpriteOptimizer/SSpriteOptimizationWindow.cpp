@@ -53,75 +53,73 @@ void SSpriteOptimizationWindow::Construct(const FArguments& InArgs)
     }
     
     ChildSlot
-    [
-        SNew(SBorder)
-        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(10)
-        [
-            SNew(SVerticalBox)
+ [
+     SNew(SBorder)
+     .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+     .Padding(10)
+     [
+         SNew(SScrollBox)
+         .Orientation(Orient_Vertical)
+        
+         + SScrollBox::Slot()
+         [
+             SNew(SVerticalBox)
             
-            // Заголовок
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateHeaderSection()
-            ]
+             // Заголовок
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 5)
+             [
+                 CreateHeaderSection()
+             ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 2)
+             [
+                 SNew(SSeparator)
+             ]
             
-            // Настройки оптимизации
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateSettingsSection()
-            ]
+             // Компактные настройки
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 5)
+             [
+                 CreateCompactSettingsSection()
+             ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 2)
+             [
+                 SNew(SSeparator)
+             ]
             
-            // Список спрайтов
-            + SVerticalBox::Slot()
-            .FillHeight(1.0f)
-            .Padding(0, 5)
-            [
-                CreateSpriteListSection()
-            ]
+             // Компактный список спрайтов
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 5)
+             [
+                 CreateCompactSpriteListSection()
+             ]
             
-            // Сводка
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateSummarySection()
-            ]
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 2)
+             [
+                 SNew(SSeparator)
+             ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
-            
-            // Действия
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateActionSection()
-            ]
-        ]
-    ];
+             // Компактные действия
+             + SVerticalBox::Slot()
+             .AutoHeight()
+             .Padding(0, 5)
+             [
+                 CreateCompactActionSection()
+             ]
+         ]
+     ]
+ ];
     
     // Начальное обновление
     RefreshAnalysis();
@@ -208,7 +206,7 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateHeaderSection()
         .AutoHeight()
         [
             SNew(STextBlock)
-            .Text(LOCTEXT("OptimizationTitle", "🚀 Sprite Optimization Tool"))
+            .Text(LOCTEXT("OptimizationTitle", "🚀 Sprite Optimization"))
             .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
             .Justification(ETextJustify::Center)
         ]
@@ -219,11 +217,448 @@ TSharedRef<SWidget> SSpriteOptimizationWindow::CreateHeaderSection()
         [
             SNew(STextBlock)
             .Text(FText::Format(LOCTEXT("OptimizationSubtitle", 
-                "Optimize {0} selected sprites by removing transparent areas and creating efficient assets.\n"
-                "💡 For combining sprites into atlases, use the separate 'Create Atlas' option."), 
+                "Remove transparent areas from {0} sprites to reduce memory usage"), 
                 SpriteRows.Num()))
             .Justification(ETextJustify::Center)
             .AutoWrapText(true)
+            .Font(FAppStyle::GetFontStyle("SmallFont"))
+        ];
+}
+
+TSharedRef<SWidget> SSpriteOptimizationWindow::CreateCompactSettingsSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(8)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("SettingsSection", "⚙️ Settings"))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            ]
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 8)
+            [
+                SNew(SHorizontalBox)
+                
+                // Материал
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .Padding(0, 0, 5, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("MaterialLabel", "Material:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SAssignNew(MaterialComboBox, SComboBox<TSharedPtr<FString>>)
+                        .OptionsSource(&MaterialOptions)
+                        .OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
+                        {
+                            return SNew(STextBlock).Text(FText::FromString(*Item)).Font(FAppStyle::GetFontStyle("SmallFont"));
+                        })
+                        .OnSelectionChanged(this, &SSpriteOptimizationWindow::OnMaterialComboChanged)
+                        .Content()
+                        [
+                            SNew(STextBlock)
+                            .Text_Lambda([this]()
+                            {
+                                if (CurrentSettings.Material)
+                                {
+                                    return FText::FromString(CurrentSettings.Material->GetName());
+                                }
+                                return LOCTEXT("DefaultMaterial", "Default");
+                            })
+                            .Font(FAppStyle::GetFontStyle("SmallFont"))
+                        ]
+                    ]
+                ]
+                
+                // Pixels Per Unit
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .Padding(5, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("PixelsPerUnitLabel", "Pixels Per Unit:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SAssignNew(PixelsPerUnitSpinBox, SSpinBox<float>)
+                        .Value(CurrentSettings.PixelsPerUnit)
+                        .MinValue(0.1f)
+                        .MaxValue(100.0f)
+                        .Delta(0.1f)
+                        .OnValueChanged(this, &SSpriteOptimizationWindow::OnPixelsPerUnitChanged)
+                    ]
+                ]
+                
+                // Padding
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .Padding(5, 0, 0, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("PaddingLabel", "Padding:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SAssignNew(PaddingSpinBox, SSpinBox<int32>)
+                        .Value(CurrentSettings.Padding)
+                        .MinValue(0)
+                        .MaxValue(20)
+                        .OnValueChanged(this, &SSpriteOptimizationWindow::OnPaddingChanged)
+                    ]
+                ]
+            ]
+        ];
+}
+
+TSharedRef<SWidget> SSpriteOptimizationWindow::CreateCompactSpriteListSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(8)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("SpritesSection", "📋 Sprites"))
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectAll", "All"))
+                    .OnClicked(this, &SSpriteOptimizationWindow::OnSelectAll)
+                    .ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("Button"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectNone", "None"))
+                    .OnClicked(this, &SSpriteOptimizationWindow::OnSelectNone)
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectOptimal", "Best"))
+                    .OnClicked(this, &SSpriteOptimizationWindow::OnSelectOptimal)
+                    .ToolTipText(LOCTEXT("SelectOptimalTooltip", "Select sprites with good optimization potential"))
+                ]
+            ]
+            
+            // Компактная сводка
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SAssignNew(SummaryText, STextBlock)
+                .Text(GetCompactSummaryText())
+                .AutoWrapText(true)
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f)))
+            ]
+            
+            // Компактный список
+            + SVerticalBox::Slot()
+            .MaxHeight(200.0f)
+            .Padding(0, 5)
+            [
+                SAssignNew(SpriteListView, SListView<TSharedPtr<FSpriteOptimizationRow>>)
+                .ListItemsSource(&SpriteRows)
+                .OnGenerateRow(this, &SSpriteOptimizationWindow::GenerateCompactSpriteRow)
+                .OnSelectionChanged(this, &SSpriteOptimizationWindow::OnSpriteSelectionChanged)
+                .SelectionMode(ESelectionMode::Multi)
+                .HeaderRow
+                (
+                    SNew(SHeaderRow)
+                    
+                    + SHeaderRow::Column("Selected")
+                    .DefaultLabel(LOCTEXT("SelectedHeader", ""))
+                    .FixedWidth(25)
+                    
+                    + SHeaderRow::Column("SpriteName")
+                    .DefaultLabel(LOCTEXT("SpriteNameHeader", "Sprite"))
+                    .FillWidth(0.4f)
+                    
+                    + SHeaderRow::Column("OriginalSize")
+                    .DefaultLabel(LOCTEXT("OriginalSizeHeader", "Original"))
+                    .FillWidth(0.2f)
+                    
+                    + SHeaderRow::Column("OptimizedSize")
+                    .DefaultLabel(LOCTEXT("OptimizedSizeHeader", "Optimized"))
+                    .FillWidth(0.2f)
+                    
+                    + SHeaderRow::Column("Savings")
+                    .DefaultLabel(LOCTEXT("SavingsHeader", "Savings"))
+                    .FillWidth(0.2f)
+                )
+            ]
+        ];
+}
+
+TSharedRef<ITableRow> SSpriteOptimizationWindow::GenerateCompactSpriteRow(TSharedPtr<FSpriteOptimizationRow> Item, const TSharedRef<STableViewBase>& OwnerTable)
+{
+    return SNew(STableRow<TSharedPtr<FSpriteOptimizationRow>>, OwnerTable)
+        [
+            SNew(SHorizontalBox)
+            
+            // Checkbox
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .VAlign(VAlign_Center)
+            .HAlign(HAlign_Center)
+            .Padding(3, 0)
+            [
+                SNew(SCheckBox)
+                .IsChecked(Item->bSelected ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                .OnCheckStateChanged_Lambda([Item, this](ECheckBoxState NewState)
+                {
+                    Item->bSelected = (NewState == ECheckBoxState::Checked);
+                    UpdateSummary();
+                    UpdateButtonStates();
+                })
+            ]
+            
+            // Sprite Name (компактный)
+            + SHorizontalBox::Slot()
+            .FillWidth(0.4f)
+            .VAlign(VAlign_Center)
+            .Padding(3, 2)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([Item]()
+                {
+                    if (Item->OriginalSprite)
+                    {
+                        FString Name = Item->OriginalSprite->GetName();
+                        Name = Name.Replace(TEXT("T_"), TEXT(""));
+                        Name = Name.Replace(TEXT("_Sprite"), TEXT(""));
+                        if (Name.Len() > 12)
+                        {
+                            return FText::FromString(Name.Left(9) + TEXT("..."));
+                        }
+                        return FText::FromString(Name);
+                    }
+                    return FText::FromString(TEXT("Unknown"));
+                })
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ToolTipText_Lambda([Item]()
+                {
+                    return Item->OriginalSprite ? FText::FromString(Item->OriginalSprite->GetName()) : FText::FromString(TEXT("Unknown sprite"));
+                })
+            ]
+            
+            // Original Size
+            + SHorizontalBox::Slot()
+            .FillWidth(0.2f)
+            .VAlign(VAlign_Center)
+            .Padding(3, 2)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([Item]()
+                {
+                    if (Item->AnalysisResult.bSuccess)
+                    {
+                        return FText::FromString(FString::Printf(TEXT("%.0fx%.0f"), 
+                            Item->AnalysisResult.OriginalSize.X, Item->AnalysisResult.OriginalSize.Y));
+                    }
+                    return FText::FromString(TEXT("N/A"));
+                })
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+            ]
+            
+            // Optimized Size
+            + SHorizontalBox::Slot()
+            .FillWidth(0.2f)
+            .VAlign(VAlign_Center)
+            .Padding(3, 2)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([Item]()
+                {
+                    if (Item->AnalysisResult.bSuccess)
+                    {
+                        return FText::FromString(FString::Printf(TEXT("%.0fx%.0f"), 
+                            Item->AnalysisResult.OptimizedSize.X, Item->AnalysisResult.OptimizedSize.Y));
+                    }
+                    return FText::FromString(TEXT("N/A"));
+                })
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ColorAndOpacity(FSlateColor(FLinearColor::Green))
+            ]
+            
+            // Savings
+            + SHorizontalBox::Slot()
+            .FillWidth(0.2f)
+            .VAlign(VAlign_Center)
+            .Padding(3, 2)
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([Item]()
+                    {
+                        if (Item->AnalysisResult.bSuccess)
+                        {
+                            return FText::FromString(FString::Printf(TEXT("%.0f%%"), Item->AnalysisResult.SavingsPercent));
+                        }
+                        return FText::FromString(TEXT("N/A"));
+                    })
+                    .ColorAndOpacity_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess) return FSlateColor(FLinearColor::Gray);
+                        if (Item->AnalysisResult.SavingsPercent > 70.0f) return FSlateColor(FLinearColor::Green);
+                        if (Item->AnalysisResult.SavingsPercent > 40.0f) return FSlateColor(FLinearColor::Yellow);
+                        return FSlateColor(FLinearColor::White);
+                    })
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0, 0, 0)
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess)
+                        {
+                            return FText::FromString(TEXT("ERR"));
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 70.0f)
+                        {
+                            return FText::FromString(TEXT("GREAT"));
+                        }
+                        else if (Item->AnalysisResult.SavingsPercent > 40.0f)
+                        {
+                            return FText::FromString(TEXT("GOOD"));
+                        }
+                        else
+                        {
+                            return FText::FromString(TEXT("POOR"));
+                        }
+                    })
+                    .ColorAndOpacity_Lambda([Item]()
+                    {
+                        if (!Item->AnalysisResult.bSuccess) return FSlateColor(FLinearColor::Red);
+                        if (Item->AnalysisResult.SavingsPercent > 70.0f) return FSlateColor(FLinearColor::Green);
+                        if (Item->AnalysisResult.SavingsPercent > 40.0f) return FSlateColor(FLinearColor::Yellow);
+                        return FSlateColor(FLinearColor::Red);
+                    })
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                ]
+            ]
+        ];
+}
+
+FText SSpriteOptimizationWindow::GetCompactSummaryText() const
+{
+    TArray<TSharedPtr<FSpriteOptimizationRow>> SelectedSprites = GetSelectedSprites();
+    
+    if (SelectedSprites.Num() == 0)
+    {
+        return LOCTEXT("NoSelection", "Select sprites to optimize");
+    }
+    
+    float TotalSavingsMB = 0;
+    int32 ValidSprites = 0;
+    
+    for (const auto& Row : SelectedSprites)
+    {
+        if (Row->AnalysisResult.bSuccess)
+        {
+            TotalSavingsMB += (Row->AnalysisResult.OriginalSizeMB - Row->AnalysisResult.OptimizedSizeMB);
+            ValidSprites++;
+        }
+    }
+    
+    return FText::Format(LOCTEXT("CompactSummaryFormat",
+        "{0} selected • {1} MB savings • Ready to optimize"),
+        ValidSprites,
+        FText::AsNumber(TotalSavingsMB, &FNumberFormattingOptions::DefaultWithGrouping())
+    );
+}
+
+TSharedRef<SWidget> SSpriteOptimizationWindow::CreateCompactActionSection()
+{
+    return SNew(SHorizontalBox)
+        
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(3)
+        [
+            SNew(SButton)
+            .Text(LOCTEXT("RefreshAnalysis", "🔄 Refresh"))
+            .OnClicked(this, &SSpriteOptimizationWindow::OnAnalyzeSprites)
+            .HAlign(HAlign_Center)
+            .ToolTipText(LOCTEXT("RefreshAnalysisTooltip", "Re-analyze all sprites"))
+        ]
+        
+        + SHorizontalBox::Slot()
+        .FillWidth(2.0f)
+        .Padding(3)
+        [
+            SAssignNew(OptimizeButton, SButton)
+            .Text(LOCTEXT("OptimizeSprites", "🚀 Optimize Selected"))
+            .ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("PrimaryButton"))
+            .OnClicked(this, &SSpriteOptimizationWindow::OnOptimizeSprites)
+            .HAlign(HAlign_Center)
+            .ToolTipText(LOCTEXT("OptimizeTooltip", "Create optimized versions of selected sprites"))
         ];
 }
 

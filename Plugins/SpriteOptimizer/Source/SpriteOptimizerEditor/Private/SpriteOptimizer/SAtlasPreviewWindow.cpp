@@ -30,16 +30,20 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
     [
         SNew(SBorder)
         .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-        .Padding(10)
+        .Padding(8)
         [
             SNew(SVerticalBox)
             
-            // Заголовок
+            // Компактный заголовок
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
             [
-                CreateHeaderSection()
+                SNew(STextBlock)
+                .Text(FText::Format(LOCTEXT("PreviewTitle", "🔍 Atlas Preview ({0}x{1})"), 
+                                   AtlasSize.X, AtlasSize.Y))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                .Justification(ETextJustify::Center)
             ]
             
             + SVerticalBox::Slot()
@@ -49,12 +53,17 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Информация об атласе
+            // Компактная информация в одну строку
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
             [
-                CreateInfoSection()
+                SNew(STextBlock)
+                .Text(GetCompactAtlasInfoText())
+                .AutoWrapText(true)
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .Justification(ETextJustify::Center)
+                .ColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f)))
             ]
             
             + SVerticalBox::Slot()
@@ -64,12 +73,12 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Предпросмотр атласа
+            // Предпросмотр
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
             .Padding(0, 5)
             [
-                CreatePreviewSection()
+                CreateCompactPreviewSection()
             ]
             
             + SVerticalBox::Slot()
@@ -79,17 +88,100 @@ void SAtlasPreviewWindow::Construct(const FArguments& InArgs)
                 SNew(SSeparator)
             ]
             
-            // Действия
+            // Компактные действия
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 5)
             [
-                CreateActionsSection()
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SAssignNew(CloseButton, SButton)
+                    .Text(LOCTEXT("ClosePreview", "Close"))
+                    .OnClicked(this, &SAtlasPreviewWindow::OnCloseWindow)
+                    .HAlign(HAlign_Center)
+                ]
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
             ]
         ]
     ];
 }
 
+TSharedRef<SWidget> SAtlasPreviewWindow::CreateCompactPreviewSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(5)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("PreviewCanvasTitle", "🖼️ Layout Preview"))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                .Justification(ETextJustify::Center)
+            ]
+            
+            + SVerticalBox::Slot()
+            .FillHeight(1.0f)
+            .Padding(0, 5)
+            [
+                SAssignNew(PreviewScrollBox, SScrollBox)
+                .Orientation(Orient_Vertical)
+                
+                + SScrollBox::Slot()
+                [
+                    SNew(SHorizontalBox)
+                    
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .HAlign(HAlign_Center)
+                    [
+                        CreateAtlasCanvas()
+                    ]
+                ]
+            ]
+        ];
+}
+
+FText SAtlasPreviewWindow::GetCompactAtlasInfoText() const
+{
+    FString AlgorithmName;
+    switch (CurrentSettings.PackingAlgorithm)
+    {
+    case EAtlasPackingAlgorithm::Simple:
+        AlgorithmName = TEXT("Simple");
+        break;
+    case EAtlasPackingAlgorithm::BestFit:
+        AlgorithmName = TEXT("BestFit");
+        break;
+    case EAtlasPackingAlgorithm::MaxRects:
+        AlgorithmName = TEXT("MaxRects");
+        break;
+    default:
+        AlgorithmName = TEXT("Unknown");
+        break;
+    }
+    
+    return FText::Format(LOCTEXT("CompactAtlasInfoFormat",
+        "{0} sprites • {1}% efficiency • {2}% memory savings • {3} algorithm"),
+        FText::AsNumber(CurrentAnalysis.TotalSprites),
+        FText::AsNumber(CurrentAnalysis.PackingEfficiency),
+        FText::AsNumber(CurrentAnalysis.MemorySavings),
+        FText::FromString(AlgorithmName)
+    );
+}
+
+// Показать компактное окно предпросмотра
 void SAtlasPreviewWindow::ShowAtlasPreview(
     const TArray<UPaperSprite*>& Sprites,
     const FSpriteAtlasSettings& Settings,
@@ -104,7 +196,7 @@ void SAtlasPreviewWindow::ShowAtlasPreview(
         .Title(FText::Format(LOCTEXT("AtlasPreviewTitle", "Atlas Preview - {0}x{1}"), 
                            Analysis.AtlasSize.X, Analysis.AtlasSize.Y))
         .SizingRule(ESizingRule::UserSized)
-        .ClientSize(FVector2D(1000, 700))
+        .ClientSize(FVector2D(600, 500))  // Меньший размер окна
         .SupportsMaximize(true)
         .SupportsMinimize(false)
         .Content()

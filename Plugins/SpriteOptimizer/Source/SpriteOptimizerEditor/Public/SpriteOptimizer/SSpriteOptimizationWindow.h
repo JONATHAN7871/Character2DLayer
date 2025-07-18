@@ -122,4 +122,10 @@ private:
     void ShowNotification(const FText& Message, int32 State = 0);
     void ShowOptimizationPreview();
     static FReply ClosePreviewWindow(TSharedPtr<SWindow> WindowToClose);
+
+    TSharedRef<SWidget> CreateCompactSettingsSection();
+    TSharedRef<SWidget> CreateCompactSpriteListSection();
+    TSharedRef<SWidget> CreateCompactActionSection();
+    TSharedRef<ITableRow> GenerateCompactSpriteRow(TSharedPtr<FSpriteOptimizationRow> Item, const TSharedRef<STableViewBase>& OwnerTable);
+    FText GetCompactSummaryText() const;
 };

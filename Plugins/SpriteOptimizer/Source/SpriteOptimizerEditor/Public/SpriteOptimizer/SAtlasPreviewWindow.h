@@ -93,6 +93,9 @@ private:
     
     // Расчет масштаба для отображения
     float CalculateDisplayScale() const;
+
+    TSharedRef<SWidget> CreateCompactPreviewSection();
+    FText GetCompactAtlasInfoText() const;
 };
 
 // Кастомный виджет для рисования атласа

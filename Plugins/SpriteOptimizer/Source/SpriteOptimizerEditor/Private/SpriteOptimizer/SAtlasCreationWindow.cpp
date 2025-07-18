@@ -42,103 +42,88 @@ void SAtlasCreationWindow::Construct(const FArguments& InArgs)
     InitializePackingAlgorithms();
     
     ChildSlot
-[
-    SNew(SBorder)
-    .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-    .Padding(10)
-    [
-        SNew(SScrollBox)  // ДОБАВЛЕНО: Прокрутка для всего окна
-        .Orientation(Orient_Vertical)
+  [
+      SNew(SBorder)
+      .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+      .Padding(10)
+      [
+          SNew(SScrollBox)
+          .Orientation(Orient_Vertical)
         
-        + SScrollBox::Slot()
-        [
-            SNew(SVerticalBox)
+          + SScrollBox::Slot()
+          [
+              SNew(SVerticalBox)
             
-            // Заголовок
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateHeaderSection()
-            ]
+              // Заголовок
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 5)
+              [
+                  CreateCompactHeaderSection()
+              ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 2)
+              [
+                  SNew(SSeparator)
+              ]
             
-            // Настройки атласа
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateAtlasSettingsSection()
-            ]
+              // Настройки атласа
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 5)
+              [
+                  CreateCompactAtlasSettingsSection()
+              ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 2)
+              [
+                  SNew(SSeparator)
+              ]
             
-            // Опции спрайтов
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateSpriteOptionsSection()
-            ]
+              // Спрайты
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 5)
+              [
+                  CreateCompactSpritesSection()
+              ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 2)
+              [
+                  SNew(SSeparator)
+              ]
             
-            // Список спрайтов - КОМПАКТНАЯ ВЕРСИЯ
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateCompactSpritesListSection()  // ИЗМЕНЕНО: используем компактную версию
-            ]
+              // Анализ
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 5)
+              [
+                  CreateCompactAnalysisSection()
+              ]
             
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 2)
+              [
+                  SNew(SSeparator)
+              ]
             
-            // Анализ
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateAnalysisSection()
-            ]
-            
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 2)
-            [
-                SNew(SSeparator)
-            ]
-            
-            // Действия - ВСЕГДА ВНИЗУ
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0, 5)
-            [
-                CreateActionsSection()
-            ]
-        ]
-    ]
-];
+              // Действия
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(0, 5)
+              [
+                  CreateCompactActionSection()
+              ]
+          ]
+      ]
+  ];
     
     // Начальное обновление UI
     UpdateButtonStates();
@@ -449,7 +434,413 @@ TSharedRef<ITableRow> SAtlasCreationWindow::GenerateCompactSpriteRow(TSharedPtr<
         ];
 }
 
-// Добавьте этот метод для получения краткой сводки:
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactHeaderSection()
+{
+    return SNew(SVerticalBox)
+        
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        [
+            SNew(STextBlock)
+            .Text(LOCTEXT("AtlasCreationTitle", "🎨 Create Sprite Atlas"))
+            .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            .Justification(ETextJustify::Center)
+        ]
+        
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(0, 3)
+        [
+            SNew(STextBlock)
+            .Text(FText::Format(LOCTEXT("AtlasCreationSubtitle", 
+                "Combine {0} sprites into an optimized texture atlas"), SpriteInfos.Num()))
+            .Justification(ETextJustify::Center)
+            .Font(FAppStyle::GetFontStyle("SmallFont"))
+        ];
+}
+
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactAtlasSettingsSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(8)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("AtlasSettingsTitle", "⚙️ Atlas Settings"))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            ]
+            
+            // Первая строка настроек
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 8)
+            [
+                SNew(SHorizontalBox)
+                
+                // Atlas Name
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .Padding(0, 0, 5, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("AtlasNameLabel", "Name:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SAssignNew(AtlasNameTextBox, SEditableTextBox)
+                        .Text(FText::FromString(CurrentAtlasName))
+                        .OnTextCommitted(this, &SAtlasCreationWindow::OnAtlasNameChanged)
+                    ]
+                ]
+                
+                // Max Size
+                + SHorizontalBox::Slot()
+                .FillWidth(0.8f)
+                .Padding(5, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("MaxSizeLabel", "Max Size:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SNew(SHorizontalBox)
+                        
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        [
+                            SAssignNew(MaxWidthSpinBox, SSpinBox<int32>)
+                            .Value(AtlasSettings.MaxAtlasSize.X)
+                            .MinValue(256)
+                            .MaxValue(8192)
+                            .OnValueChanged(this, &SAtlasCreationWindow::OnMaxWidthChanged)
+                        ]
+                        
+                        + SHorizontalBox::Slot()
+                        .AutoWidth()
+                        .Padding(3, 0)
+                        [
+                            SNew(STextBlock)
+                            .Text(FText::FromString(TEXT("x")))
+                            .Font(FAppStyle::GetFontStyle("SmallFont"))
+                        ]
+                        
+                        + SHorizontalBox::Slot()
+                        .FillWidth(1.0f)
+                        [
+                            SAssignNew(MaxHeightSpinBox, SSpinBox<int32>)
+                            .Value(AtlasSettings.MaxAtlasSize.Y)
+                            .MinValue(256)
+                            .MaxValue(8192)
+                            .OnValueChanged(this, &SAtlasCreationWindow::OnMaxHeightChanged)
+                        ]
+                    ]
+                ]
+                
+                // Algorithm
+                + SHorizontalBox::Slot()
+                .FillWidth(0.8f)
+                .Padding(5, 0, 0, 0)
+                [
+                    SNew(SVerticalBox)
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("AlgorithmLabel", "Algorithm:"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                    
+                    + SVerticalBox::Slot()
+                    .AutoHeight()
+                    .Padding(0, 2)
+                    [
+                        SAssignNew(PackingAlgorithmComboBox, SComboBox<TSharedPtr<FString>>)
+                        .OptionsSource(&PackingAlgorithmOptions)
+                        .OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
+                        {
+                            return SNew(STextBlock).Text(FText::FromString(*Item)).Font(FAppStyle::GetFontStyle("SmallFont"));
+                        })
+                        .OnSelectionChanged(this, &SAtlasCreationWindow::OnPackingAlgorithmChanged)
+                        .Content()
+                        [
+                            SNew(STextBlock)
+                            .Text_Lambda([this]()
+                            {
+                                if (PackingAlgorithmComboBox.IsValid() && PackingAlgorithmComboBox->GetSelectedItem().IsValid())
+                                {
+                                    return FText::FromString(*PackingAlgorithmComboBox->GetSelectedItem());
+                                }
+                                return LOCTEXT("SimpleGrid", "Simple Grid");
+                            })
+                            .Font(FAppStyle::GetFontStyle("SmallFont"))
+                        ]
+                    ]
+                ]
+            ]
+            
+            // Компактные опции в одну строку
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(OptimizeSpritesFirstCheckBox, SCheckBox)
+                    .IsChecked(AtlasSettings.bOptimizeSpritesFirst ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                    .OnCheckStateChanged(this, &SAtlasCreationWindow::OnOptimizeSpritesFirstChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("OptimizeFirstLabel", "Optimize First"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                ]
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(CreateIndividualSpritesCheckBox, SCheckBox)
+                    .IsChecked(AtlasSettings.bCreateIndividualSprites ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                    .OnCheckStateChanged(this, &SAtlasCreationWindow::OnCreateIndividualSpritesChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("CreateIndividualLabel", "Individual Sprites"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                ]
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(PreserveQualityCheckBox, SCheckBox)
+                    .IsChecked(AtlasSettings.bPreserveOriginalQuality ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                    .OnCheckStateChanged(this, &SAtlasCreationWindow::OnPreserveQualityChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("PreserveQualityLabel", "Preserve Quality"))
+                        .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    ]
+                ]
+            ]
+        ];
+}
+
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactSpritesSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(8)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("SpritesListTitle", "📋 Sprites"))
+                    .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectAll", "All"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectAllSprites)
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectNone", "None"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectNoneSprites)
+                ]
+                
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(3, 0)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SelectOptimal", "Best"))
+                    .OnClicked(this, &SAtlasCreationWindow::OnSelectOptimalSprites)
+                ]
+            ]
+            
+            // Компактная сводка
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SAssignNew(SpritesSummaryText, STextBlock)
+                .Text(GetSpritesSummaryText())
+                .AutoWrapText(true)
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .ColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f)))
+            ]
+            
+            // Компактный список спрайтов
+            + SVerticalBox::Slot()
+            .MaxHeight(150.0f)
+            .Padding(0, 5)
+            [
+                SAssignNew(SpritesListView, SListView<TSharedPtr<FAtlasSpriteInfo>>)
+                .ListItemsSource(&SpriteInfos)
+                .OnGenerateRow(this, &SAtlasCreationWindow::GenerateCompactSpriteRow)
+                .OnSelectionChanged(this, &SAtlasCreationWindow::OnSpriteSelectionChanged)
+                .SelectionMode(ESelectionMode::Multi)
+                .HeaderRow
+                (
+                    SNew(SHeaderRow)
+                    
+                    + SHeaderRow::Column("Include")
+                    .DefaultLabel(LOCTEXT("IncludeHeader", ""))
+                    .FixedWidth(25)
+                    
+                    + SHeaderRow::Column("SpriteName")
+                    .DefaultLabel(LOCTEXT("SpriteNameHeader", "Sprite"))
+                    .FillWidth(0.5f)
+                    
+                    + SHeaderRow::Column("OptimizedSize")
+                    .DefaultLabel(LOCTEXT("OptimizedSizeHeader", "Size"))
+                    .FillWidth(0.25f)
+                    
+                    + SHeaderRow::Column("Savings")
+                    .DefaultLabel(LOCTEXT("SavingsHeader", "Savings"))
+                    .FillWidth(0.25f)
+                )
+            ]
+        ];
+}
+
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactAnalysisSection()
+{
+    return SNew(SBorder)
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+        .Padding(8)
+        [
+            SNew(SVerticalBox)
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT("AnalysisTitle", "📊 Analysis"))
+                .Font(FAppStyle::GetFontStyle("PropertyWindow.BoldFont"))
+            ]
+            
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 5)
+            [
+                SAssignNew(AnalysisResultText, STextBlock)
+                .Text(GetCompactAnalysisText())
+                .AutoWrapText(true)
+                .Font(FAppStyle::GetFontStyle("SmallFont"))
+                .Visibility_Lambda([this]()
+                {
+                    return LastAnalysisResult.TotalSprites > 0 ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+            ]
+        ];
+}
+
+TSharedRef<SWidget> SAtlasCreationWindow::CreateCompactActionSection()
+{
+    return SNew(SHorizontalBox)
+        
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(3)
+        [
+            SAssignNew(AnalyzeButton, SButton)
+            .Text(LOCTEXT("AnalyzeAtlas", "🔍 Analyze"))
+            .OnClicked(this, &SAtlasCreationWindow::OnAnalyzeAtlas)
+            .HAlign(HAlign_Center)
+        ]
+        
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(3)
+        [
+            SAssignNew(PreviewButton, SButton)
+            .Text(LOCTEXT("PreviewAtlas", "👁️ Preview"))
+            .OnClicked(this, &SAtlasCreationWindow::OnPreviewAtlas)
+            .HAlign(HAlign_Center)
+            .IsEnabled(false)
+        ]
+        
+        + SHorizontalBox::Slot()
+        .FillWidth(1.5f)
+        .Padding(3)
+        [
+            SAssignNew(CreateAtlasButton, SButton)
+            .Text(LOCTEXT("CreateAtlas", "🎨 Create Atlas"))
+            .ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("PrimaryButton"))
+            .OnClicked(this, &SAtlasCreationWindow::OnCreateAtlas)
+            .HAlign(HAlign_Center)
+            .IsEnabled(false)
+        ];
+}
+
+// Компактная сводка анализа
+FText SAtlasCreationWindow::GetCompactAnalysisText() const
+{
+    if (LastAnalysisResult.TotalSprites == 0)
+    {
+        return LOCTEXT("NoAnalysisYet", "Click 'Analyze' to see atlas statistics");
+    }
+    
+    if (!LastAnalysisResult.bSuccess)
+    {
+        return FText::Format(LOCTEXT("AnalysisError", "Analysis failed: {0}"), 
+                           FText::FromString(LastAnalysisResult.ErrorMessage));
+    }
+    
+    return FText::Format(LOCTEXT("CompactAnalysisSuccess",
+        "Atlas: {0}x{1} • Efficiency: {2}% • Memory savings: {3}% • {4} sprites"),
+        LastAnalysisResult.AtlasSize.X, LastAnalysisResult.AtlasSize.Y,
+        FText::AsNumber(LastAnalysisResult.PackingEfficiency),
+        FText::AsNumber(LastAnalysisResult.MemorySavings),
+        LastAnalysisResult.TotalSprites
+    );
+}
 
 FText SAtlasCreationWindow::GetSpritesSummaryText() const
 {

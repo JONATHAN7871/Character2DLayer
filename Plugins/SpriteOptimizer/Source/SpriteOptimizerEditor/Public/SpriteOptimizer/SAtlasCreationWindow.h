@@ -151,4 +151,11 @@ private:
     
     // Данные для UI
     FString CurrentAtlasName;
+
+    TSharedRef<SWidget> CreateCompactHeaderSection();
+    TSharedRef<SWidget> CreateCompactAtlasSettingsSection();
+    TSharedRef<SWidget> CreateCompactSpritesSection();
+    TSharedRef<SWidget> CreateCompactAnalysisSection();
+    TSharedRef<SWidget> CreateCompactActionSection();
+    FText GetCompactAnalysisText() const;
 };
