@@ -76,6 +76,8 @@ private:
     TSharedPtr<SCheckBox> CreateIndividualSpritesCheckBox;
     TSharedPtr<SCheckBox> PowerOfTwoCheckBox;
     TSharedPtr<SCheckBox> SquareAtlasCheckBox;
+    TSharedPtr<SCheckBox> PreserveQualityCheckBox;      // НОВОЕ
+    TSharedPtr<SCheckBox> ForceSmoothingCheckBox;       // НОВОЕ
     
     // UI элементы - список спрайтов
     TSharedPtr<SListView<TSharedPtr<FAtlasSpriteInfo>>> SpritesListView;
@@ -107,6 +109,8 @@ private:
     void OnCreateIndividualSpritesChanged(ECheckBoxState NewState);
     void OnPowerOfTwoChanged(ECheckBoxState NewState);
     void OnSquareAtlasChanged(ECheckBoxState NewState);
+    void OnPreserveQualityChanged(ECheckBoxState NewState);     // НОВОЕ
+    void OnForceSmoothingChanged(ECheckBoxState NewState);      // НОВОЕ
     
     // Обработчики событий - действия
     FReply OnAnalyzeAtlas();

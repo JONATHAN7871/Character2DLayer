@@ -404,8 +404,7 @@ TSharedRef<SWidget> SAtlasCreationWindow::CreateSpriteOptionsSection()
                     ]
                 ]
                 
-                // Вторая колонка
-                + SUniformGridPanel::Slot(1, 0)
+                + SUniformGridPanel::Slot(0, 2)
                 [
                     SAssignNew(PowerOfTwoCheckBox, SCheckBox)
                     .IsChecked(ECheckBoxState::Unchecked)
@@ -418,7 +417,7 @@ TSharedRef<SWidget> SAtlasCreationWindow::CreateSpriteOptionsSection()
                     ]
                 ]
                 
-                + SUniformGridPanel::Slot(1, 1)
+                + SUniformGridPanel::Slot(0, 3)
                 [
                     SAssignNew(SquareAtlasCheckBox, SCheckBox)
                     .IsChecked(ECheckBoxState::Unchecked)
@@ -429,6 +428,52 @@ TSharedRef<SWidget> SAtlasCreationWindow::CreateSpriteOptionsSection()
                         .Text(LOCTEXT("SquareAtlasLabel", "Square Atlas"))
                         .ToolTipText(LOCTEXT("SquareAtlasTooltip", "Make atlas width and height equal"))
                     ]
+                ]
+                
+                // Вторая колонка - НОВЫЕ ОПЦИИ КАЧЕСТВА
+                + SUniformGridPanel::Slot(1, 0)
+                [
+                    SAssignNew(PreserveQualityCheckBox, SCheckBox)
+                    .IsChecked(AtlasSettings.bPreserveOriginalQuality ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                    .OnCheckStateChanged(this, &SAtlasCreationWindow::OnPreserveQualityChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("PreserveQualityLabel", "Preserve Original Quality"))
+                        .ToolTipText(LOCTEXT("PreserveQualityTooltip", "Copy texture quality settings from original sprites (recommended)"))
+                    ]
+                ]
+                
+                + SUniformGridPanel::Slot(1, 1)
+                [
+                    SAssignNew(ForceSmoothingCheckBox, SCheckBox)
+                    .IsChecked(AtlasSettings.bForceSmoothing ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+                    .OnCheckStateChanged(this, &SAtlasCreationWindow::OnForceSmoothingChanged)
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("ForceSmoothingLabel", "Force Smoothing"))
+                        .ToolTipText(LOCTEXT("ForceSmoothingTooltip", "Apply bilinear filtering for smooth appearance (good for character art like eyes)"))
+                    ]
+                ]
+                
+                // Информационная подсказка
+                + SUniformGridPanel::Slot(1, 2)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("QualityHint", "💡 For character sprites (eyes, faces):\nUse 'Force Smoothing'"))
+                    .AutoWrapText(true)
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    .ColorAndOpacity(FSlateColor(FLinearColor::Yellow))
+                ]
+                
+                + SUniformGridPanel::Slot(1, 3)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("QualityHint2", "🎯 For pixel art:\nDisable both quality options"))
+                    .AutoWrapText(true)
+                    .Font(FAppStyle::GetFontStyle("SmallFont"))
+                    .ColorAndOpacity(FSlateColor(FColor::Cyan))
                 ]
             ]
         ];
@@ -1268,6 +1313,42 @@ void SAtlasCreationWindow::ShowNotification(const FText& Message, bool bSuccess)
     }
     
     FSlateNotificationManager::Get().AddNotification(Info);
+}
+
+void SAtlasCreationWindow::OnPreserveQualityChanged(ECheckBoxState NewState)
+{
+    AtlasSettings.bPreserveOriginalQuality = (NewState == ECheckBoxState::Checked);
+    
+    // Если включено сохранение качества, отключаем принудительное сглаживание
+    if (AtlasSettings.bPreserveOriginalQuality && ForceSmoothingCheckBox.IsValid())
+    {
+        AtlasSettings.bForceSmoothing = false;
+        ForceSmoothingCheckBox->SetIsChecked(ECheckBoxState::Unchecked);
+    }
+    
+    LastAnalysisResult = FSpriteAtlasResult(); // Сбрасываем анализ
+    UpdateButtonStates();
+    
+    UE_LOG(LogTemp, Log, TEXT("Atlas: Preserve Original Quality = %s"), 
+           AtlasSettings.bPreserveOriginalQuality ? TEXT("True") : TEXT("False"));
+}
+
+void SAtlasCreationWindow::OnForceSmoothingChanged(ECheckBoxState NewState)
+{
+    AtlasSettings.bForceSmoothing = (NewState == ECheckBoxState::Checked);
+    
+    // Если включено принудительное сглаживание, отключаем сохранение оригинального качества
+    if (AtlasSettings.bForceSmoothing && PreserveQualityCheckBox.IsValid())
+    {
+        AtlasSettings.bPreserveOriginalQuality = false;
+        PreserveQualityCheckBox->SetIsChecked(ECheckBoxState::Unchecked);
+    }
+    
+    LastAnalysisResult = FSpriteAtlasResult(); // Сбрасываем анализ
+    UpdateButtonStates();
+    
+    UE_LOG(LogTemp, Log, TEXT("Atlas: Force Smoothing = %s"), 
+           AtlasSettings.bForceSmoothing ? TEXT("True") : TEXT("False"));
 }
 
 #undef LOCTEXT_NAMESPACE

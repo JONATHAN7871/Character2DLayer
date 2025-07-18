@@ -85,7 +85,6 @@ private:
     
     // Обработчики событий
     FReply OnCloseWindow();
-    FReply OnCreateAtlasFromPreview();
     
     // Вспомогательные методы
     void InitializePreviewData();

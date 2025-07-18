@@ -169,6 +169,14 @@ struct SPRITEOPTIMIZEREDITOR_API FSpriteAtlasSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas")
     bool bOptimizeSpritesFirst = true;
     
+    // НОВАЯ ОПЦИЯ: Копировать настройки качества с оригинальных текстур
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas Quality")
+    bool bPreserveOriginalQuality = true;
+    
+    // НОВАЯ ОПЦИЯ: Принудительно использовать сглаживание
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atlas Quality")
+    bool bForceSmoothing = false;
+    
     FSpriteAtlasSettings()
     {
         MaxAtlasSize = FIntPoint(2048, 2048);
@@ -177,6 +185,8 @@ struct SPRITEOPTIMIZEREDITOR_API FSpriteAtlasSettings
         bCreateIndividualSprites = true;
         AtlasSuffix = TEXT("_Atlas");
         bOptimizeSpritesFirst = true;
+        bPreserveOriginalQuality = true;  // По умолчанию сохраняем качество
+        bForceSmoothing = false;
     }
 };
 

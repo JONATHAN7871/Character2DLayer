@@ -252,29 +252,43 @@ TSharedRef<SWidget> SAtlasPreviewWindow::CreateAtlasCanvas()
 
 TSharedRef<SWidget> SAtlasPreviewWindow::CreateActionsSection()
 {
-    return SNew(SHorizontalBox)
+    return SNew(SVerticalBox)
         
-        + SHorizontalBox::Slot()
-        .FillWidth(1.0f)
-        .Padding(5)
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(10, 5)
         [
-            SAssignNew(CloseButton, SButton)
-            .Text(LOCTEXT("ClosePreview", "✖️ Close"))
-            .OnClicked(this, &SAtlasPreviewWindow::OnCloseWindow)
-            .HAlign(HAlign_Center)
-            .ToolTipText(LOCTEXT("ClosePreviewTooltip", "Close preview window"))
+            SNew(STextBlock)
+            .Text(LOCTEXT("PreviewInstructions", 
+                "📋 This preview shows how sprites will be arranged in the atlas.\n"
+                "✅ If you're satisfied with the layout, close this window and click 'Create Atlas' in the main window.\n"
+                "⚙️ If you want to adjust settings, close this window and modify parameters, then preview again."))
+            .Justification(ETextJustify::Center)
+            .AutoWrapText(true)
+            .Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
         ]
         
-        + SHorizontalBox::Slot()
-        .FillWidth(1.0f)
-        .Padding(5)
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(10)
         [
-            SAssignNew(CreateAtlasButton, SButton)
-            .Text(LOCTEXT("CreateAtlasFromPreview", "🎨 Create Atlas"))
-            .ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("PrimaryButton"))
-            .OnClicked(this, &SAtlasPreviewWindow::OnCreateAtlasFromPreview)
-            .HAlign(HAlign_Center)
-            .ToolTipText(LOCTEXT("CreateAtlasFromPreviewTooltip", "Create the atlas with current settings"))
+            SNew(SHorizontalBox)
+            
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SAssignNew(CloseButton, SButton)
+                .Text(LOCTEXT("ClosePreview", "✖️ Close Preview"))
+                .OnClicked(this, &SAtlasPreviewWindow::OnCloseWindow)
+                .HAlign(HAlign_Center)
+                .ToolTipText(LOCTEXT("ClosePreviewTooltip", "Close preview and return to atlas creation window"))
+            ]
+            
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
         ];
 }
 
@@ -383,19 +397,6 @@ FReply SAtlasPreviewWindow::OnCloseWindow()
     {
         ParentWindow->RequestDestroyWindow();
     }
-    return FReply::Handled();
-}
-
-FReply SAtlasPreviewWindow::OnCreateAtlasFromPreview()
-{
-    // TODO: Реализовать создание атласа прямо из предпросмотра
-    // Можно передать настройки обратно в основное окно
-    
-    USpriteOptimizer::ShowOptimizationNotification(
-        LOCTEXT("CreateFromPreviewNotImplemented", "Creating atlas from preview will be implemented soon"), 
-        true
-    );
-    
     return FReply::Handled();
 }
 
