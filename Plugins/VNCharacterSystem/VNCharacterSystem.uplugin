@@ -1,0 +1,38 @@
+﻿{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "VN Character System",
+	"Description": "Modular 2D layered character system for visual novels and 2D games. Provides skeletal mesh and sprite management with smooth transitions, focus control, and spawn/despawn animations.",
+	"Category": "Animation",
+	"CreatedBy": "VN Character System Team",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"RequiresBuildPlatform": false,
+	"Modules": [
+		{
+			"Name": "VnCharacterSystem",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux",
+				"Android",
+				"IOS"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Paper2D",
+			"Enabled": true
+		}
+	]
+}
