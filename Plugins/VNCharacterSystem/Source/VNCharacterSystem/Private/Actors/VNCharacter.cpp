@@ -504,8 +504,10 @@ void AVNCharacter::ApplyCharacterState(const F_VN_CharacterState& State)
 	SetupComponentFromConfig(EmotionBody02_Sprite, State.EmotionBodyEffect02SpriteConfig);
 	SetupComponentFromConfig(EmotionBody03_Sprite, State.EmotionBodyEffect03SpriteConfig);
 
-	// Применяем конфигурации Sprite компонентов (Simple)
+	// Head_Sprite ТЕПЕРЬ использует Attachment конфигурацию
 	SetupComponentFromConfig(Head_Sprite, State.HeadSpriteConfig);
+
+	// Применяем конфигурации Sprite компонентов (Simple)
 	SetupComponentFromConfig(Eyebrow_Sprite, State.EyebrowSpriteConfig);
 	SetupComponentFromConfig(Eyes_Sprite, State.EyesSpriteConfig);
 	SetupComponentFromConfig(Eyelids_Sprite, State.EyelidsSpriteConfig);
@@ -523,17 +525,15 @@ void AVNCharacter::ApplyCharacterState(const F_VN_CharacterState& State)
 
 void AVNCharacter::ApplyGlobalTransforms()
 {
-	// Применяем глобальные настройки для Skeletal Mesh компонентов
-	if (GlobalSkeletalMeshTransform)
-	{
-		FTransform GlobalSkeletalTransform = GlobalSkeletalMeshTransform->GetRelativeTransform();
-		GlobalSkeletalTransform.SetLocation(GlobalSkeletalOffset);
-		GlobalSkeletalTransform.SetScale3D(FVector(GlobalSkeletalScale));
-		GlobalSkeletalMeshTransform->SetRelativeTransform(GlobalSkeletalTransform);
-	}
-
-	// ДЛЯ СПРАЙТОВ: Применяем глобальные настройки к КАЖДОМУ спрайту индивидуально
-	// чтобы они работали даже при attachment к SkeletalMesh
+	// НЕ применяем глобальные настройки к корневым трансформам!
+	// GlobalSkeletalMeshTransform и GlobalSpriteTransform используются только для организации иерархии
+	
+	VN_LOG_DEBUG(TEXT("Applying global transforms individually to components"));
+	
+	// Применяем глобальные настройки к каждому Skeletal Mesh компоненту индивидуально
+	ApplyGlobalSkeletalTransforms();
+	
+	// Применяем глобальные настройки к каждому спрайту индивидуально
 	ApplyGlobalSpriteTransforms();
 
 	VN_LOG_DEBUG(TEXT("Global transforms applied: SkeletalOffset=%s, SkeletalScale=%.2f, SpriteOffset=%s, SpriteScale=%.2f"),
@@ -541,14 +541,55 @@ void AVNCharacter::ApplyGlobalTransforms()
 		*GlobalSpriteOffset.ToString(), GlobalSpriteScale);
 }
 
+void AVNCharacter::ApplyGlobalSkeletalTransforms()
+{
+	// Получаем все Skeletal Mesh компоненты
+	TArray<USkeletalMeshComponent*> AllSkeletalMeshes = GetAllSkeletalComponents();
+	
+	VN_LOG_DEBUG(TEXT("Applying global skeletal transforms to %d components"), AllSkeletalMeshes.Num());
+	
+	for (USkeletalMeshComponent* SkeletalMesh : AllSkeletalMeshes)
+	{
+		if (!SkeletalMesh) continue;
+		
+		// Получаем текущий relative transform компонента
+		FTransform CurrentTransform = SkeletalMesh->GetRelativeTransform();
+		
+		// Применяем глобальные настройки ПОВЕРХ индивидуальных настроек
+		FVector NewLocation = CurrentTransform.GetLocation() + GlobalSkeletalOffset;
+		FVector NewScale = CurrentTransform.GetScale3D() * GlobalSkeletalScale;
+		
+		// Создаем новый трансформ
+		FTransform NewTransform = CurrentTransform;
+		NewTransform.SetLocation(NewLocation);
+		NewTransform.SetScale3D(NewScale);
+		
+		// Применяем
+		SkeletalMesh->SetRelativeTransform(NewTransform);
+		
+		VN_LOG_DEBUG(TEXT("Applied global skeletal transform to %s: Offset=%s, Scale=%.2f"), 
+			*SkeletalMesh->GetName(), *GlobalSkeletalOffset.ToString(), GlobalSkeletalScale);
+	}
+}
+
 void AVNCharacter::ApplyGlobalSpriteTransforms()
 {
 	// Получаем все спрайт компоненты
 	TArray<UPaperSpriteComponent*> AllSprites = GetAllSpriteComponents();
 	
+	VN_LOG_DEBUG(TEXT("Applying global sprite transforms to %d components"), AllSprites.Num());
+	
 	for (UPaperSpriteComponent* Sprite : AllSprites)
 	{
 		if (!Sprite) continue;
+		
+		// ИСКЛЮЧАЕМ дочерние элементы Head_Sprite из глобальных трансформаций
+		// Они получат трансформации через наследование от Head_Sprite
+		if (IsChildOfHeadSprite(Sprite))
+		{
+			VN_LOG_DEBUG(TEXT("Skipping global transform for %s (child of Head_Sprite)"), *Sprite->GetName());
+			continue;
+		}
 		
 		// Получаем текущий relative transform спрайта
 		FTransform CurrentTransform = Sprite->GetRelativeTransform();
@@ -1323,56 +1364,26 @@ void AVNCharacter::UpdateLOD()
 	}
 }
 
+bool AVNCharacter::IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const
+{
+	if (!Sprite || !Head_Sprite) return false;
+	
+	// Проверяем, является ли спрайт одним из лицевых элементов
+	return (Sprite == Eyebrow_Sprite ||
+			Sprite == Eyes_Sprite ||
+			Sprite == Eyelids_Sprite ||
+			Sprite == Wink_Sprite ||
+			Sprite == Mouth_Sprite ||
+			Sprite == EmotionHead01_Sprite ||
+			Sprite == EmotionHead02_Sprite ||
+			Sprite == EmotionHead03_Sprite);
+}
+
 // =====================================================
 // ОБРАБОТЧИКИ СОБЫТИЙ АНИМАЦИИ
 // =====================================================
 
 void AVNCharacter::OnAnimationStarted(EVNAnimationType AnimationType)
-{
-	// Преобразуем enum в строку вручную
-	FString AnimationTypeName;
-	switch (AnimationType)
-	{
-		case EVNAnimationType::None:
-			AnimationTypeName = TEXT("None");
-			break;
-		case EVNAnimationType::Transition:
-			AnimationTypeName = TEXT("Transition");
-			break;
-		case EVNAnimationType::SpawnDespawn:
-			AnimationTypeName = TEXT("SpawnDespawn");
-			break;
-		case EVNAnimationType::Focus:
-			AnimationTypeName = TEXT("Focus");
-			break;
-		default:
-			AnimationTypeName = TEXT("Unknown");
-			break;
-	}
-
-	VN_LOG_DEBUG(TEXT("Animation started: %s"), *AnimationTypeName);
-	
-	switch (AnimationType)
-	{
-		case EVNAnimationType::Transition:
-			// Дополнительная логика для начала перехода состояний
-			break;
-			
-		case EVNAnimationType::SpawnDespawn:
-			// Дополнительная логика для начала появления/исчезновения
-			break;
-			
-		case EVNAnimationType::Focus:
-			// Дополнительная логика для начала смены фокуса
-			break;
-
-		default:
-			VN_LOG_WARNING(TEXT("Unknown animation type in OnAnimationStarted: %d"), (int32)AnimationType);
-			break;
-	}
-}
-
-void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 {
 	// Преобразуем enum в строку вручную
 	FString AnimationTypeName;
@@ -1560,3 +1571,48 @@ void AVNCharacter::ValidateAllComponents()
 	}
 }
 #endif
+
+void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
+{
+	// Преобразуем enum в строку вручную
+	FString AnimationTypeName;
+	switch (AnimationType)
+	{
+		case EVNAnimationType::None:
+			AnimationTypeName = TEXT("None");
+			break;
+	case EVNAnimationType::Transition:
+		AnimationTypeName = TEXT("Transition");
+		break;
+	case EVNAnimationType::SpawnDespawn:
+		AnimationTypeName = TEXT("SpawnDespawn");
+		break;
+	case EVNAnimationType::Focus:
+		AnimationTypeName = TEXT("Focus");
+		break;
+	default:
+		AnimationTypeName = TEXT("Unknown");
+		break;
+	}
+
+	VN_LOG_DEBUG(TEXT("Animation started: %s"), *AnimationTypeName);
+	
+	switch (AnimationType)
+	{
+	case EVNAnimationType::Transition:
+		// Дополнительная логика для начала перехода состояний
+		break;
+			
+	case EVNAnimationType::SpawnDespawn:
+		// Дополнительная логика для начала появления/исчезновения
+		break;
+			
+	case EVNAnimationType::Focus:
+		// Дополнительная логика для начала смены фокуса
+		break;
+
+	default:
+		VN_LOG_WARNING(TEXT("Unknown animation type in OnAnimationStarted: %d"), (int32)AnimationType);
+		break;
+	}
+}

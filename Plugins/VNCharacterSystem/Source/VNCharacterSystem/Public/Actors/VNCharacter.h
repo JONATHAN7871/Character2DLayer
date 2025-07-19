@@ -388,6 +388,9 @@ private:
 	/** Получение всех Sprite компонентов */
 	TArray<UPaperSpriteComponent*> GetAllSpriteComponents() const;
 
+	/** Проверка, является ли спрайт дочерним элементом Head_Sprite */
+	bool IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const;
+
 	// =====================================================
 	// ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
 	// =====================================================
@@ -404,11 +407,11 @@ private:
 	/** Применение глобальных трансформаций */
 	void ApplyGlobalTransforms();
 
-	/** Применение глобальных настроек к спрайтам (работает с attached спрайтами) */
-	void ApplyGlobalSpriteTransforms();
+	/** Применение глобальных настроек к Skeletal Mesh компонентам */
+	void ApplyGlobalSkeletalTransforms();
 
-	/** Проверка, является ли спрайт дочерним элементом Head_Sprite */
-	bool IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const;
+	/** Применение глобальных настроек к спрайтам */
+	void ApplyGlobalSpriteTransforms();
 
 	/** Обновление LOD системы */
 	void UpdateLOD();

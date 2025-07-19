@@ -83,42 +83,40 @@ struct VNCHARACTERSYSTEM_API F_VN_CharacterState
     F_VN_SpriteConfig_Attachment EmotionBodyEffect03SpriteConfig;
 
     // =====================================================
-    // SPRITE CONFIGURATIONS - HEAD (SIMPLE POSITIONING)
+    // SPRITE CONFIGURATIONS - HEAD (ATTACHMENT + FACE ELEMENTS)
     // =====================================================
 
-    /** Базовый спрайт головы */
+    /** Базовый спрайт головы - ТЕПЕРЬ может прикрепляться к скелету */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Base")
-    F_VN_SpriteConfig_Simple HeadSpriteConfig;
+    F_VN_SpriteConfig_Attachment HeadSpriteConfig;  // ИЗМЕНЕНО: было Simple, стало Attachment
 
-    /** Брови */
+    /** Брови (всегда прикреплены к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
     F_VN_SpriteConfig_Simple EyebrowSpriteConfig;
 
-    /** Глаза */
+    /** Глаза (всегда прикреплены к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
     F_VN_SpriteConfig_Simple EyesSpriteConfig;
 
-    /** Веки */
+    /** Веки (всегда прикреплены к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
     F_VN_SpriteConfig_Simple EyelidsSpriteConfig;
 
-    /** Подмигивание */
+    /** Подмигивание (всегда прикреплено к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
     F_VN_SpriteConfig_Simple WinkSpriteConfig;
 
-    /** Рот */
+    /** Рот (всегда прикреплен к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
     F_VN_SpriteConfig_Simple MouthSpriteConfig;
 
-    /** Эмоциональный эффект головы 1 */
+    /** Эмоциональные эффекты головы (всегда прикреплены к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Effects")
     F_VN_SpriteConfig_Simple EmotionHeadEffect01SpriteConfig;
 
-    /** Эмоциональный эффект головы 2 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Effects")
     F_VN_SpriteConfig_Simple EmotionHeadEffect02SpriteConfig;
 
-    /** Эмоциональный эффект головы 3 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Effects")
     F_VN_SpriteConfig_Simple EmotionHeadEffect03SpriteConfig;
 
