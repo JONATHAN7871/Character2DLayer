@@ -404,6 +404,12 @@ private:
 	/** Применение глобальных трансформаций */
 	void ApplyGlobalTransforms();
 
+	/** Применение глобальных настроек к спрайтам (работает с attached спрайтами) */
+	void ApplyGlobalSpriteTransforms();
+
+	/** Проверка, является ли спрайт дочерним элементом Head_Sprite */
+	bool IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const;
+
 	/** Обновление LOD системы */
 	void UpdateLOD();
 
@@ -453,10 +459,6 @@ public:
 	UFUNCTION(CallInEditor, Category = "Debug")
 	void ValidateAllComponents();
 #endif
-
-	/** Получение информации о состоянии для отладки */
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	FString GetDebugString() const;
 
 	// =====================================================
 	// ДРУЖЕСТВЕННЫЕ КЛАССЫ (ДОСТУП ДЛЯ ANIMATION MANAGER)

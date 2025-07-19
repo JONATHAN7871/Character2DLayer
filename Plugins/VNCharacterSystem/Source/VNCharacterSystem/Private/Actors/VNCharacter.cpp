@@ -95,7 +95,7 @@ void AVNCharacter::SetupComponentHierarchy()
 	// SPRITE ИЕРАРХИЯ
 	// =====================================================
 
-	// Спрайты тела прикрепляются к корневому sprite transform
+	// Спрайты тела и эффектов прикрепляются к корневому sprite transform
 	Body_Sprite->SetupAttachment(GlobalSpriteTransform);
 	Arms_Sprite->SetupAttachment(GlobalSpriteTransform);
 	BodyShadow_Sprite->SetupAttachment(GlobalSpriteTransform);
@@ -103,8 +103,10 @@ void AVNCharacter::SetupComponentHierarchy()
 	EmotionBody02_Sprite->SetupAttachment(GlobalSpriteTransform);
 	EmotionBody03_Sprite->SetupAttachment(GlobalSpriteTransform);
 
-	// Спрайты головы прикрепляются к Head_Sprite
+	// Head_Sprite прикрепляется к GlobalSpriteTransform (получит глобальные настройки)
 	Head_Sprite->SetupAttachment(GlobalSpriteTransform);
+	
+	// Спрайты головы прикрепляются к Head_Sprite (НЕ получат дополнительные глобальные настройки)
 	Eyebrow_Sprite->SetupAttachment(Head_Sprite);
 	Eyes_Sprite->SetupAttachment(Head_Sprite);
 	Eyelids_Sprite->SetupAttachment(Head_Sprite);
@@ -530,18 +532,42 @@ void AVNCharacter::ApplyGlobalTransforms()
 		GlobalSkeletalMeshTransform->SetRelativeTransform(GlobalSkeletalTransform);
 	}
 
-	// Применяем глобальные настройки для Sprite компонентов
-	if (GlobalSpriteTransform)
-	{
-		FTransform GlobalSpriteTransform_Transform = GlobalSpriteTransform->GetRelativeTransform();
-		GlobalSpriteTransform_Transform.SetLocation(GlobalSpriteOffset);
-		GlobalSpriteTransform_Transform.SetScale3D(FVector(GlobalSpriteScale));
-		GlobalSpriteTransform->SetRelativeTransform(GlobalSpriteTransform_Transform);
-	}
+	// ДЛЯ СПРАЙТОВ: Применяем глобальные настройки к КАЖДОМУ спрайту индивидуально
+	// чтобы они работали даже при attachment к SkeletalMesh
+	ApplyGlobalSpriteTransforms();
 
 	VN_LOG_DEBUG(TEXT("Global transforms applied: SkeletalOffset=%s, SkeletalScale=%.2f, SpriteOffset=%s, SpriteScale=%.2f"),
 		*GlobalSkeletalOffset.ToString(), GlobalSkeletalScale,
 		*GlobalSpriteOffset.ToString(), GlobalSpriteScale);
+}
+
+void AVNCharacter::ApplyGlobalSpriteTransforms()
+{
+	// Получаем все спрайт компоненты
+	TArray<UPaperSpriteComponent*> AllSprites = GetAllSpriteComponents();
+	
+	for (UPaperSpriteComponent* Sprite : AllSprites)
+	{
+		if (!Sprite) continue;
+		
+		// Получаем текущий relative transform спрайта
+		FTransform CurrentTransform = Sprite->GetRelativeTransform();
+		
+		// Применяем глобальные настройки ПОВЕРХ индивидуальных настроек
+		FVector NewLocation = CurrentTransform.GetLocation() + GlobalSpriteOffset;
+		FVector NewScale = CurrentTransform.GetScale3D() * GlobalSpriteScale;
+		
+		// Создаем новый трансформ
+		FTransform NewTransform = CurrentTransform;
+		NewTransform.SetLocation(NewLocation);
+		NewTransform.SetScale3D(NewScale);
+		
+		// Применяем
+		Sprite->SetRelativeTransform(NewTransform);
+		
+		VN_LOG_DEBUG(TEXT("Applied global sprite transform to %s: Offset=%s, Scale=%.2f"), 
+			*Sprite->GetName(), *GlobalSpriteOffset.ToString(), GlobalSpriteScale);
+	}
 }
 
 void AVNCharacter::PrepareTransitionComponents(const F_VN_CharacterState& NewState)
@@ -1534,13 +1560,3 @@ void AVNCharacter::ValidateAllComponents()
 	}
 }
 #endif
-
-FString AVNCharacter::GetDebugString() const
-{
-	return FString::Printf(TEXT("VNCharacter '%s': State='%s', Focus=%s, Visible=%s, Animating=%s"), 
-		*GetName(),
-		*CurrentState.StateID.ToString(),
-		bIsInFocus ? TEXT("Yes") : TEXT("No"),
-		IsVisible() ? TEXT("Yes") : TEXT("No"),
-		IsAnimating() ? TEXT("Yes") : TEXT("No"));
-}
