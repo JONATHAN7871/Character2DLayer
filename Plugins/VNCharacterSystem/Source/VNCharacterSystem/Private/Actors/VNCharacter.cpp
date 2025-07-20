@@ -6,6 +6,11 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 
+// УБИРАЕМ ВКЛЮЧЕНИЯ .cpp ФАЙЛОВ - они компилируются отдельно!
+// #include "Actors/VNCharacter_DialogueSystem.cpp"
+// #include "Actors/VNCharacter_ComponentSetup.cpp" 
+// #include "Actors/VNCharacter_Utilities.cpp"
+
 AVNCharacter::AVNCharacter()
 {
 	// Включаем тик для LOD системы
@@ -24,6 +29,9 @@ AVNCharacter::AVNCharacter()
 
 	// Создаем пустое состояние по умолчанию
 	CurrentState = F_VN_CharacterState::CreateEmpty(TEXT("DefaultState"));
+	
+	// Инициализируем главный пресет как пустой
+	MainPosePreset = F_VN_CharacterState::CreateEmpty(TEXT("MainPose"));
 
 	VN_LOG_DEBUG(TEXT("VNCharacter created: %s"), *GetName());
 }
@@ -180,13 +188,19 @@ void AVNCharacter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 
 void AVNCharacter::SetCharacterState(const F_VN_CharacterState& NewState, float TransitionDuration)
 {
-	VN_LOG_DEBUG(TEXT("=== SetCharacterState START ==="));
+	SetCharacterStateInternal(NewState, TransitionDuration, true); // true = с валидацией
+}
+
+void AVNCharacter::SetCharacterStateInternal(const F_VN_CharacterState& NewState, float TransitionDuration, bool bValidate)
+{
+	VN_LOG_DEBUG(TEXT("=== SetCharacterStateInternal START ==="));
 	VN_LOG_DEBUG(TEXT("New State ID: %s"), *NewState.StateID.ToString());
 	VN_LOG_DEBUG(TEXT("Current State ID: %s"), *CurrentState.StateID.ToString());
 	VN_LOG_DEBUG(TEXT("Transition Duration: %.2f"), TransitionDuration);
+	VN_LOG_DEBUG(TEXT("Validate: %s"), bValidate ? TEXT("Yes") : TEXT("No"));
 
-	// Валидация нового состояния
-	if (!ValidateCharacterState(NewState))
+	// Валидация нового состояния только если требуется
+	if (bValidate && !ValidateCharacterState(NewState))
 	{
 		VN_LOG_WARNING(TEXT("SetCharacterState: Invalid state provided for %s"), *GetName());
 		return;
@@ -195,12 +209,6 @@ void AVNCharacter::SetCharacterState(const F_VN_CharacterState& NewState, float 
 	// Проверяем, действительно ли состояние изменилось
 	bool bStatesAreDifferent = (CurrentState.StateID != NewState.StateID);
 	VN_LOG_DEBUG(TEXT("States are different: %s"), bStatesAreDifferent ? TEXT("Yes") : TEXT("No"));
-
-	// Если состояния одинаковые, все равно применяем (может быть изменились настройки)
-	if (!bStatesAreDifferent)
-	{
-		VN_LOG_DEBUG(TEXT("Same StateID, but applying anyway in case of configuration changes"));
-	}
 
 	// Если есть активная анимация, пропускаем её
 	if (AnimationManager && AnimationManager->IsAnimating())
@@ -215,10 +223,10 @@ void AVNCharacter::SetCharacterState(const F_VN_CharacterState& NewState, float 
 
 	VN_LOG_DEBUG(TEXT("State saved, now applying configuration"));
 
-	// Мгновенно применяем новое состояние (пока без анимации для отладки)
+	// Мгновенно применяем новое состояние
 	ApplyCharacterState(CurrentState);
 
-	VN_LOG_DEBUG(TEXT("=== SetCharacterState END ==="));
+	VN_LOG_DEBUG(TEXT("=== SetCharacterStateInternal END ==="));
 
 	// Уведомляем о смене состояния
 	OnCharacterStateChanged.Broadcast(CurrentState);
@@ -481,909 +489,55 @@ FLinearColor AVNCharacter::GetBaseColorForComponent(USceneComponent* Component) 
 }
 
 // =====================================================
-// ВНУТРЕННИЕ МЕТОДЫ - ПРИМЕНЕНИЕ СОСТОЯНИЯ
-// =====================================================
-
-void AVNCharacter::ApplyCharacterState(const F_VN_CharacterState& State)
-{
-	VN_LOG_DEBUG(TEXT("ApplyCharacterState: Applying state '%s'"), *State.StateID.ToString());
-
-	// Применяем конфигурации Skeletal Mesh компонентов
-	SetupComponentFromConfig(Body_Skeletal, State.BodyConfig);
-	SetupComponentFromConfig(Arms_Skeletal, State.ArmsConfig);
-	SetupComponentFromConfig(Head_Skeletal, State.HeadConfig);
-	SetupComponentFromConfig(Custom01_Skeletal, State.Custom01Config);
-	SetupComponentFromConfig(Custom02_Skeletal, State.Custom02Config);
-	SetupComponentFromConfig(Custom03_Skeletal, State.Custom03Config);
-
-	// Применяем конфигурации Sprite компонентов (Attachment)
-	SetupComponentFromConfig(Body_Sprite, State.BodySpriteConfig);
-	SetupComponentFromConfig(Arms_Sprite, State.ArmsSpriteConfig);
-	SetupComponentFromConfig(BodyShadow_Sprite, State.BodyShadowSpriteConfig);
-	SetupComponentFromConfig(EmotionBody01_Sprite, State.EmotionBodyEffect01SpriteConfig);
-	SetupComponentFromConfig(EmotionBody02_Sprite, State.EmotionBodyEffect02SpriteConfig);
-	SetupComponentFromConfig(EmotionBody03_Sprite, State.EmotionBodyEffect03SpriteConfig);
-
-	// Head_Sprite ТЕПЕРЬ использует Attachment конфигурацию
-	SetupComponentFromConfig(Head_Sprite, State.HeadSpriteConfig);
-
-	// Применяем конфигурации Sprite компонентов (Simple)
-	SetupComponentFromConfig(Eyebrow_Sprite, State.EyebrowSpriteConfig);
-	SetupComponentFromConfig(Eyes_Sprite, State.EyesSpriteConfig);
-	SetupComponentFromConfig(Eyelids_Sprite, State.EyelidsSpriteConfig);
-	SetupComponentFromConfig(Wink_Sprite, State.WinkSpriteConfig);
-	SetupComponentFromConfig(Mouth_Sprite, State.MouthSpriteConfig);
-	SetupComponentFromConfig(EmotionHead01_Sprite, State.EmotionHeadEffect01SpriteConfig);
-	SetupComponentFromConfig(EmotionHead02_Sprite, State.EmotionHeadEffect02SpriteConfig);
-	SetupComponentFromConfig(EmotionHead03_Sprite, State.EmotionHeadEffect03SpriteConfig);
-
-	// Применяем глобальные настройки трансформации
-	ApplyGlobalTransforms();
-
-	VN_LOG_DEBUG(TEXT("Character state applied successfully"));
-}
-
-void AVNCharacter::ApplyGlobalTransforms()
-{
-	// НЕ применяем глобальные настройки к корневым трансформам!
-	// GlobalSkeletalMeshTransform и GlobalSpriteTransform используются только для организации иерархии
-	
-	VN_LOG_DEBUG(TEXT("Applying global transforms individually to components"));
-	
-	// Применяем глобальные настройки к каждому Skeletal Mesh компоненту индивидуально
-	ApplyGlobalSkeletalTransforms();
-	
-	// Применяем глобальные настройки к каждому спрайту индивидуально
-	ApplyGlobalSpriteTransforms();
-
-	VN_LOG_DEBUG(TEXT("Global transforms applied: SkeletalOffset=%s, SkeletalScale=%.2f, SpriteOffset=%s, SpriteScale=%.2f"),
-		*GlobalSkeletalOffset.ToString(), GlobalSkeletalScale,
-		*GlobalSpriteOffset.ToString(), GlobalSpriteScale);
-}
-
-void AVNCharacter::ApplyGlobalSkeletalTransforms()
-{
-	// Получаем все Skeletal Mesh компоненты
-	TArray<USkeletalMeshComponent*> AllSkeletalMeshes = GetAllSkeletalComponents();
-	
-	VN_LOG_DEBUG(TEXT("Applying global skeletal transforms to %d components"), AllSkeletalMeshes.Num());
-	
-	for (USkeletalMeshComponent* SkeletalMesh : AllSkeletalMeshes)
-	{
-		if (!SkeletalMesh) continue;
-		
-		// Получаем текущий relative transform компонента
-		FTransform CurrentTransform = SkeletalMesh->GetRelativeTransform();
-		
-		// Применяем глобальные настройки ПОВЕРХ индивидуальных настроек
-		FVector NewLocation = CurrentTransform.GetLocation() + GlobalSkeletalOffset;
-		FVector NewScale = CurrentTransform.GetScale3D() * GlobalSkeletalScale;
-		
-		// Создаем новый трансформ
-		FTransform NewTransform = CurrentTransform;
-		NewTransform.SetLocation(NewLocation);
-		NewTransform.SetScale3D(NewScale);
-		
-		// Применяем
-		SkeletalMesh->SetRelativeTransform(NewTransform);
-		
-		VN_LOG_DEBUG(TEXT("Applied global skeletal transform to %s: Offset=%s, Scale=%.2f"), 
-			*SkeletalMesh->GetName(), *GlobalSkeletalOffset.ToString(), GlobalSkeletalScale);
-	}
-}
-
-void AVNCharacter::ApplyGlobalSpriteTransforms()
-{
-	// Получаем все спрайт компоненты
-	TArray<UPaperSpriteComponent*> AllSprites = GetAllSpriteComponents();
-	
-	VN_LOG_DEBUG(TEXT("Applying global sprite transforms to %d components"), AllSprites.Num());
-	
-	for (UPaperSpriteComponent* Sprite : AllSprites)
-	{
-		if (!Sprite) continue;
-		
-		// ИСКЛЮЧАЕМ дочерние элементы Head_Sprite из глобальных трансформаций
-		// Они получат трансформации через наследование от Head_Sprite
-		if (IsChildOfHeadSprite(Sprite))
-		{
-			VN_LOG_DEBUG(TEXT("Skipping global transform for %s (child of Head_Sprite)"), *Sprite->GetName());
-			continue;
-		}
-		
-		// Получаем текущий relative transform спрайта
-		FTransform CurrentTransform = Sprite->GetRelativeTransform();
-		
-		// Применяем глобальные настройки ПОВЕРХ индивидуальных настроек
-		FVector NewLocation = CurrentTransform.GetLocation() + GlobalSpriteOffset;
-		FVector NewScale = CurrentTransform.GetScale3D() * GlobalSpriteScale;
-		
-		// Создаем новый трансформ
-		FTransform NewTransform = CurrentTransform;
-		NewTransform.SetLocation(NewLocation);
-		NewTransform.SetScale3D(NewScale);
-		
-		// Применяем
-		Sprite->SetRelativeTransform(NewTransform);
-		
-		VN_LOG_DEBUG(TEXT("Applied global sprite transform to %s: Offset=%s, Scale=%.2f"), 
-			*Sprite->GetName(), *GlobalSpriteOffset.ToString(), GlobalSpriteScale);
-	}
-}
-
-void AVNCharacter::PrepareTransitionComponents(const F_VN_CharacterState& NewState)
-{
-	VN_LOG_DEBUG(TEXT("PrepareTransitionComponents: Preparing transition components"));
-
-	// Очищаем массивы компонентов для анимации
-	SkeletalMeshesToFadeOut.Empty();
-	SpritesToFadeOut.Empty();
-	SkeletalMeshesToFadeIn.Empty();
-	SpritesToFadeIn.Empty();
-
-	// Сравниваем Skeletal Mesh конфигурации и подготавливаем компоненты для анимации
-	
-	// Body
-	if (CurrentState.BodyConfig != NewState.BodyConfig)
-	{
-		USkeletalMeshComponent* TempComponent = DuplicateObject<USkeletalMeshComponent>(Body_Skeletal, this);
-		if (TempComponent)
-		{
-			SkeletalMeshesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Body_Skeletal, NewState.BodyConfig);
-			SetComponentAlpha(Body_Skeletal, 0.0f);
-			SkeletalMeshesToFadeIn.Add(Body_Skeletal);
-		}
-	}
-
-	// Arms
-	if (CurrentState.ArmsConfig != NewState.ArmsConfig)
-	{
-		USkeletalMeshComponent* TempComponent = DuplicateObject<USkeletalMeshComponent>(Arms_Skeletal, this);
-		if (TempComponent)
-		{
-			SkeletalMeshesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Arms_Skeletal, NewState.ArmsConfig);
-			SetComponentAlpha(Arms_Skeletal, 0.0f);
-			SkeletalMeshesToFadeIn.Add(Arms_Skeletal);
-		}
-	}
-
-	// Head
-	if (CurrentState.HeadConfig != NewState.HeadConfig)
-	{
-		USkeletalMeshComponent* TempComponent = DuplicateObject<USkeletalMeshComponent>(Head_Skeletal, this);
-		if (TempComponent)
-		{
-			SkeletalMeshesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Head_Skeletal, NewState.HeadConfig);
-			SetComponentAlpha(Head_Skeletal, 0.0f);
-			SkeletalMeshesToFadeIn.Add(Head_Skeletal);
-		}
-	}
-
-	// Сравниваем Sprite конфигурации и подготавливаем компоненты для анимации
-	
-	// Eyes
-	if (CurrentState.EyesSpriteConfig != NewState.EyesSpriteConfig)
-	{
-		UPaperSpriteComponent* TempComponent = DuplicateObject<UPaperSpriteComponent>(Eyes_Sprite, this);
-		if (TempComponent)
-		{
-			SpritesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Eyes_Sprite, NewState.EyesSpriteConfig);
-			SetComponentAlpha(Eyes_Sprite, 0.0f);
-			SpritesToFadeIn.Add(Eyes_Sprite);
-		}
-	}
-
-	// Eyebrow
-	if (CurrentState.EyebrowSpriteConfig != NewState.EyebrowSpriteConfig)
-	{
-		UPaperSpriteComponent* TempComponent = DuplicateObject<UPaperSpriteComponent>(Eyebrow_Sprite, this);
-		if (TempComponent)
-		{
-			SpritesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Eyebrow_Sprite, NewState.EyebrowSpriteConfig);
-			SetComponentAlpha(Eyebrow_Sprite, 0.0f);
-			SpritesToFadeIn.Add(Eyebrow_Sprite);
-		}
-	}
-
-	// Mouth
-	if (CurrentState.MouthSpriteConfig != NewState.MouthSpriteConfig)
-	{
-		UPaperSpriteComponent* TempComponent = DuplicateObject<UPaperSpriteComponent>(Mouth_Sprite, this);
-		if (TempComponent)
-		{
-			SpritesToFadeOut.Add(TempComponent);
-			SetupComponentFromConfig(Mouth_Sprite, NewState.MouthSpriteConfig);
-			SetComponentAlpha(Mouth_Sprite, 0.0f);
-			SpritesToFadeIn.Add(Mouth_Sprite);
-		}
-	}
-
-	// Можно добавить остальные компоненты по аналогии...
-
-	VN_LOG_DEBUG(TEXT("Transition components prepared: %d SkeletalMesh FadeOut, %d Sprite FadeOut"), 
-		SkeletalMeshesToFadeOut.Num(), SpritesToFadeOut.Num());
-}
-
-void AVNCharacter::FinishAndCleanupTransition()
-{
-	VN_LOG_DEBUG(TEXT("FinishAndCleanupTransition: Cleaning up transition components"));
-
-	// Устанавливаем полную непрозрачность для fade-in компонентов
-	for (USkeletalMeshComponent* Component : SkeletalMeshesToFadeIn)
-	{
-		if (Component)
-		{
-			SetComponentAlpha(Component, 1.0f);
-		}
-	}
-
-	for (UPaperSpriteComponent* Component : SpritesToFadeIn)
-	{
-		if (Component)
-		{
-			SetComponentAlpha(Component, 1.0f);
-		}
-	}
-
-	// Удаляем fade-out компоненты
-	for (USkeletalMeshComponent* Component : SkeletalMeshesToFadeOut)
-	{
-		if (Component && IsValid(Component))
-		{
-			Component->DestroyComponent();
-		}
-	}
-
-	for (UPaperSpriteComponent* Component : SpritesToFadeOut)
-	{
-		if (Component && IsValid(Component))
-		{
-			Component->DestroyComponent();
-		}
-	}
-
-	// Очищаем массивы
-	SkeletalMeshesToFadeOut.Empty();
-	SpritesToFadeOut.Empty();
-	SkeletalMeshesToFadeIn.Empty();
-	SpritesToFadeIn.Empty();
-
-	VN_LOG_DEBUG(TEXT("Transition cleanup completed"));
-}
-
-// =====================================================
-// МЕТОДЫ НАСТРОЙКИ КОМПОНЕНТОВ
-// =====================================================
-
-void AVNCharacter::SetupComponentFromConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Body& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("SetupComponentFromConfig: SkeletalMeshComponent is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return; // Если компонент невидим, дальше не настраиваем
-	}
-
-	// Загружаем и устанавливаем Skeletal Mesh
-	if (!Config.SkeletalMesh.IsNull())
-	{
-		USkeletalMesh* LoadedMesh = Config.SkeletalMesh.LoadSynchronous();
-		if (LoadedMesh)
-		{
-			Component->SetSkeletalMesh(LoadedMesh);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load SkeletalMesh for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSkeletalMesh(nullptr);
-	}
-
-	// Устанавливаем AnimInstance класс
-	if (Config.AnimInstanceClass)
-	{
-		Component->SetAnimInstanceClass(Config.AnimInstanceClass);
-	}
-
-	// Применяем переопределения материалов
-	for (const auto& MaterialPair : Config.MaterialOverrides)
-	{
-		int32 MaterialIndex = MaterialPair.Key;
-		TSoftObjectPtr<UMaterialInterface> MaterialPtr = MaterialPair.Value;
-
-		if (!MaterialPtr.IsNull())
-		{
-			UMaterialInterface* LoadedMaterial = MaterialPtr.LoadSynchronous();
-			if (LoadedMaterial)
-			{
-				Component->SetMaterial(MaterialIndex, LoadedMaterial);
-			}
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = Component->GetRelativeTransform();
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	FLinearColor FinalColor = GetTargetColorForComponent(Component);
-	SetComponentColor(Component, FinalColor);
-
-	VN_LOG_DEBUG(TEXT("SkeletalMesh component %s configured from Body config"), *Component->GetName());
-}
-
-void AVNCharacter::SetupComponentFromConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Attachment& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("SetupComponentFromConfig: SkeletalMeshComponent is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return; // Если компонент невидим, дальше не настраиваем
-	}
-
-	// Загружаем и устанавливаем Skeletal Mesh
-	if (!Config.SkeletalMesh.IsNull())
-	{
-		USkeletalMesh* LoadedMesh = Config.SkeletalMesh.LoadSynchronous();
-		if (LoadedMesh)
-		{
-			Component->SetSkeletalMesh(LoadedMesh);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load SkeletalMesh for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSkeletalMesh(nullptr);
-	}
-
-	// Устанавливаем AnimInstance класс
-	if (Config.AnimInstanceClass)
-	{
-		Component->SetAnimInstanceClass(Config.AnimInstanceClass);
-	}
-
-	// Применяем переопределения материалов
-	for (const auto& MaterialPair : Config.MaterialOverrides)
-	{
-		int32 MaterialIndex = MaterialPair.Key;
-		TSoftObjectPtr<UMaterialInterface> MaterialPtr = MaterialPair.Value;
-
-		if (!MaterialPtr.IsNull())
-		{
-			UMaterialInterface* LoadedMaterial = MaterialPtr.LoadSynchronous();
-			if (LoadedMaterial)
-			{
-				Component->SetMaterial(MaterialIndex, LoadedMaterial);
-			}
-		}
-	}
-
-	// Настраиваем прикрепление
-	if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
-	{
-		USkeletalMeshComponent* AttachTarget = nullptr;
-		
-		switch (Config.AttachTo)
-		{
-			case E_SkeletalAttachmentTarget::Body:
-				AttachTarget = Body_Skeletal;
-				break;
-			default:
-				VN_LOG_WARNING(TEXT("Unknown attachment target for component %s"), *Component->GetName());
-				break;
-		}
-
-		if (AttachTarget && Config.bUseSocketTransform && !Config.SocketName.IsNone())
-		{
-			// Прикрепляем к сокету
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepWorldTransform, Config.SocketName);
-		}
-		else if (AttachTarget)
-		{
-			// Прикрепляем к компоненту без сокета
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepRelativeTransform);
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = Component->GetRelativeTransform();
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	FLinearColor FinalColor = GetTargetColorForComponent(Component);
-	SetComponentColor(Component, FinalColor);
-
-	VN_LOG_DEBUG(TEXT("SkeletalMesh component %s configured from Attachment config"), *Component->GetName());
-}
-
-void AVNCharacter::SetupComponentFromConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Attachment& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("SetupComponentFromConfig: PaperSpriteComponent is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return; // Если компонент невидим, дальше не настраиваем
-	}
-
-	// Загружаем и устанавливаем Sprite
-	if (!Config.Sprite.IsNull())
-	{
-		if (UPaperSprite* LoadedSprite = Config.Sprite.LoadSynchronous())
-		{
-			Component->SetSprite(LoadedSprite);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load Sprite for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSprite(nullptr);
-	}
-
-	// Настраиваем прикрепление к Skeletal Mesh компонентам
-	if (Config.AttachTo != E_SpriteAttachmentTarget::None)
-	{
-		USkeletalMeshComponent* AttachTarget = nullptr;
-		
-		switch (Config.AttachTo)
-		{
-			case E_SpriteAttachmentTarget::Body_Skeletal:
-				AttachTarget = Body_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Arms_Skeletal:
-				AttachTarget = Arms_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Head_Skeletal:
-				AttachTarget = Head_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom01_Skeletal:
-				AttachTarget = Custom01_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom02_Skeletal:
-				AttachTarget = Custom02_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom03_Skeletal:
-				AttachTarget = Custom03_Skeletal;
-				break;
-			default:
-				VN_LOG_WARNING(TEXT("Unknown sprite attachment target for component %s"), *Component->GetName());
-				break;
-		}
-
-		if (AttachTarget && Config.bUseSocketTransform && !Config.SocketName.IsNone())
-		{
-			// Прикрепляем к сокету
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepWorldTransform, Config.SocketName);
-		}
-		else if (AttachTarget)
-		{
-			// Прикрепляем к компоненту без сокета
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepRelativeTransform);
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = Component->GetRelativeTransform();
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	FLinearColor FinalColor = GetTargetColorForComponent(Component);
-	SetComponentColor(Component, FinalColor);
-
-	VN_LOG_DEBUG(TEXT("Sprite component %s configured from Attachment config"), *Component->GetName());
-}
-
-void AVNCharacter::SetupComponentFromConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Simple& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("SetupComponentFromConfig: PaperSpriteComponent is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return; // Если компонент невидим, дальше не настраиваем
-	}
-
-	// Загружаем и устанавливаем Sprite
-	if (!Config.Sprite.IsNull())
-	{
-		if (UPaperSprite* LoadedSprite = Config.Sprite.LoadSynchronous())
-		{
-			Component->SetSprite(LoadedSprite);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load Sprite for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSprite(nullptr);
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = Component->GetRelativeTransform();
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	FLinearColor FinalColor = GetTargetColorForComponent(Component);
-	SetComponentColor(Component, FinalColor);
-
-	VN_LOG_DEBUG(TEXT("Sprite component %s configured from Simple config"), *Component->GetName());
-}
-
-// =====================================================
-// УТИЛИТЫ ДЛЯ РАБОТЫ С КОМПОНЕНТАМИ
-// =====================================================
-
-void AVNCharacter::SetComponentAlpha(USceneComponent* Component, float Alpha)
-{
-	if (!Component)
-	{
-		return;
-	}
-
-	Alpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
-
-	// Для Skeletal Mesh компонентов
-	if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component))
-	{
-		// Создаем или получаем динамический материал
-		for (int32 i = 0; i < SkeletalMesh->GetNumMaterials(); ++i)
-		{
-			UMaterialInterface* BaseMaterial = SkeletalMesh->GetMaterial(i);
-			if (BaseMaterial)
-			{
-				UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamic(i);
-				if (DynamicMaterial)
-				{
-					DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
-				}
-			}
-		}
-	}
-	// Для Sprite компонентов
-	else if (UPaperSpriteComponent* SpriteComponent = Cast<UPaperSpriteComponent>(Component))
-	{
-		// Получаем текущий цвет и изменяем альфа
-		FLinearColor CurrentColor = SpriteComponent->GetSpriteColor();
-		CurrentColor.A = Alpha;
-		SpriteComponent->SetSpriteColor(CurrentColor);
-	}
-}
-
-void AVNCharacter::SetComponentColor(USceneComponent* Component, const FLinearColor& Color)
-{
-	if (!Component)
-	{
-		return;
-	}
-
-	// Для Skeletal Mesh компонентов
-	if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component))
-	{
-		// Создаем или получаем динамический материал
-		for (int32 i = 0; i < SkeletalMesh->GetNumMaterials(); ++i)
-		{
-			UMaterialInterface* BaseMaterial = SkeletalMesh->GetMaterial(i);
-			if (BaseMaterial)
-			{
-				UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamic(i);
-				if (DynamicMaterial)
-				{
-					DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
-					DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Color.A);
-				}
-			}
-		}
-	}
-	// Для Sprite компонентов
-	else if (UPaperSpriteComponent* SpriteComponent = Cast<UPaperSpriteComponent>(Component))
-	{
-		SpriteComponent->SetSpriteColor(Color);
-	}
-}
-
-USkeletalMeshComponent* AVNCharacter::GetSkeletalComponent(E_VN_ComponentID_Skeletal ComponentID) const
-{
-	switch (ComponentID)
-	{
-		case E_VN_ComponentID_Skeletal::Body:
-			return Body_Skeletal;
-		case E_VN_ComponentID_Skeletal::Arms:
-			return Arms_Skeletal;
-		case E_VN_ComponentID_Skeletal::Head:
-			return Head_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom01:
-			return Custom01_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom02:
-			return Custom02_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom03:
-			return Custom03_Skeletal;
-		default:
-			return nullptr;
-	}
-}
-
-UPaperSpriteComponent* AVNCharacter::GetSpriteComponent(E_VN_ComponentID_Sprite ComponentID) const
-{
-	switch (ComponentID)
-	{
-		case E_VN_ComponentID_Sprite::Body:
-			return Body_Sprite;
-		case E_VN_ComponentID_Sprite::Arms:
-			return Arms_Sprite;
-		case E_VN_ComponentID_Sprite::Head:
-			return Head_Sprite;
-		case E_VN_ComponentID_Sprite::Eyebrow:
-			return Eyebrow_Sprite;
-		case E_VN_ComponentID_Sprite::Eyes:
-			return Eyes_Sprite;
-		case E_VN_ComponentID_Sprite::Eyelids:
-			return Eyelids_Sprite;
-		case E_VN_ComponentID_Sprite::Wink:
-			return Wink_Sprite;
-		case E_VN_ComponentID_Sprite::Mouth:
-			return Mouth_Sprite;
-		case E_VN_ComponentID_Sprite::BodyShadow:
-			return BodyShadow_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_01:
-			return EmotionHead01_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_02:
-			return EmotionHead02_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_03:
-			return EmotionHead03_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_01:
-			return EmotionBody01_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_02:
-			return EmotionBody02_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_03:
-			return EmotionBody03_Sprite;
-		default:
-			return nullptr;
-	}
-}
-
-TArray<USceneComponent*> AVNCharacter::GetAllRenderComponents() const
-{
-	TArray<USceneComponent*> Components;
-	
-	// Добавляем все Skeletal Mesh компоненты
-	TArray<USkeletalMeshComponent*> SkeletalComponents = GetAllSkeletalComponents();
-	for (USkeletalMeshComponent* Component : SkeletalComponents)
-	{
-		if (Component)
-		{
-			Components.Add(Component);
-		}
-	}
-	
-	// Добавляем все Sprite компоненты
-	TArray<UPaperSpriteComponent*> SpriteComponents = GetAllSpriteComponents();
-	for (UPaperSpriteComponent* Component : SpriteComponents)
-	{
-		if (Component)
-		{
-			Components.Add(Component);
-		}
-	}
-	
-	return Components;
-}
-
-TArray<USkeletalMeshComponent*> AVNCharacter::GetAllSkeletalComponents() const
-{
-	TArray<USkeletalMeshComponent*> Components;
-	
-	Components.Add(Body_Skeletal);
-	Components.Add(Arms_Skeletal);
-	Components.Add(Head_Skeletal);
-	Components.Add(Custom01_Skeletal);
-	Components.Add(Custom02_Skeletal);
-	Components.Add(Custom03_Skeletal);
-	
-	// Удаляем null указатели
-	Components.RemoveAll([](USkeletalMeshComponent* Component) { return Component == nullptr; });
-	
-	return Components;
-}
-
-TArray<UPaperSpriteComponent*> AVNCharacter::GetAllSpriteComponents() const
-{
-	TArray<UPaperSpriteComponent*> Components;
-	
-	Components.Add(Body_Sprite);
-	Components.Add(Arms_Sprite);
-	Components.Add(Head_Sprite);
-	Components.Add(Eyebrow_Sprite);
-	Components.Add(Eyes_Sprite);
-	Components.Add(Eyelids_Sprite);
-	Components.Add(Wink_Sprite);
-	Components.Add(Mouth_Sprite);
-	Components.Add(BodyShadow_Sprite);
-	Components.Add(EmotionHead01_Sprite);
-	Components.Add(EmotionHead02_Sprite);
-	Components.Add(EmotionHead03_Sprite);
-	Components.Add(EmotionBody01_Sprite);
-	Components.Add(EmotionBody02_Sprite);
-	Components.Add(EmotionBody03_Sprite);
-	
-	// Удаляем null указатели
-	Components.RemoveAll([](UPaperSpriteComponent* Component) { return Component == nullptr; });
-	
-	return Components;
-}
-
-// =====================================================
-// ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
-// =====================================================
-
-bool AVNCharacter::ValidateCharacterState(const F_VN_CharacterState& State) const
-{
-	if (!State.IsValid())
-	{
-		VN_LOG_WARNING(TEXT("Character state is invalid: StateID is None"));
-		return false;
-	}
-
-	// Проверяем, что состояние содержит хотя бы один видимый компонент
-	if (!State.HasVisibleComponents())
-	{
-		VN_LOG_WARNING(TEXT("Character state '%s' has no visible components"), *State.StateID.ToString());
-		return false;
-	}
-
-	// Детальная валидация ассетов
-	return ValidateAssets(State);
-}
-
-bool AVNCharacter::ValidateAssets(const F_VN_CharacterState& State) const
-{
-	bool bIsValid = true;
-	TArray<FString> ValidationErrors = State.GetDetailedValidationErrors();
-	
-	if (ValidationErrors.Num() > 0)
-	{
-		FString ErrorMessage = FString::Printf(TEXT("Asset validation failed for state '%s':"), 
-			*State.StateID.ToString());
-		
-		for (const FString& Error : ValidationErrors)
-		{
-			ErrorMessage += FString::Printf(TEXT("\n- %s"), *Error);
-		}
-		
-		VN_LOG_WARNING(TEXT("%s"), *ErrorMessage);
-		bIsValid = false;
-	}
-	
-	return bIsValid;
-}
-
-void AVNCharacter::ApplyMobileOptimizations()
-{
-#if VN_CHARACTER_SYSTEM_MOBILE
-	if (RenderSettings.bDisableShadowsOnMobile)
-	{
-		// Отключаем тени для всех Sprite компонентов
-		TArray<UPaperSpriteComponent*> SpriteComponents = GetAllSpriteComponents();
-		for (UPaperSpriteComponent* Sprite : SpriteComponents)
-		{
-			if (Sprite)
-			{
-				Sprite->SetCastShadow(false);
-			}
-		}
-		
-		VN_LOG_DEBUG(TEXT("Mobile optimization: Shadows disabled for sprites"));
-	}
-	
-	if (RenderSettings.bUseSimplifiedMaterialsOnMobile)
-	{
-		// Здесь можно добавить логику замены материалов на упрощенные версии
-		VN_LOG_DEBUG(TEXT("Mobile optimization: Simplified materials applied"));
-	}
-#endif
-}
-
-void AVNCharacter::UpdateLOD()
-{
-	if (!RenderSettings.bEnableLOD)
-	{
-		return;
-	}
-
-	// Получаем расстояние до камеры игрока
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-	{
-		if (APawn* PlayerPawn = PC->GetPawn())
-		{
-			float Distance = FVector::Dist(GetActorLocation(), PlayerPawn->GetActorLocation());
-			bool bShouldUseHighLOD = Distance < RenderSettings.LODDistance;
-			
-			// Переключаем LOD для всех Skeletal Mesh компонентов
-			TArray<USkeletalMeshComponent*> SkeletalComponents = GetAllSkeletalComponents();
-			for (USkeletalMeshComponent* Component : SkeletalComponents)
-			{
-				if (Component)
-				{
-					Component->SetForcedLOD(bShouldUseHighLOD ? 0 : 1);
-				}
-			}
-		}
-	}
-}
-
-bool AVNCharacter::IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const
-{
-	if (!Sprite || !Head_Sprite) return false;
-	
-	// Проверяем, является ли спрайт одним из лицевых элементов
-	return (Sprite == Eyebrow_Sprite ||
-			Sprite == Eyes_Sprite ||
-			Sprite == Eyelids_Sprite ||
-			Sprite == Wink_Sprite ||
-			Sprite == Mouth_Sprite ||
-			Sprite == EmotionHead01_Sprite ||
-			Sprite == EmotionHead02_Sprite ||
-			Sprite == EmotionHead03_Sprite);
-}
-
-// =====================================================
 // ОБРАБОТЧИКИ СОБЫТИЙ АНИМАЦИИ
 // =====================================================
 
 void AVNCharacter::OnAnimationStarted(EVNAnimationType AnimationType)
+{
+	// Преобразуем enum в строку вручную
+	FString AnimationTypeName;
+	switch (AnimationType)
+	{
+		case EVNAnimationType::None:
+			AnimationTypeName = TEXT("None");
+			break;
+		case EVNAnimationType::Transition:
+			AnimationTypeName = TEXT("Transition");
+			break;
+		case EVNAnimationType::SpawnDespawn:
+			AnimationTypeName = TEXT("SpawnDespawn");
+			break;
+		case EVNAnimationType::Focus:
+			AnimationTypeName = TEXT("Focus");
+			break;
+		default:
+			AnimationTypeName = TEXT("Unknown");
+			break;
+	}
+
+	VN_LOG_DEBUG(TEXT("Animation started: %s"), *AnimationTypeName);
+	
+	switch (AnimationType)
+	{
+		case EVNAnimationType::Transition:
+			// Дополнительная логика для начала перехода состояний
+			break;
+			
+		case EVNAnimationType::SpawnDespawn:
+			// Дополнительная логика для начала появления/исчезновения
+			break;
+			
+		case EVNAnimationType::Focus:
+			// Дополнительная логика для начала смены фокуса
+			break;
+
+		default:
+			VN_LOG_WARNING(TEXT("Unknown animation type in OnAnimationStarted: %d"), (int32)AnimationType);
+			break;
+	}
+}
+
+void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 {
 	// Преобразуем enum в строку вручную
 	FString AnimationTypeName;
@@ -1459,17 +613,15 @@ void AVNCharacter::OnAnimationProgress(EVNAnimationType AnimationType, float Pro
 	}
 }
 
-// =====================================================
-// ОТЛАДОЧНЫЕ МЕТОДЫ
-// =====================================================
-
 #if WITH_EDITOR
 void AVNCharacter::PrintDebugInfo()
 {
 	FString DebugInfo = TEXT("=== VN Character Debug Info ===\n");
 	
 	DebugInfo += FString::Printf(TEXT("Actor: %s\n"), *GetName());
+	DebugInfo += FString::Printf(TEXT("Character Name: %s\n"), *CharacterName);
 	DebugInfo += FString::Printf(TEXT("Current State: %s\n"), *CurrentState.StateID.ToString());
+	DebugInfo += FString::Printf(TEXT("Main Pose Preset: %s\n"), *MainPosePreset.StateID.ToString());
 	DebugInfo += FString::Printf(TEXT("Is In Focus: %s\n"), bIsInFocus ? TEXT("Yes") : TEXT("No"));
 	DebugInfo += FString::Printf(TEXT("Is Visible: %s\n"), IsVisible() ? TEXT("Yes") : TEXT("No"));
 	DebugInfo += FString::Printf(TEXT("Is Animating: %s\n"), IsAnimating() ? TEXT("Yes") : TEXT("No"));
@@ -1512,7 +664,8 @@ void AVNCharacter::PrintDebugInfo()
 	DebugInfo += FString::Printf(TEXT("Skeletal Components: %d\n"), SkeletalComponents.Num());
 	DebugInfo += FString::Printf(TEXT("Sprite Components: %d\n"), SpriteComponents.Num());
 	
-	DebugInfo += TEXT("\nState Summary: ") + CurrentState.GetSummary() + TEXT("\n");
+	DebugInfo += TEXT("\nCurrent State Summary: ") + CurrentState.GetSummary() + TEXT("\n");
+	DebugInfo += TEXT("Main Pose Preset Summary: ") + MainPosePreset.GetSummary() + TEXT("\n");
 	
 	VN_LOG(Log, TEXT("%s"), *DebugInfo);
 }
@@ -1572,47 +725,13 @@ void AVNCharacter::ValidateAllComponents()
 }
 #endif
 
-void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
-{
-	// Преобразуем enum в строку вручную
-	FString AnimationTypeName;
-	switch (AnimationType)
-	{
-		case EVNAnimationType::None:
-			AnimationTypeName = TEXT("None");
-			break;
-	case EVNAnimationType::Transition:
-		AnimationTypeName = TEXT("Transition");
-		break;
-	case EVNAnimationType::SpawnDespawn:
-		AnimationTypeName = TEXT("SpawnDespawn");
-		break;
-	case EVNAnimationType::Focus:
-		AnimationTypeName = TEXT("Focus");
-		break;
-	default:
-		AnimationTypeName = TEXT("Unknown");
-		break;
-	}
+// =====================================================
+// ЗАГЛУШКИ ДЛЯ МЕТОДОВ, РЕАЛИЗОВАННЫХ В ДРУГИХ ФАЙЛАХ
+// =====================================================
 
-	VN_LOG_DEBUG(TEXT("Animation started: %s"), *AnimationTypeName);
-	
-	switch (AnimationType)
-	{
-	case EVNAnimationType::Transition:
-		// Дополнительная логика для начала перехода состояний
-		break;
-			
-	case EVNAnimationType::SpawnDespawn:
-		// Дополнительная логика для начала появления/исчезновения
-		break;
-			
-	case EVNAnimationType::Focus:
-		// Дополнительная логика для начала смены фокуса
-		break;
+// ПРИМЕЧАНИЕ: Эти методы реализованы в соответствующих .cpp файлах:
+// - VNCharacter_ComponentSetup.cpp
+// - VNCharacter_DialogueSystem.cpp  
+// - VNCharacter_Utilities.cpp
 
-	default:
-		VN_LOG_WARNING(TEXT("Unknown animation type in OnAnimationStarted: %d"), (int32)AnimationType);
-		break;
-	}
-}
+// Здесь остаются только объявления, если они нужны для связывания

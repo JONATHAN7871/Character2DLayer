@@ -21,9 +21,10 @@ class UMaterialInstanceDynamic;
  * 
  * Обеспечивает:
  * - Управление всеми компонентами (Skeletal Mesh + Sprites)
- * - Применение состояний персонажа
+ * - Применение состояний персонажа и частичных изменений
  * - Интеграцию с менеджером анимаций
  * - Систему фокуса и видимости
+ * - Поддержку диалоговой системы
  * - Валидацию и обработку ошибок
  */
 
@@ -167,6 +168,28 @@ public:
 	void SetCharacterState(const F_VN_CharacterState& NewState, float TransitionDuration = 1.0f);
 
 	/**
+	 * Применить частичное состояние персонажа (только заполненные поля)
+	 * @param PartialState Частичное состояние (пустые поля игнорируются)
+	 * @param TransitionDuration Длительность анимации перехода
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character")
+	void ApplyPartialState(const F_VN_CharacterState& PartialState, float TransitionDuration = 1.0f);
+
+	/**
+	 * Установить главный пресет позы
+	 * @param NewPosePreset Новый пресет позы
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character")
+	void SetMainPosePreset(const F_VN_CharacterState& NewPosePreset);
+
+	/**
+	 * Вернуться к главному пресету позы
+	 * @param TransitionDuration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character")
+	void ReturnToMainPose(float TransitionDuration = 1.0f);
+
+	/**
 	 * Получить текущее состояние персонажа
 	 * @return Текущее состояние
 	 */
@@ -174,10 +197,80 @@ public:
 	const F_VN_CharacterState& GetCurrentState() const { return CurrentState; }
 
 	/**
+	 * Получить главный пресет позы
+	 * @return Главный пресет
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character")
+	const F_VN_CharacterState& GetMainPosePreset() const { return MainPosePreset; }
+
+	/**
 	 * Пропустить анимацию перехода состояния
 	 */
 	UFUNCTION(BlueprintCallable, Category = "VN Character")
 	void SkipTransition();
+
+	// =====================================================
+	// МЕТОДЫ ДЛЯ ДИАЛОГОВОЙ СИСТЕМЫ - ОТДЕЛЬНЫЕ КОМПОНЕНТЫ
+	// =====================================================
+
+	/**
+	 * Установить спрайт глаз (null = вернуться к пресету или скрыть)
+	 * @param EyesSprite Новый спрайт глаз или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetEyes(TSoftObjectPtr<UPaperSprite> EyesSprite, bool bAnimate = true, float Duration = 0.5f);
+
+	/**
+	 * Установить спрайт рта (null = вернуться к пресету или скрыть)
+	 * @param MouthSprite Новый спрайт рта или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetMouth(TSoftObjectPtr<UPaperSprite> MouthSprite, bool bAnimate = true, float Duration = 0.5f);
+
+	/**
+	 * Установить спрайт бровей (null = вернуться к пресету или скрыть)
+	 * @param EyebrowSprite Новый спрайт бровей или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetEyebrows(TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate = true, float Duration = 0.5f);
+
+	/**
+	 * Установить Skeletal Mesh тела (null = вернуться к пресету или скрыть)
+	 * @param BodyMesh Новый mesh тела или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetBody(TSoftObjectPtr<USkeletalMesh> BodyMesh, bool bAnimate = true, float Duration = 1.0f);
+
+	/**
+	 * Установить Skeletal Mesh рук (null = вернуться к пресету или скрыть)
+	 * @param ArmsMesh Новый mesh рук или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetArms(TSoftObjectPtr<USkeletalMesh> ArmsMesh, bool bAnimate = true, float Duration = 1.0f);
+
+	/**
+	 * Установить лицо целиком (любой параметр может быть null)
+	 * @param EyesSprite Спрайт глаз или null
+	 * @param MouthSprite Спрайт рта или null
+	 * @param EyebrowSprite Спрайт бровей или null
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, 
+	             TSoftObjectPtr<UPaperSprite> MouthSprite, 
+	             TSoftObjectPtr<UPaperSprite> EyebrowSprite, 
+	             bool bAnimate = true, float Duration = 0.5f);
 
 	// =====================================================
 	// СИСТЕМА ФОКУСА
@@ -262,6 +355,87 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character")
 	FLinearColor GetBaseColorForComponent(USceneComponent* Component) const;
 
+	// =====================================================
+	// ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ (BLUEPRINT ДОСТУПНЫЕ)
+	// =====================================================
+
+	/**
+	 * Безопасно установить имя персонажа
+	 * @param NewName Новое имя персонажа
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Identity")
+	void SetCharacterNameSafe(const FString& NewName);
+
+	/**
+	 * Безопасно получить имя персонажа
+	 * @return Имя персонажа или "Unnamed Character" если пусто
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Identity")
+	FString GetCharacterNameSafe() const;
+
+	/**
+	 * Проверить, есть ли главный пресет позы
+	 * @return true если пресет настроен и валиден
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Pose")
+	bool HasMainPosePreset() const;
+
+	/**
+	 * Получить описание текущего состояния
+	 * @return Строковое описание состояния
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Info")
+	FString GetCurrentStateDescription() const;
+
+	/**
+	 * Получить детальный статус персонажа
+	 * @return Детальная информация о персонаже
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Info")
+	FString GetDetailedStatusString() const;
+
+	/**
+	 * Скрыть все элементы лица
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void HideAllFacialFeatures(bool bAnimate = true, float Duration = 0.5f);
+
+	/**
+	 * Восстановить все элементы лица из пресета
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Dialogue")
+	void RestoreAllFacialFeaturesFromPreset(bool bAnimate = true, float Duration = 0.5f);
+
+	/**
+	 * Установить глобальный тинт для всех компонентов
+	 * @param TintColor Цвет тинта
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Effects")
+	void SetGlobalTint(const FLinearColor& TintColor, bool bAnimate = false, float Duration = 1.0f);
+
+	/**
+	 * Сбросить глобальный тинт к белому цвету
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Effects")
+	void ResetGlobalTint(bool bAnimate = false, float Duration = 1.0f);
+
+	/**
+	 * Установить глобальную альфу для всех компонентов
+	 * @param Alpha Значение альфы (0.0 - 1.0)
+	 * @param bAnimate Использовать анимацию
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Effects")
+	void SetGlobalAlpha(float Alpha, bool bAnimate = false, float Duration = 1.0f);
+
 protected:
 	// =====================================================
 	// НАСТРОЙКИ ПЕРСОНАЖА
@@ -270,6 +444,14 @@ protected:
 	/** Текущее состояние персонажа */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character State")
 	F_VN_CharacterState CurrentState;
+
+	/** Имя персонажа для поиска и идентификации */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character|Identity")
+	FString CharacterName = TEXT("Unnamed Character");
+
+	/** Главный пресет позы для возврата к базовому состоянию */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character|Pose")
+	F_VN_CharacterState MainPosePreset;
 
 	/** Настройки рендеринга */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Rendering")
@@ -329,7 +511,7 @@ protected:
 
 private:
 	// =====================================================
-	// ВНУТРЕННИЕ МЕТОДЫ
+	// ВНУТРЕННИЕ МЕТОДЫ - ОСНОВНАЯ ЛОГИКА
 	// =====================================================
 
 	/** Создание всех компонентов */
@@ -346,6 +528,23 @@ private:
 
 	/** Завершение и очистка анимации перехода */
 	void FinishAndCleanupTransition();
+
+	// =====================================================
+	// МЕТОДЫ ДЛЯ ОБРАБОТКИ NULL ЗНАЧЕНИЙ
+	// =====================================================
+
+	/** Получить конфигурацию из пресета или создать скрытую */
+	F_VN_SpriteConfig_Simple GetConfigFromPresetOrHidden_Eyes(TSoftObjectPtr<UPaperSprite> Sprite) const;
+	F_VN_SpriteConfig_Simple GetConfigFromPresetOrHidden_Mouth(TSoftObjectPtr<UPaperSprite> Sprite) const;
+	F_VN_SpriteConfig_Simple GetConfigFromPresetOrHidden_Eyebrows(TSoftObjectPtr<UPaperSprite> Sprite) const;
+	F_VN_SkeletalConfig_Body GetConfigFromPresetOrHidden_Body(TSoftObjectPtr<USkeletalMesh> Mesh) const;
+	F_VN_SkeletalConfig_Attachment GetConfigFromPresetOrHidden_Arms(TSoftObjectPtr<USkeletalMesh> Mesh) const;
+
+	/** Проверить, заполнена ли конфигурация */
+	bool IsSkeletalBodyConfigFilled(const F_VN_SkeletalConfig_Body& Config) const;
+	bool IsSkeletalAttachmentConfigFilled(const F_VN_SkeletalConfig_Attachment& Config) const;
+	bool IsSpriteSimpleConfigFilled(const F_VN_SpriteConfig_Simple& Config) const;
+	bool IsSpriteAttachmentConfigFilled(const F_VN_SpriteConfig_Attachment& Config) const;
 
 	// =====================================================
 	// МЕТОДЫ НАСТРОЙКИ КОМПОНЕНТОВ
@@ -390,6 +589,70 @@ private:
 
 	/** Проверка, является ли спрайт дочерним элементом Head_Sprite */
 	bool IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const;
+
+	// =====================================================
+	// ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ ДЛЯ ДИАЛОГОВОЙ СИСТЕМЫ
+	// =====================================================
+
+	/** Проверить, видим ли конкретный спрайт компонент */
+	bool IsComponentCurrentlyVisible(E_VN_ComponentID_Sprite ComponentID) const;
+
+	/** Проверить, видим ли конкретный Skeletal компонент */
+	bool IsComponentCurrentlyVisible(E_VN_ComponentID_Skeletal ComponentID) const;
+
+	/** Получить описание главного пресета */
+	FString GetMainPosePresetDescription() const;
+
+	/** Проверить, можно ли применить частичное состояние */
+	bool CanApplyPartialState(const F_VN_CharacterState& PartialState) const;
+
+	/** Проверить, эквивалентно ли состояние текущему */
+	bool IsStateEquivalentToCurrent(const F_VN_CharacterState& State) const;
+
+	/** Проверить, эквивалентно ли состояние главному пресету */
+	bool IsStateEquivalentToMainPose(const F_VN_CharacterState& State) const;
+
+	/** Сбросить к состоянию по умолчанию */
+	void ResetToDefaultState();
+
+	/** Скопировать текущее состояние в главный пресет */
+	void CopyCurrentStateToMainPose();
+
+	/** Установить глаза из пресета */
+	bool SetEyesFromPreset();
+
+	/** Установить рот из пресета */
+	bool SetMouthFromPreset();
+
+	/** Установить брови из пресета */
+	bool SetEyebrowsFromPreset();
+
+	/** Установить тело из пресета */
+	bool SetBodyFromPreset();
+
+	/** Установить руки из пресета */
+	bool SetArmsFromPreset();
+
+	/** Получить количество видимых Skeletal компонентов */
+	int32 GetVisibleSkeletalComponentsCount() const;
+
+	/** Получить количество видимых Sprite компонентов */
+	int32 GetVisibleSpriteComponentsCount() const;
+
+	/** Получить список имен видимых компонентов */
+	TArray<FString> GetVisibleComponentNames() const;
+
+	/** Проверить, валидно ли текущее состояние */
+	bool HasValidCurrentState() const;
+
+	/** Проверить, валиден ли главный пресет */
+	bool HasValidMainPosePreset() const;
+
+	/** Внутренний метод установки состояния с опциональной валидацией */
+	void SetCharacterStateInternal(const F_VN_CharacterState& NewState, float TransitionDuration, bool bValidate);
+    
+	/** Селективная валидация ассетов только для заполненных конфигураций */
+	bool ValidateAssetsSelectively(const F_VN_CharacterState& State) const;
 
 	// =====================================================
 	// ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
