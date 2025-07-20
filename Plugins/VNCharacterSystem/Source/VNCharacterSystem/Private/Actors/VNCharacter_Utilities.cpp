@@ -2,7 +2,7 @@
  * VNCharacter_Utilities.cpp
  * 
  * Модуль утилит и валидации для VN Character System
- * Содержит вспомогательные методы, валидацию, оптимизации
+ * Содержит вспомогательные методы, упрощенную валидацию, оптимизации
  * и методы для получения компонентов.
  */
 
@@ -159,115 +159,7 @@ bool AVNCharacter::IsChildOfHeadSprite(UPaperSpriteComponent* Sprite) const
 }
 
 // =====================================================
-// ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
-// =====================================================
-
-bool AVNCharacter::ValidateCharacterState(const F_VN_CharacterState& State) const
-{
-	if (!State.IsValid())
-	{
-		VN_LOG_WARNING(TEXT("Character state is invalid: StateID is None"));
-		return false;
-	}
-
-	// =============== ВАЖНОЕ ИСПРАВЛЕНИЕ ===============
-	// Для частичных состояний (создаваемых методами SetEyes, SetMouth и т.д.)
-	// НЕ требуем, чтобы все компоненты были заполнены
-    
-	// Проверяем только, что есть хотя бы один видимый компонент ИЛИ
-	// что это частичное обновление существующего состояния
-	bool bHasVisibleComponents = State.HasVisibleComponents();
-	bool bIsPartialUpdate = (State.StateID.ToString().Contains(TEXT("Change")) || 
-							State.StateID.ToString().Contains(TEXT("Update")));
-    
-	if (!bHasVisibleComponents && !bIsPartialUpdate)
-	{
-		VN_LOG_WARNING(TEXT("Character state '%s' has no visible components"), *State.StateID.ToString());
-		return false;
-	}
-
-	// Валидация ассетов только для заполненных конфигураций
-	return ValidateAssetsSelectively(State);
-}
-
-bool AVNCharacter::ValidateAssetsSelectively(const F_VN_CharacterState& State) const
-{
-    bool bIsValid = true;
-    TArray<FString> ValidationErrors;
-    
-    // Проверяем только заполненные Skeletal конфигурации
-    if (IsSkeletalBodyConfigFilled(State.BodyConfig) && State.BodyConfig.bVisible && State.BodyConfig.SkeletalMesh.IsNull())
-    {
-        ValidationErrors.Add(TEXT("BodyConfig: SkeletalMesh is null but component is visible"));
-        bIsValid = false;
-    }
-    
-    if (IsSkeletalAttachmentConfigFilled(State.ArmsConfig) && State.ArmsConfig.bVisible && State.ArmsConfig.SkeletalMesh.IsNull())
-    {
-        ValidationErrors.Add(TEXT("ArmsConfig: SkeletalMesh is null but component is visible"));
-        bIsValid = false;
-    }
-    
-    if (IsSkeletalAttachmentConfigFilled(State.HeadConfig) && State.HeadConfig.bVisible && State.HeadConfig.SkeletalMesh.IsNull())
-    {
-        ValidationErrors.Add(TEXT("HeadConfig: SkeletalMesh is null but component is visible"));
-        bIsValid = false;
-    }
-    
-    // Проверяем только заполненные Sprite конфигурации
-    if (IsSpriteSimpleConfigFilled(State.EyesSpriteConfig) && State.EyesSpriteConfig.bVisible && State.EyesSpriteConfig.Sprite.IsNull())
-    {
-        ValidationErrors.Add(TEXT("EyesSpriteConfig: Sprite is null but component is visible"));
-        bIsValid = false;
-    }
-    
-    if (IsSpriteSimpleConfigFilled(State.MouthSpriteConfig) && State.MouthSpriteConfig.bVisible && State.MouthSpriteConfig.Sprite.IsNull())
-    {
-        ValidationErrors.Add(TEXT("MouthSpriteConfig: Sprite is null but component is visible"));
-        bIsValid = false;
-    }
-    
-    // Выводим ошибки валидации только если они есть
-    if (!bIsValid && ValidationErrors.Num() > 0)
-    {
-        FString ErrorMessage = FString::Printf(TEXT("Asset validation failed for state '%s':"), 
-            *State.StateID.ToString());
-        
-        for (const FString& Error : ValidationErrors)
-        {
-            ErrorMessage += FString::Printf(TEXT("\n- %s"), *Error);
-        }
-        
-        VN_LOG_WARNING(TEXT("%s"), *ErrorMessage);
-    }
-    
-    return bIsValid;
-}
-
-bool AVNCharacter::ValidateAssets(const F_VN_CharacterState& State) const
-{
-	bool bIsValid = true;
-	TArray<FString> ValidationErrors = State.GetDetailedValidationErrors();
-	
-	if (ValidationErrors.Num() > 0)
-	{
-		FString ErrorMessage = FString::Printf(TEXT("Asset validation failed for state '%s':"), 
-			*State.StateID.ToString());
-		
-		for (const FString& Error : ValidationErrors)
-		{
-			ErrorMessage += FString::Printf(TEXT("\n- %s"), *Error);
-		}
-		
-		VN_LOG_WARNING(TEXT("%s"), *ErrorMessage);
-		bIsValid = false;
-	}
-	
-	return bIsValid;
-}
-
-// =====================================================
-// ОПТИМИЗАЦИИ И ПРОИЗВОДИТЕЛЬНОСТЬ
+// ОПТИМИЗАЦИИ И ПРОИЗВОДИТЕЛЬНОСТЬ (БЕЗ LOD)
 // =====================================================
 
 void AVNCharacter::ApplyMobileOptimizations()
@@ -294,34 +186,6 @@ void AVNCharacter::ApplyMobileOptimizations()
 		VN_LOG_DEBUG(TEXT("Mobile optimization: Simplified materials applied"));
 	}
 #endif
-}
-
-void AVNCharacter::UpdateLOD()
-{
-	if (!RenderSettings.bEnableLOD)
-	{
-		return;
-	}
-
-	// Получаем расстояние до камеры игрока
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-	{
-		if (APawn* PlayerPawn = PC->GetPawn())
-		{
-			float Distance = FVector::Dist(GetActorLocation(), PlayerPawn->GetActorLocation());
-			bool bShouldUseHighLOD = Distance < RenderSettings.LODDistance;
-			
-			// Переключаем LOD для всех Skeletal Mesh компонентов
-			TArray<USkeletalMeshComponent*> SkeletalComponents = GetAllSkeletalComponents();
-			for (USkeletalMeshComponent* Component : SkeletalComponents)
-			{
-				if (Component)
-				{
-					Component->SetForcedLOD(bShouldUseHighLOD ? 0 : 1);
-				}
-			}
-		}
-	}
 }
 
 // =====================================================

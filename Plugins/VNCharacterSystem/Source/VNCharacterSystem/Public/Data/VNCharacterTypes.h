@@ -86,9 +86,9 @@ struct VNCHARACTERSYSTEM_API F_VN_CharacterState
     // SPRITE CONFIGURATIONS - HEAD (ATTACHMENT + FACE ELEMENTS)
     // =====================================================
 
-    /** Базовый спрайт головы - ТЕПЕРЬ может прикрепляться к скелету */
+    /** Базовый спрайт головы - может прикрепляться к скелету */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Base")
-    F_VN_SpriteConfig_Attachment HeadSpriteConfig;  // ИЗМЕНЕНО: было Simple, стало Attachment
+    F_VN_SpriteConfig_Attachment HeadSpriteConfig;
 
     /** Брови (всегда прикреплены к Head_Sprite) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites|Head Facial")
@@ -138,7 +138,7 @@ struct VNCHARACTERSYSTEM_API F_VN_CharacterState
      */
     bool IsValid() const
     {
-        // Как минимум должно быть задано имя состояния
+        // Упрощенная валидация - проверяем только базовые требования
         return !StateID.IsNone();
     }
 
@@ -176,7 +176,6 @@ struct VNCHARACTERSYSTEM_API F_VN_CharacterState
     bool IsDifferentFrom(const F_VN_CharacterState& Other) const
     {
         // Сравниваем по StateID - это самый быстрый способ
-        // В реальной реализации можно добавить более детальное сравнение
         return StateID != Other.StateID;
     }
 
@@ -187,7 +186,7 @@ struct VNCHARACTERSYSTEM_API F_VN_CharacterState
     /** Проверка наличия видимых компонентов */
     bool HasVisibleComponents() const;
 
-    /** Валидация всех конфигураций */
+    /** Валидация всех конфигураций (упрощенная) */
     bool ValidateAllConfigs() const;
 
     /** Получение детальных ошибок валидации */
@@ -224,22 +223,13 @@ struct VNCHARACTERSYSTEM_API FVNCharacterStatePreset
 };
 
 /**
- * Настройки рендеринга для персонажа
- * Используется для оптимизации производительности
+ * Упрощенные настройки рендеринга для персонажа
+ * LOD система удалена для упрощения
  */
 USTRUCT(BlueprintType)
 struct VNCHARACTERSYSTEM_API FVNCharacterRenderSettings
 {
     GENERATED_BODY()
-
-    /** Включить LOD систему */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Performance")
-    bool bEnableLOD = true;
-
-    /** Расстояние для переключения LOD */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Performance", 
-        meta = (ClampMin = "100.0", ClampMax = "5000.0", EditCondition = "bEnableLOD"))
-    float LODDistance = 1000.0f;
 
     /** Отключать тени на мобильных устройствах */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mobile")
@@ -251,8 +241,6 @@ struct VNCHARACTERSYSTEM_API FVNCharacterRenderSettings
 
     FVNCharacterRenderSettings()
     {
-        bEnableLOD = true;
-        LODDistance = 1000.0f;
         bDisableShadowsOnMobile = true;
         bUseSimplifiedMaterialsOnMobile = true;
     }

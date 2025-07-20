@@ -25,7 +25,7 @@ class UMaterialInstanceDynamic;
  * - Интеграцию с менеджером анимаций
  * - Систему фокуса и видимости
  * - Поддержку диалоговой системы
- * - Валидацию и обработку ошибок
+ * - Упрощенную валидацию
  */
 
 // Делегаты для событий персонажа
@@ -47,6 +47,7 @@ protected:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 #endif
 
 public:
@@ -474,19 +475,23 @@ protected:
 	// =====================================================
 
 	/** Глобальное смещение для всех Skeletal Mesh компонентов */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform", 
+		meta = (CallInEditor = "true"))
 	FVector GlobalSkeletalOffset = FVector::ZeroVector;
 
 	/** Глобальный масштаб для всех Skeletal Mesh компонентов */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform", 
+		meta = (CallInEditor = "true"))
 	float GlobalSkeletalScale = 1.0f;
 
 	/** Глобальное смещение для всех Sprite компонентов */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform", 
+		meta = (CallInEditor = "true"))
 	FVector GlobalSpriteOffset = FVector::ZeroVector;
 
 	/** Глобальный масштаб для всех Sprite компонентов */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform", 
+		meta = (CallInEditor = "true"))
 	float GlobalSpriteScale = 1.0f;
 
 	// =====================================================
@@ -525,6 +530,18 @@ private:
 
 	/** Подготовка компонентов для анимации перехода */
 	void PrepareTransitionComponents(const F_VN_CharacterState& NewState);
+
+	/** Подготовка Skeletal Mesh компонента для анимации (Body) */
+	void PrepareSkeletalTransition(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Body& OldConfig, const F_VN_SkeletalConfig_Body& NewConfig);
+
+	/** Подготовка Skeletal Mesh компонента для анимации (Attachment) */
+	void PrepareSkeletalAttachmentTransition(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Attachment& OldConfig, const F_VN_SkeletalConfig_Attachment& NewConfig);
+
+	/** Подготовка Sprite компонента для анимации (Attachment) */
+	void PrepareSpriteAttachmentTransition(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Attachment& OldConfig, const F_VN_SpriteConfig_Attachment& NewConfig);
+
+	/** Подготовка Sprite компонента для анимации (Simple) */
+	void PrepareSpriteSimpleTransition(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Simple& OldConfig, const F_VN_SpriteConfig_Simple& NewConfig);
 
 	/** Завершение и очистка анимации перехода */
 	void FinishAndCleanupTransition();
@@ -650,19 +667,16 @@ private:
 
 	/** Внутренний метод установки состояния с опциональной валидацией */
 	void SetCharacterStateInternal(const F_VN_CharacterState& NewState, float TransitionDuration, bool bValidate);
-    
-	/** Селективная валидация ассетов только для заполненных конфигураций */
-	bool ValidateAssetsSelectively(const F_VN_CharacterState& State) const;
 
 	// =====================================================
-	// ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
+	// УПРОЩЕННАЯ ВАЛИДАЦИЯ И ОБРАБОТКА ОШИБОК
 	// =====================================================
 
-	/** Валидация состояния персонажа */
-	bool ValidateCharacterState(const F_VN_CharacterState& State) const;
+	/** Упрощенная валидация состояния персонажа */
+	bool ValidateCharacterStateSimple(const F_VN_CharacterState& State) const;
 
-	/** Проверка корректности ассетов */
-	bool ValidateAssets(const F_VN_CharacterState& State) const;
+	/** Автоматическая коррекция состояния (заполнение пустых элементов) */
+	F_VN_CharacterState CorrectCharacterState(const F_VN_CharacterState& State) const;
 
 	/** Применение мобильных оптимизаций */
 	void ApplyMobileOptimizations();
@@ -676,8 +690,8 @@ private:
 	/** Применение глобальных настроек к спрайтам */
 	void ApplyGlobalSpriteTransforms();
 
-	/** Обновление LOD системы */
-	void UpdateLOD();
+	/** Обновление персонажа для предварительного просмотра в редакторе */
+	void UpdateCharacterPreview();
 
 	// =====================================================
 	// ОБРАБОТЧИКИ СОБЫТИЙ АНИМАЦИИ

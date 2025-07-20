@@ -6,16 +6,11 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 
-// УБИРАЕМ ВКЛЮЧЕНИЯ .cpp ФАЙЛОВ - они компилируются отдельно!
-// #include "Actors/VNCharacter_DialogueSystem.cpp"
-// #include "Actors/VNCharacter_ComponentSetup.cpp" 
-// #include "Actors/VNCharacter_Utilities.cpp"
-
 AVNCharacter::AVNCharacter()
 {
-	// Включаем тик для LOD системы
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = true;
+	// Отключаем тик - LOD система больше не нужна
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// Создаем все компоненты
 	CreateComponents();
@@ -151,12 +146,7 @@ void AVNCharacter::BeginPlay()
 void AVNCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// Обновляем LOD систему если включена
-	if (RenderSettings.bEnableLOD)
-	{
-		UpdateLOD();
-	}
+	// LOD система удалена - тик не нужен
 }
 
 #if WITH_EDITOR
@@ -168,17 +158,28 @@ void AVNCharacter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 	if (PropertyChangedEvent.Property && 
 		PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, CurrentState))
 	{
-		ApplyCharacterState(CurrentState);
+		UpdateCharacterPreview();
 		VN_LOG_DEBUG(TEXT("Character state updated in editor"));
 	}
 
-	// Если изменились настройки рендеринга
+	// Если изменились глобальные трансформации
 	if (PropertyChangedEvent.Property && 
-		PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, RenderSettings))
+		(PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, GlobalSkeletalOffset) ||
+		 PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, GlobalSkeletalScale) ||
+		 PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, GlobalSpriteOffset) ||
+		 PropertyChangedEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(AVNCharacter, GlobalSpriteScale)))
 	{
-		ApplyMobileOptimizations();
-		VN_LOG_DEBUG(TEXT("Render settings updated in editor"));
+		UpdateCharacterPreview();
+		VN_LOG_DEBUG(TEXT("Global transforms updated in editor"));
 	}
+}
+
+void AVNCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	
+	// Обновляем превью персонажа при изменениях в редакторе
+	UpdateCharacterPreview();
 }
 #endif
 
@@ -199,15 +200,19 @@ void AVNCharacter::SetCharacterStateInternal(const F_VN_CharacterState& NewState
 	VN_LOG_DEBUG(TEXT("Transition Duration: %.2f"), TransitionDuration);
 	VN_LOG_DEBUG(TEXT("Validate: %s"), bValidate ? TEXT("Yes") : TEXT("No"));
 
-	// Валидация нового состояния только если требуется
-	if (bValidate && !ValidateCharacterState(NewState))
+	// Упрощенная валидация и автокоррекция
+	F_VN_CharacterState CorrectedState = NewState;
+	if (bValidate)
 	{
-		VN_LOG_WARNING(TEXT("SetCharacterState: Invalid state provided for %s"), *GetName());
-		return;
+		if (!ValidateCharacterStateSimple(NewState))
+		{
+			VN_LOG_WARNING(TEXT("SetCharacterState: Invalid state provided, applying auto-correction"));
+		}
+		CorrectedState = CorrectCharacterState(NewState);
 	}
 
 	// Проверяем, действительно ли состояние изменилось
-	bool bStatesAreDifferent = (CurrentState.StateID != NewState.StateID);
+	bool bStatesAreDifferent = (CurrentState.StateID != CorrectedState.StateID);
 	VN_LOG_DEBUG(TEXT("States are different: %s"), bStatesAreDifferent ? TEXT("Yes") : TEXT("No"));
 
 	// Если есть активная анимация, пропускаем её
@@ -217,14 +222,26 @@ void AVNCharacter::SetCharacterStateInternal(const F_VN_CharacterState& NewState
 		AnimationManager->SkipCurrentAnimation();
 	}
 
+	// Подготавливаем компоненты для анимации перехода если нужна анимация
+	if (TransitionDuration > 0.0f && bStatesAreDifferent)
+	{
+		PrepareTransitionComponents(CorrectedState);
+	}
+
 	// Сохраняем новое состояние
 	F_VN_CharacterState PreviousState = CurrentState;
-	CurrentState = NewState;
+	CurrentState = CorrectedState;
 
 	VN_LOG_DEBUG(TEXT("State saved, now applying configuration"));
 
 	// Мгновенно применяем новое состояние
 	ApplyCharacterState(CurrentState);
+
+	// Запускаем анимацию перехода если нужно
+	if (TransitionDuration > 0.0f && bStatesAreDifferent && AnimationManager)
+	{
+		AnimationManager->PlayTransition(TransitionDuration);
+	}
 
 	VN_LOG_DEBUG(TEXT("=== SetCharacterStateInternal END ==="));
 
@@ -486,6 +503,152 @@ FLinearColor AVNCharacter::GetBaseColorForComponent(USceneComponent* Component) 
 
 	// По умолчанию возвращаем белый
 	return FLinearColor::White;
+}
+
+// =====================================================
+// УПРОЩЕННАЯ ВАЛИДАЦИЯ И АВТОКОРРЕКЦИЯ
+// =====================================================
+
+bool AVNCharacter::ValidateCharacterStateSimple(const F_VN_CharacterState& State) const
+{
+	// Упрощенная валидация - проверяем только базовые требования
+	if (State.StateID.IsNone())
+	{
+		VN_LOG_WARNING(TEXT("Character state has no StateID"));
+		return false;
+	}
+
+	return true; // Все остальное исправляем автоматически
+}
+
+F_VN_CharacterState AVNCharacter::CorrectCharacterState(const F_VN_CharacterState& State) const
+{
+	F_VN_CharacterState CorrectedState = State;
+
+	// Если StateID пустой, задаем дефолтный
+	if (CorrectedState.StateID.IsNone())
+	{
+		CorrectedState.StateID = FName("CorrectedState");
+	}
+
+	// Автокоррекция для Skeletal Mesh компонентов
+	// Если ассет отсутствует - скрываем компонент
+	if (CorrectedState.BodyConfig.bVisible && CorrectedState.BodyConfig.SkeletalMesh.IsNull())
+	{
+		CorrectedState.BodyConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: BodyConfig set to invisible (no mesh)"));
+	}
+
+	if (CorrectedState.ArmsConfig.bVisible && CorrectedState.ArmsConfig.SkeletalMesh.IsNull())
+	{
+		CorrectedState.ArmsConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: ArmsConfig set to invisible (no mesh)"));
+	}
+
+	if (CorrectedState.HeadConfig.bVisible && CorrectedState.HeadConfig.SkeletalMesh.IsNull())
+	{
+		CorrectedState.HeadConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: HeadConfig set to invisible (no mesh)"));
+	}
+
+	// Автокоррекция для Sprite компонентов
+	// Если ассет отсутствует - скрываем компонент, КРОМЕ Head_Sprite
+	if (CorrectedState.BodySpriteConfig.bVisible && CorrectedState.BodySpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.BodySpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: BodySpriteConfig set to invisible (no sprite)"));
+	}
+
+	if (CorrectedState.ArmsSpriteConfig.bVisible && CorrectedState.ArmsSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.ArmsSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: ArmsSpriteConfig set to invisible (no sprite)"));
+	}
+
+	// Head_Sprite НЕ скрываем автоматически, чтобы не потерять вложенные элементы
+	// Просто убираем спрайт, но оставляем видимость
+	if (CorrectedState.HeadSpriteConfig.Sprite.IsNull())
+	{
+		VN_LOG_DEBUG(TEXT("Auto-corrected: HeadSpriteConfig has no sprite but keeping visible for child components"));
+	}
+
+	// Обычные спрайты лица - скрываем если нет ассета
+	if (CorrectedState.EyesSpriteConfig.bVisible && CorrectedState.EyesSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EyesSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: EyesSpriteConfig set to invisible (no sprite)"));
+	}
+
+	if (CorrectedState.MouthSpriteConfig.bVisible && CorrectedState.MouthSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.MouthSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: MouthSpriteConfig set to invisible (no sprite)"));
+	}
+
+	if (CorrectedState.EyebrowSpriteConfig.bVisible && CorrectedState.EyebrowSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EyebrowSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: EyebrowSpriteConfig set to invisible (no sprite)"));
+	}
+
+	if (CorrectedState.EyelidsSpriteConfig.bVisible && CorrectedState.EyelidsSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EyelidsSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: EyelidsSpriteConfig set to invisible (no sprite)"));
+	}
+
+	if (CorrectedState.WinkSpriteConfig.bVisible && CorrectedState.WinkSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.WinkSpriteConfig.bVisible = false;
+		VN_LOG_DEBUG(TEXT("Auto-corrected: WinkSpriteConfig set to invisible (no sprite)"));
+	}
+
+	// Эмоциональные эффекты
+	if (CorrectedState.EmotionHeadEffect01SpriteConfig.bVisible && CorrectedState.EmotionHeadEffect01SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionHeadEffect01SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.EmotionHeadEffect02SpriteConfig.bVisible && CorrectedState.EmotionHeadEffect02SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionHeadEffect02SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.EmotionHeadEffect03SpriteConfig.bVisible && CorrectedState.EmotionHeadEffect03SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionHeadEffect03SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.EmotionBodyEffect01SpriteConfig.bVisible && CorrectedState.EmotionBodyEffect01SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionBodyEffect01SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.EmotionBodyEffect02SpriteConfig.bVisible && CorrectedState.EmotionBodyEffect02SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionBodyEffect02SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.EmotionBodyEffect03SpriteConfig.bVisible && CorrectedState.EmotionBodyEffect03SpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.EmotionBodyEffect03SpriteConfig.bVisible = false;
+	}
+
+	if (CorrectedState.BodyShadowSpriteConfig.bVisible && CorrectedState.BodyShadowSpriteConfig.Sprite.IsNull())
+	{
+		CorrectedState.BodyShadowSpriteConfig.bVisible = false;
+	}
+
+	return CorrectedState;
+}
+
+void AVNCharacter::UpdateCharacterPreview()
+{
+	// Применяем скорректированное состояние
+	F_VN_CharacterState CorrectedState = CorrectCharacterState(CurrentState);
+	ApplyCharacterState(CorrectedState);
+	
+	VN_LOG_DEBUG(TEXT("Character preview updated"));
 }
 
 // =====================================================
