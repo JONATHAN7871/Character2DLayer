@@ -293,45 +293,29 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		return;
 	}
 
-	// ПЕРЕРАБОТАННАЯ СИСТЕМА: Анимируем переходы между основными и fade компонентами
-	// Находим все видимые fade компоненты и анимируем их исчезновение
-	TArray<USceneComponent*> FadeComponents = Character->GetAllFadeComponents();
-	for (USceneComponent* FadeComponent : FadeComponents)
+	// --- НОВАЯ ЛОГИКА ---
+	// Анимируем только те компоненты, которые были помечены для перехода
+
+	// Fade Out: анимируем компоненты из списка FadingOutComponents
+	for (USceneComponent* FadeComponent : Character->GetFadingOutComponents())
 	{
-		if (FadeComponent && FadeComponent->IsVisible())
+		if (FadeComponent)
 		{
-			// Fade Out: от 1.0 до 0.0
 			Character->SetComponentAlpha(FadeComponent, 1.0f - Alpha);
 		}
 	}
 
-	// Находим все основные компоненты, которые должны появляться
-	TArray<USceneComponent*> MainComponents = Character->GetAllMainComponents();
-	for (USceneComponent* MainComponent : MainComponents)
+	// Fade In: анимируем компоненты из списка FadingInComponents
+	for (USceneComponent* MainComponent : Character->GetFadingInComponents())
 	{
-		if (MainComponent && MainComponent->IsVisible())
+		if (MainComponent)
 		{
-			// Проверяем, есть ли содержимое в компоненте
-			bool bHasContent = false;
-			
-			if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(MainComponent))
-			{
-				bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
-			}
-			else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(MainComponent))
-			{
-				bHasContent = (SpriteComp->GetSprite() != nullptr);
-			}
-
-			if (bHasContent)
-			{
-				// Fade In: от 0.0 до 1.0
-				Character->SetComponentAlpha(MainComponent, Alpha);
-			}
+			Character->SetComponentAlpha(MainComponent, Alpha);
 		}
 	}
 	
-	LogAnimation(FString::Printf(TEXT("Transition progress: %.2f"), Alpha), false);
+	LogAnimation(FString::Printf(TEXT("Transition progress: %.2f (FadingIn: %d, FadingOut: %d)"), 
+		Alpha, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()), false);
 }
 
 void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
@@ -584,6 +568,13 @@ void UVNCharacterAnimationManager::PrintDebugInfo()
 		MaxQueueSize, MinAnimationDuration, 
 		bDisableAnimations ? TEXT("Yes") : TEXT("No"),
 		bVerboseLogging ? TEXT("Yes") : TEXT("No"));
+
+	// Добавляем информацию о компонентах в анимации
+	if (OwnerCharacter.IsValid())
+	{
+		DebugInfo += FString::Printf(TEXT("Fading In Components: %d\n"), OwnerCharacter->GetFadingInComponents().Num());
+		DebugInfo += FString::Printf(TEXT("Fading Out Components: %d\n"), OwnerCharacter->GetFadingOutComponents().Num());
+	}
 
 	VN_LOG(Log, TEXT("%s"), *DebugInfo);
 }

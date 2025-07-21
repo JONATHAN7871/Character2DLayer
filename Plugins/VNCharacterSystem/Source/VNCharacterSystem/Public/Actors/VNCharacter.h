@@ -127,6 +127,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Components") USkeletalMeshComponent* GetSkeletalFadeComponent(E_VN_ComponentID_Skeletal ComponentID) const;
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Components") UPaperSpriteComponent* GetSpriteFadeComponent(E_VN_ComponentID_Sprite ComponentID) const;
 
+	/** Получить компоненты, которые должны плавно появляться */
+	const TSet<TObjectPtr<USceneComponent>>& GetFadingInComponents() const { return FadingInComponents; }
+
+	/** Получить компоненты, которые должны плавно исчезать */
+	const TSet<TObjectPtr<USceneComponent>>& GetFadingOutComponents() const { return FadingOutComponents; }
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character") FString CharacterName = TEXT("Unnamed Character");
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Rendering") FVNCharacterRenderSettings RenderSettings;
@@ -138,6 +144,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character Global Transform") float GlobalSpriteScale = 1.0f;
 
 private:
+	// --- СПИСКИ ДЛЯ ОТСЛЕЖИВАНИЯ АНИМАЦИИ ---
+	TSet<TObjectPtr<USceneComponent>> FadingInComponents;
+	TSet<TObjectPtr<USceneComponent>> FadingOutComponents;
+	
 	void CreateComponents();
 	void SetupComponentHierarchy();
 	void ResetComponentAttachmentToDefault(USceneComponent* ComponentToReset);

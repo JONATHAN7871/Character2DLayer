@@ -47,7 +47,35 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
     if (auto* Comp = GetSkeletalComponent(E_VN_ComponentID_Skeletal::Body))
     {
         const auto& Config = CharacterData->BodyConfig;
-        SetSkeletalMesh(E_VN_ComponentID_Skeletal::Body, Config.SkeletalMesh, bAnimate, 0.f);
+        
+        // КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет
+        bool bAssetChanged = false;
+        const USkeletalMesh* CurrentMesh = Comp->GetSkeletalMeshAsset();
+        
+        if (!CurrentMesh && !Config.SkeletalMesh.IsNull())
+        {
+            bAssetChanged = true; // Был пустым, стал непустым
+        }
+        else if (CurrentMesh && Config.SkeletalMesh.IsNull())
+        {
+            bAssetChanged = true; // Был непустым, стал пустым
+        }
+        else if (CurrentMesh && !Config.SkeletalMesh.IsNull())
+        {
+            bAssetChanged = (CurrentMesh->GetPathName() != Config.SkeletalMesh.ToString()); // Сравниваем пути
+        }
+
+        // Применяем меш только если он изменился и нужна анимация
+        if (bAnimate && bAssetChanged) {
+            if (auto* FadeComp = GetSkeletalFadeComponent(E_VN_ComponentID_Skeletal::Body)) {
+                PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+            }
+        } else {
+            // Мгновенное применение, если анимация отключена или ассет не изменился
+            ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+        }
+
+        // Остальные свойства применяются всегда
         if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
         for (const auto& Elem : Config.MaterialOverrides) {
             if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
@@ -61,7 +89,34 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
     // Handle Attachments using a lambda
     auto ApplySkeletalAttachConfig = [&](E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config) {
         if (auto* Comp = GetSkeletalComponent(ID)) {
-            SetSkeletalMesh(ID, Config.SkeletalMesh, bAnimate, 0.f);
+            // КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет
+            bool bAssetChanged = false;
+            const USkeletalMesh* CurrentMesh = Comp->GetSkeletalMeshAsset();
+            
+            if (!CurrentMesh && !Config.SkeletalMesh.IsNull())
+            {
+                bAssetChanged = true; // Был пустым, стал непустым
+            }
+            else if (CurrentMesh && Config.SkeletalMesh.IsNull())
+            {
+                bAssetChanged = true; // Был непустым, стал пустым
+            }
+            else if (CurrentMesh && !Config.SkeletalMesh.IsNull())
+            {
+                bAssetChanged = (CurrentMesh->GetPathName() != Config.SkeletalMesh.ToString()); // Сравниваем пути
+            }
+
+            // Применяем меш только если он изменился и нужна анимация
+            if (bAnimate && bAssetChanged) {
+                if (auto* FadeComp = GetSkeletalFadeComponent(ID)) {
+                    PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+                }
+            } else {
+                // Мгновенное применение, если анимация отключена или ассет не изменился
+                ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+            }
+
+            // Остальные свойства применяются всегда
             if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
             for (const auto& Elem : Config.MaterialOverrides) {
                 if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
@@ -78,6 +133,7 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
             if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
         }
     };
+    
     ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig);
     ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig);
     ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Config);
@@ -87,8 +143,35 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
     // --- Sprite (Attachment) Application ---
     auto ApplySpriteAttachConfig = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config) {
         if (auto* Comp = GetSpriteComponent(ID)) {
-             SetSprite(ID, Config.Sprite, bAnimate, 0.f);
-             if (Config.AttachTo != E_SpriteAttachmentTarget::None) {
+            // КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет
+            bool bAssetChanged = false;
+            const UPaperSprite* CurrentSprite = Comp->GetSprite();
+            
+            if (!CurrentSprite && !Config.Sprite.IsNull())
+            {
+                bAssetChanged = true; // Был пустым, стал непустым
+            }
+            else if (CurrentSprite && Config.Sprite.IsNull())
+            {
+                bAssetChanged = true; // Был непустым, стал пустым
+            }
+            else if (CurrentSprite && !Config.Sprite.IsNull())
+            {
+                bAssetChanged = (CurrentSprite->GetPathName() != Config.Sprite.ToString()); // Сравниваем пути
+            }
+
+            // Применяем спрайт только если он изменился и нужна анимация
+            if (bAnimate && bAssetChanged) {
+                if (auto* FadeComp = GetSpriteFadeComponent(ID)) {
+                    PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+                }
+            } else {
+                // Мгновенное применение, если анимация отключена или ассет не изменился
+                ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+            }
+            
+            // Остальные свойства применяются всегда
+            if (Config.AttachTo != E_SpriteAttachmentTarget::None) {
                 if(USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo)) {
                     Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
                 }
@@ -100,6 +183,7 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
             if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
         }
     };
+    
     ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig);
     ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig);
     ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
@@ -111,12 +195,40 @@ void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharact
     // --- Sprite (Simple) Application ---
     auto ApplySpriteSimpleConfig = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config) {
         if (auto* Comp = GetSpriteComponent(ID)) {
-            SetSprite(ID, Config.Sprite, bAnimate, 0.f);
+            // КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет
+            bool bAssetChanged = false;
+            const UPaperSprite* CurrentSprite = Comp->GetSprite();
+            
+            if (!CurrentSprite && !Config.Sprite.IsNull())
+            {
+                bAssetChanged = true; // Был пустым, стал непустым
+            }
+            else if (CurrentSprite && Config.Sprite.IsNull())
+            {
+                bAssetChanged = true; // Был непустым, стал пустым
+            }
+            else if (CurrentSprite && !Config.Sprite.IsNull())
+            {
+                bAssetChanged = (CurrentSprite->GetPathName() != Config.Sprite.ToString()); // Сравниваем пути
+            }
+
+            // Применяем спрайт только если он изменился и нужна анимация
+            if (bAnimate && bAssetChanged) {
+                if (auto* FadeComp = GetSpriteFadeComponent(ID)) {
+                    PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+                }
+            } else {
+                // Мгновенное применение, если анимация отключена или ассет не изменился
+                ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+            }
+
+            // Остальные свойства применяются всегда
             UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
             Comp->SetSpriteColor(Config.Color);
             if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
         }
     };
+    
     ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig);
     ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig);
     ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig);

@@ -27,7 +27,8 @@ public class VnCharacterSystem : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
-				"Paper2D"           // Для PaperSpriteComponent
+				"Paper2D",           // Для PaperSpriteComponent
+				"AnimGraphRuntime"
 			}
 		);
 			

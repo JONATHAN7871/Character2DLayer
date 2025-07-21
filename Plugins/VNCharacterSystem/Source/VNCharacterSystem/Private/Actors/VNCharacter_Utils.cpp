@@ -12,7 +12,6 @@ void AVNCharacter::UpdateComponentTransform(USceneComponent* Component, const FV
     FVector FinalOffset = LocalOffset;
     float FinalScale = LocalScale;
 
-    // Глобальные трансформации применяются только если компонент не приаттачен к сокету
     if (Component->GetAttachSocketName().IsNone())
     {
         if (Cast<USkeletalMeshComponent>(Component))
@@ -203,9 +202,28 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh)
 {
 	if (!MainComponent || !FadeComponent) return;
+	
+	FadingInComponents.Add(MainComponent);
+	FadingOutComponents.Add(FadeComponent);
+
 	CopySkeletalComponentSettings(MainComponent, FadeComponent);
+
+	// --- ИЗМЕНЕНИЕ: Используем Leader Pose ТОЛЬКО при переходе на валидный меш ---
+	if (!NewMesh.IsNull())
+	{
+		// Это предотвратит "скачок" позы при переходе с одного меша на другой.
+		FadeComponent->SetLeaderPoseComponent(MainComponent);
+	}
+	// Если NewMesh == nullptr, мы НЕ устанавливаем Leader, т.к. лидер будет невалидным.
+	// FadeComponent просто исчезнет со своей последней валидной позой.
+
+	// Смещаем Fade-компонент назад для решения проблемы Z-fighting
+	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+	
 	SetComponentAlpha(FadeComponent, 1.0f);
 	FadeComponent->SetVisibility(true, true);
+
 	ResetComponentAttachmentToDefault(MainComponent);
 	ValidateAndSetupSkeletalComponent(MainComponent, NewMesh);
 	SetComponentAlpha(MainComponent, 0.0f);
@@ -214,9 +232,19 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent, UPaperSpriteComponent* FadeComponent, TSoftObjectPtr<UPaperSprite> NewSprite)
 {
 	if (!MainComponent || !FadeComponent) return;
+	
+	FadingInComponents.Add(MainComponent);
+	FadingOutComponents.Add(FadeComponent);
+
 	CopySpriteComponentSettings(MainComponent, FadeComponent);
+
+	// Смещаем Fade-компонент назад для решения проблемы Z-fighting
+	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+	
 	SetComponentAlpha(FadeComponent, 1.0f);
 	FadeComponent->SetVisibility(true, true);
+	
 	ResetComponentAttachmentToDefault(MainComponent);
 	ValidateAndSetupSpriteComponent(MainComponent, NewSprite);
 	SetComponentAlpha(MainComponent, 0.0f);

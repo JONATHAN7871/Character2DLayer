@@ -19,31 +19,40 @@ void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 	{
 	case EVNAnimationType::Transition:
 		{
-			// Завершаем все активные переходы, сбрасывая fade-компоненты
-			TArray<USceneComponent*> FadeComponents = GetAllFadeComponents();
-			for (USceneComponent* Component : FadeComponents)
+			// Завершаем все активные переходы
+			for (USceneComponent* Component : FadingOutComponents)
 			{
-				if (Component && Component->IsVisible())
+				if (Component)
 				{
 					Component->SetVisibility(false);
 					SetComponentAlpha(Component, 0.0f);
-					// Очищаем контент и сбрасываем аттачмент
-					if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component)) SkeletalFade->SetSkeletalMesh(nullptr);
-					else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component)) SpriteFade->SetSprite(nullptr);
-					
+					if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
+					{
+						SkeletalFade->SetSkeletalMesh(nullptr);
+						// --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Разрываем связь Leader-Follower ---
+						SkeletalFade->SetLeaderPoseComponent(nullptr);
+					}
+					else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component))
+					{
+						SpriteFade->SetSprite(nullptr);
+					}
 					ResetComponentAttachmentToDefault(Component);
 				}
 			}
 
-			// Убеждаемся, что все основные компоненты имеют полную непрозрачность
-			TArray<USceneComponent*> MainComponents = GetAllMainComponents();
-			for (USceneComponent* Component : MainComponents)
+			// Убеждаемся, что все появившиеся компоненты имеют полную непрозрачность
+			for (USceneComponent* Component : FadingInComponents)
 			{
 				if (Component && Component->IsVisible())
 				{
 					SetComponentAlpha(Component, 1.0f);
 				}
 			}
+			
+			// Очищаем списки для следующей анимации
+			FadingInComponents.Empty();
+			FadingOutComponents.Empty();
+			
 			break;
 		}
 	case EVNAnimationType::SpawnDespawn:
@@ -116,6 +125,10 @@ void AVNCharacter::PrintDebugInfo()
 	DebugInfo += FString::Printf(TEXT("Main Components: %d total, %d visible\n"), MainComponents.Num(), VisibleMainCount);
 	DebugInfo += FString::Printf(TEXT("Fade Components: %d total, %d visible\n"), FadeComponents.Num(), VisibleFadeCount);
 	
+	// Добавляем информацию о компонентах в анимации
+	DebugInfo += FString::Printf(TEXT("Fading In Components: %d\n"), FadingInComponents.Num());
+	DebugInfo += FString::Printf(TEXT("Fading Out Components: %d\n"), FadingOutComponents.Num());
+	
 	VN_LOG(Log, TEXT("%s"), *DebugInfo);
 }
 
@@ -159,6 +172,17 @@ void AVNCharacter::ValidateAllComponents()
 		{
 			ValidationErrors.Add(FString::Printf(TEXT("Fade component %s is visible but no animation is running"), *Component->GetName()));
 		}
+	}
+	
+	// Проверяем состояние списков анимации
+	if (FadingInComponents.Num() > 0 && !IsAnimating())
+	{
+		ValidationErrors.Add(FString::Printf(TEXT("FadingInComponents contains %d components but no animation is running"), FadingInComponents.Num()));
+	}
+	
+	if (FadingOutComponents.Num() > 0 && !IsAnimating())
+	{
+		ValidationErrors.Add(FString::Printf(TEXT("FadingOutComponents contains %d components but no animation is running"), FadingOutComponents.Num()));
 	}
 	
 	if (ValidationErrors.Num() == 0)

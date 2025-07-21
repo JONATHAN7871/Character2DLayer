@@ -13,7 +13,24 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		return;
 	}
 
-	if (bAnimate && Duration > 0.0f && AnimationManager)
+	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
+	bool bAssetChanged = false;
+	const USkeletalMesh* CurrentMesh = MainComponent->GetSkeletalMeshAsset();
+	
+	if (!CurrentMesh && !SkeletalMesh.IsNull())
+	{
+		bAssetChanged = true; // Был пустым, стал непустым
+	}
+	else if (CurrentMesh && SkeletalMesh.IsNull())
+	{
+		bAssetChanged = true; // Был непустым, стал пустым
+	}
+	else if (CurrentMesh && !SkeletalMesh.IsNull())
+	{
+		bAssetChanged = (CurrentMesh->GetPathName() != SkeletalMesh.ToString()); // Сравниваем пути
+	}
+
+	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
 		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
@@ -27,6 +44,7 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 	}
 	else
 	{
+		// Мгновенное применение, если анимация отключена или ассет не изменился
 		ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 	}
 }
@@ -40,7 +58,24 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		return;
 	}
 
-	if (bAnimate && Duration > 0.0f && AnimationManager)
+	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
+	bool bAssetChanged = false;
+	const UPaperSprite* CurrentSprite = MainComponent->GetSprite();
+	
+	if (!CurrentSprite && !Sprite.IsNull())
+	{
+		bAssetChanged = true; // Был пустым, стал непустым
+	}
+	else if (CurrentSprite && Sprite.IsNull())
+	{
+		bAssetChanged = true; // Был непустым, стал пустым
+	}
+	else if (CurrentSprite && !Sprite.IsNull())
+	{
+		bAssetChanged = (CurrentSprite->GetPathName() != Sprite.ToString()); // Сравниваем пути
+	}
+
+	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
 		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
 		{
@@ -54,6 +89,7 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 	}
 	else
 	{
+		// Мгновенное применение, если анимация отключена или ассет не изменился
 		ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 	}
 
