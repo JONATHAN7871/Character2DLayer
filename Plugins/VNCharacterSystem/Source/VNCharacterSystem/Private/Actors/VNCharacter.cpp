@@ -1,4 +1,5 @@
 #include "Actors/VNCharacter.h"
+#include "Data/VNCharacterDataAsset.h"
 #include "Components/VNCharacterAnimationManager.h"
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -23,6 +24,86 @@ AVNCharacter::AVNCharacter()
 	DimColorMultiplier = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
 
 	VN_LOG_DEBUG(TEXT("VNCharacter created: %s"), *GetName());
+}
+
+void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
+{
+	if (!CharacterData)
+	{
+		VN_LOG_WARNING(TEXT("ApplyDataAsset: CharacterData is null"));
+		return;
+	}
+
+	// Применяем Skeletal Mesh компоненты
+	if (!CharacterData->BodyMesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyMesh, false, 0.0f);
+	
+	if (!CharacterData->ArmsMesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsMesh, false, 0.0f);
+	
+	if (!CharacterData->HeadMesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadMesh, false, 0.0f);
+	
+	if (!CharacterData->Custom01Mesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Mesh, false, 0.0f);
+	
+	if (!CharacterData->Custom02Mesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Mesh, false, 0.0f);
+	
+	if (!CharacterData->Custom03Mesh.IsNull())
+		SetSkeletalMesh(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Mesh, false, 0.0f);
+
+	// Применяем Sprite компоненты
+	if (!CharacterData->BodySprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Body, CharacterData->BodySprite, false, 0.0f);
+	
+	if (!CharacterData->ArmsSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSprite, false, 0.0f);
+	
+	if (!CharacterData->BodyShadowSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSprite, false, 0.0f);
+	
+	if (!CharacterData->HeadSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSprite, false, 0.0f);
+	
+	if (!CharacterData->EyebrowSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSprite, false, 0.0f);
+	
+	if (!CharacterData->EyesSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSprite, false, 0.0f);
+	
+	if (!CharacterData->EyelidsSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSprite, false, 0.0f);
+	
+	if (!CharacterData->WinkSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSprite, false, 0.0f);
+	
+	if (!CharacterData->MouthSprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionHeadEffect01Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01Sprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionHeadEffect02Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02Sprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionHeadEffect03Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03Sprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionBodyEffect01Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01Sprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionBodyEffect02Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02Sprite, false, 0.0f);
+	
+	if (!CharacterData->EmotionBodyEffect03Sprite.IsNull())
+		SetSprite(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03Sprite, false, 0.0f);
+
+	// Если нужна анимация, запускаем её один раз для всех изменений
+	if (bAnimate && Duration > 0.0f && AnimationManager)
+	{
+		AnimationManager->PlayTransition(Duration);
+	}
 }
 
 void AVNCharacter::CreateComponents()

@@ -12,6 +12,7 @@
 
 // Forward declarations
 class UVNCharacterAnimationManager;
+class UVNCharacterDataAsset;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
@@ -63,6 +64,19 @@ public:
 	/** Корневой трансформ для всех Sprite компонентов */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USceneComponent* GlobalSpriteTransform;
+
+	// =====================================================
+	// РАБОТА С DATA ASSET
+	// =====================================================
+
+	/**
+	 * Применить DataAsset к персонажу
+	 * @param CharacterData DataAsset с компонентами персонажа
+	 * @param bAnimate Использовать анимацию при смене компонентов
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
+	void ApplyDataAsset(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
 
 	// =====================================================
 	// SKELETAL MESH КОМПОНЕНТЫ (ОСНОВНЫЕ + FADE)
