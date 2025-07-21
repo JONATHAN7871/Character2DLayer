@@ -32,6 +32,12 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
+		// --- ЛОГИРОВАНИЕ ---
+		VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Preparing transition for component: %s. From [%s] to [%s]"), 
+			*MainComponent->GetName(),
+			CurrentMesh ? *CurrentMesh->GetName() : TEXT("None"),
+			SkeletalMesh.IsNull() ? TEXT("None") : *SkeletalMesh.ToString());
+		
 		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
 			PrepareSkeletalTransition(MainComponent, FadeComponent, SkeletalMesh);
@@ -39,12 +45,17 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		}
 		else
 		{
+			VN_LOG_WARNING(TEXT("SetSkeletalMesh: Fade component not found for ID %d"), (int32)ComponentID);
 			ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 		}
 	}
 	else
 	{
 		// Мгновенное применение, если анимация отключена или ассет не изменился
+		if (!bAssetChanged)
+		{
+			VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Asset unchanged for component: %s, skipping animation"), *MainComponent->GetName());
+		}
 		ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 	}
 }
@@ -77,6 +88,12 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
+		// --- ЛОГИРОВАНИЕ ---
+		VN_LOG_DEBUG(TEXT("SetSprite: Preparing transition for component: %s. From [%s] to [%s]"), 
+			*MainComponent->GetName(),
+			CurrentSprite ? *CurrentSprite->GetName() : TEXT("None"),
+			Sprite.IsNull() ? TEXT("None") : *Sprite.ToString());
+		
 		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
 		{
 			PrepareSpriteTransition(MainComponent, FadeComponent, Sprite);
@@ -84,12 +101,17 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		}
 		else
 		{
+			VN_LOG_WARNING(TEXT("SetSprite: Fade component not found for ID %d"), (int32)ComponentID);
 			ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 		}
 	}
 	else
 	{
 		// Мгновенное применение, если анимация отключена или ассет не изменился
+		if (!bAssetChanged)
+		{
+			VN_LOG_DEBUG(TEXT("SetSprite: Asset unchanged for component: %s, skipping animation"), *MainComponent->GetName());
+		}
 		ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 	}
 
@@ -123,6 +145,8 @@ void AVNCharacter::SetArms(TSoftObjectPtr<USkeletalMesh> ArmsMesh, bool bAnimate
 
 void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectPtr<UPaperSprite> MouthSprite, TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
 {
+	VN_LOG_DEBUG(TEXT("SetFace: Setting multiple face components with animate=%s, duration=%.2f"), bAnimate ? TEXT("true") : TEXT("false"), Duration);
+	
 	SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
 	SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
 	SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);

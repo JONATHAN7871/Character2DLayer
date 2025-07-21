@@ -179,7 +179,33 @@ void UVNCharacterAnimationManager::StartAnimation(const FVNAnimationRequest& Req
 	CurrentAnimation = Request;
 	CurrentAnimationTime = 0.0f;
 
-	LogAnimation(FString::Printf(TEXT("Starting animation: %s"), *Request.ToString()));
+	// --- СПЕЦИАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ TRANSITION ---
+	if (Request.AnimationType == EVNAnimationType::Transition)
+	{
+		LogAnimation(FString::Printf(TEXT("Transition animation starting. Fading in %d components, fading out %d components."), 
+			Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()));
+		
+		// Дополнительное детальное логирование компонентов
+		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingInComponents())
+		{
+			if (Component)
+			{
+				VN_LOG_DEBUG(TEXT("StartAnimation: FadingIn component: %s"), *Component->GetName());
+			}
+		}
+		
+		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingOutComponents())
+		{
+			if (Component)
+			{
+				VN_LOG_DEBUG(TEXT("StartAnimation: FadingOut component: %s"), *Component->GetName());
+			}
+		}
+	}
+	else
+	{
+		LogAnimation(FString::Printf(TEXT("Starting animation: %s"), *Request.ToString()));
+	}
 
 	// Уведомляем о начале анимации
 	OnAnimationStarted.Broadcast(Request.AnimationType);
@@ -293,29 +319,30 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		return;
 	}
 
-	// --- НОВАЯ ЛОГИКА ---
-	// Анимируем только те компоненты, которые были помечены для перехода
+	// --- ИСПРАВЛЕНИЕ: Используем асимметричные кривые для плавного перехода без мерцания ---
+	const float FadeInAlpha = FMath::Sqrt(Alpha);         // Новый компонент появляется быстро
+	const float FadeOutAlpha = 1.0f - (Alpha * Alpha);  // Старый компонент исчезает медленнее
 
 	// Fade Out: анимируем компоненты из списка FadingOutComponents
-	for (USceneComponent* FadeComponent : Character->GetFadingOutComponents())
+	for (const TObjectPtr<USceneComponent>& FadeComponent : Character->GetFadingOutComponents())
 	{
 		if (FadeComponent)
 		{
-			Character->SetComponentAlpha(FadeComponent, 1.0f - Alpha);
+			Character->SetComponentAlpha(FadeComponent.Get(), FadeOutAlpha);
 		}
 	}
 
 	// Fade In: анимируем компоненты из списка FadingInComponents
-	for (USceneComponent* MainComponent : Character->GetFadingInComponents())
+	for (const TObjectPtr<USceneComponent>& MainComponent : Character->GetFadingInComponents())
 	{
 		if (MainComponent)
 		{
-			Character->SetComponentAlpha(MainComponent, Alpha);
+			Character->SetComponentAlpha(MainComponent.Get(), FadeInAlpha);
 		}
 	}
 	
-	LogAnimation(FString::Printf(TEXT("Transition progress: %.2f (FadingIn: %d, FadingOut: %d)"), 
-		Alpha, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()), false);
+	LogAnimation(FString::Printf(TEXT("Transition progress: %.2f%% (FadeIn: %.2f, FadeOut: %.2f) - Components: FadingIn=%d, FadingOut=%d)"), 
+		Alpha * 100.0f, FadeInAlpha, FadeOutAlpha, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()), false);
 }
 
 void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)

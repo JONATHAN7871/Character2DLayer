@@ -10,32 +10,62 @@
 
 void AVNCharacter::OnAnimationStarted(EVNAnimationType AnimationType)
 {
+	VN_LOG_DEBUG(TEXT("OnAnimationStarted: Animation type %d started"), (int32)AnimationType);
 	// Эта функция может быть расширена для пользовательской логики при старте анимации.
 }
 
 void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 {
+	VN_LOG_DEBUG(TEXT("OnAnimationFinished: Animation type %d finished"), (int32)AnimationType);
+	
 	switch (AnimationType)
 	{
 	case EVNAnimationType::Transition:
 		{
+			// --- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ---
+			VN_LOG_DEBUG(TEXT("OnAnimationFinished: Transition finished. Cleaning up %d FadingIn and %d FadingOut components."), 
+				FadingInComponents.Num(), FadingOutComponents.Num());
+			
+			// Логируем все компоненты перед очисткой
+			for (USceneComponent* Component : FadingInComponents)
+			{
+				if (Component)
+				{
+					VN_LOG_DEBUG(TEXT("OnAnimationFinished: FadingIn component cleanup: %s"), *Component->GetName());
+				}
+			}
+			
+			for (USceneComponent* Component : FadingOutComponents)
+			{
+				if (Component)
+				{
+					VN_LOG_DEBUG(TEXT("OnAnimationFinished: FadingOut component cleanup: %s"), *Component->GetName());
+				}
+			}
+			
 			// Завершаем все активные переходы
 			for (USceneComponent* Component : FadingOutComponents)
 			{
 				if (Component)
 				{
+					VN_LOG_DEBUG(TEXT("OnAnimationFinished: Hiding and cleaning FadingOut component: %s"), *Component->GetName());
+					
 					Component->SetVisibility(false);
 					SetComponentAlpha(Component, 0.0f);
+					
 					if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
 					{
 						SkeletalFade->SetSkeletalMesh(nullptr);
 						// --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Разрываем связь Leader-Follower ---
 						SkeletalFade->SetLeaderPoseComponent(nullptr);
+						VN_LOG_DEBUG(TEXT("OnAnimationFinished: Cleared mesh and leader pose for skeletal component: %s"), *Component->GetName());
 					}
 					else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component))
 					{
 						SpriteFade->SetSprite(nullptr);
+						VN_LOG_DEBUG(TEXT("OnAnimationFinished: Cleared sprite for component: %s"), *Component->GetName());
 					}
+					
 					ResetComponentAttachmentToDefault(Component);
 				}
 			}
@@ -45,25 +75,35 @@ void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 			{
 				if (Component && Component->IsVisible())
 				{
+					VN_LOG_DEBUG(TEXT("OnAnimationFinished: Finalizing FadingIn component: %s (setting alpha to 1.0)"), *Component->GetName());
 					SetComponentAlpha(Component, 1.0f);
 				}
 			}
 			
 			// Очищаем списки для следующей анимации
+			int32 FadingInCount = FadingInComponents.Num();
+			int32 FadingOutCount = FadingOutComponents.Num();
+			
 			FadingInComponents.Empty();
 			FadingOutComponents.Empty();
+			
+			VN_LOG_DEBUG(TEXT("OnAnimationFinished: Transition cleanup complete. Cleared %d FadingIn and %d FadingOut components."), 
+				FadingInCount, FadingOutCount);
 			
 			break;
 		}
 	case EVNAnimationType::SpawnDespawn:
+		VN_LOG_DEBUG(TEXT("OnAnimationFinished: SpawnDespawn animation finished. Character visible: %s"), IsVisible() ? TEXT("true") : TEXT("false"));
 		OnCharacterVisibilityChanged.Broadcast(IsVisible());
 		break;
 			
 	case EVNAnimationType::Focus:
+		VN_LOG_DEBUG(TEXT("OnAnimationFinished: Focus animation finished. Character in focus: %s"), bIsInFocus ? TEXT("true") : TEXT("false"));
 		OnCharacterFocusChanged.Broadcast(bIsInFocus);
 		break;
 
 	default:
+		VN_LOG_WARNING(TEXT("OnAnimationFinished: Unknown animation type: %d"), (int32)AnimationType);
 		break;
 	}
 }
@@ -72,6 +112,14 @@ void AVNCharacter::OnAnimationProgress(EVNAnimationType AnimationType, float Pro
 {
 	// Анимация обрабатывается в AnimationManager
 	// Здесь можно добавить дополнительную логику при необходимости.
+	
+	// Логируем только ключевые моменты, чтобы не спамить в лог
+	if (FMath::IsNearlyEqual(Progress, 0.0f, 0.01f) || 
+		FMath::IsNearlyEqual(Progress, 0.5f, 0.01f) || 
+		FMath::IsNearlyEqual(Progress, 1.0f, 0.01f))
+	{
+		VN_LOG_DEBUG(TEXT("OnAnimationProgress: Animation type %d progress: %.1f%%"), (int32)AnimationType, Progress * 100.0f);
+	}
 }
 
 // =====================================================
@@ -129,12 +177,41 @@ void AVNCharacter::PrintDebugInfo()
 	DebugInfo += FString::Printf(TEXT("Fading In Components: %d\n"), FadingInComponents.Num());
 	DebugInfo += FString::Printf(TEXT("Fading Out Components: %d\n"), FadingOutComponents.Num());
 	
+	// Детальная информация о компонентах в анимации
+	if (FadingInComponents.Num() > 0)
+	{
+		DebugInfo += TEXT("FadingIn Components:\n");
+		for (USceneComponent* Component : FadingInComponents)
+		{
+			if (Component)
+			{
+				DebugInfo += FString::Printf(TEXT("  - %s (Visible: %s)\n"), 
+					*Component->GetName(), Component->IsVisible() ? TEXT("Yes") : TEXT("No"));
+			}
+		}
+	}
+	
+	if (FadingOutComponents.Num() > 0)
+	{
+		DebugInfo += TEXT("FadingOut Components:\n");
+		for (USceneComponent* Component : FadingOutComponents)
+		{
+			if (Component)
+			{
+				DebugInfo += FString::Printf(TEXT("  - %s (Visible: %s)\n"), 
+					*Component->GetName(), Component->IsVisible() ? TEXT("Yes") : TEXT("No"));
+			}
+		}
+	}
+	
 	VN_LOG(Log, TEXT("%s"), *DebugInfo);
 }
 
 void AVNCharacter::ValidateAllComponents()
 {
 	TArray<FString> ValidationErrors;
+	
+	VN_LOG_DEBUG(TEXT("ValidateAllComponents: Starting validation for character %s"), *GetName());
 	
 	TArray<USceneComponent*> MainComponents = GetAllMainComponents();
 	for (USceneComponent* Component : MainComponents)
@@ -144,6 +221,7 @@ void AVNCharacter::ValidateAllComponents()
 			ValidationErrors.Add(TEXT("Main component is null"));
 			continue;
 		}
+		
 		if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component))
 		{
 			if (SkeletalComp->IsVisible() && !SkeletalComp->GetSkeletalMeshAsset())
@@ -187,11 +265,11 @@ void AVNCharacter::ValidateAllComponents()
 	
 	if (ValidationErrors.Num() == 0)
 	{
-		VN_LOG(Log, TEXT("All components validation passed for %s"), *GetName());
+		VN_LOG(Log, TEXT("ValidateAllComponents: All components validation passed for %s"), *GetName());
 	}
 	else
 	{
-		FString ErrorMessage = FString::Printf(TEXT("Component validation failed for %s:"), *GetName());
+		FString ErrorMessage = FString::Printf(TEXT("ValidateAllComponents: Component validation failed for %s:"), *GetName());
 		for (const FString& Error : ValidationErrors)
 		{
 			ErrorMessage += FString::Printf(TEXT("\n- %s"), *Error);

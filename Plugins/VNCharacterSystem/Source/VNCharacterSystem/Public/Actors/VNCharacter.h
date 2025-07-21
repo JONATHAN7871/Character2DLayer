@@ -167,7 +167,7 @@ private:
 	void HideAllFadeComponents();
 	void ApplyIndividualSpriteTransform(UPaperSpriteComponent* SpriteComponent, E_VN_ComponentID_Sprite ComponentID);
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
-	void ApplyAllComponentConfigurationsFromDataAsset(const UVNCharacterDataAsset* CharacterData, bool bAnimate);
+	void ApplyAllComponentConfigurationsFromDataAsset(const UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration);
 	USkeletalMeshComponent* GetSkeletalComponentBySpriteTarget(E_SpriteAttachmentTarget Target);
 	UFUNCTION() void OnAnimationStarted(EVNAnimationType AnimationType);
 	UFUNCTION() void OnAnimationFinished(EVNAnimationType AnimationType);
