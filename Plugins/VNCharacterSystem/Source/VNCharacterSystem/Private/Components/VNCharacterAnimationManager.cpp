@@ -319,30 +319,37 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		return;
 	}
 
-	// --- ИСПРАВЛЕНИЕ: Используем асимметричные кривые для плавного перехода без мерцания ---
+	UE_LOG(LogTemp, Log, TEXT("UpdateTransitionAnimation: Progress %.2f%% - FadingIn=%d, FadingOut=%d"), 
+		Alpha * 100.0f, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num());
+
+	// --- НОВАЯ СИСТЕМА: Используем асимметричные кривые для плавного перехода ---
 	const float FadeInAlpha = FMath::Sqrt(Alpha);         // Новый компонент появляется быстро
-	const float FadeOutAlpha = 1.0f - (Alpha * Alpha);  // Старый компонент исчезает медленнее
+	const float FadeOutAlpha = 1.0f - (Alpha * Alpha);   // Старый компонент исчезает медленнее
 
 	// Fade Out: анимируем компоненты из списка FadingOutComponents
 	for (const TObjectPtr<USceneComponent>& FadeComponent : Character->GetFadingOutComponents())
 	{
 		if (FadeComponent)
 		{
-			Character->SetComponentAlpha(FadeComponent.Get(), FadeOutAlpha);
+			// НОВАЯ СИСТЕМА: Используем SetAnimationAlpha вместо SetComponentAlpha
+			Character->SetAnimationAlpha(FadeComponent.Get(), FadeOutAlpha);
 		}
 	}
 
-	// Fade In: анимируем компоненты из списка FadingInComponents
+	// Fade In: анимируем компоненты из списка FadingInComponents  
 	for (const TObjectPtr<USceneComponent>& MainComponent : Character->GetFadingInComponents())
 	{
 		if (MainComponent)
 		{
-			Character->SetComponentAlpha(MainComponent.Get(), FadeInAlpha);
+			// НОВАЯ СИСТЕМА: Интерполируем от 0.0 к целевой альфе
+			float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
+			float CurrentAlpha = FMath::Lerp(0.0f, TargetAlpha, FadeInAlpha);
+			Character->SetAnimationAlpha(MainComponent.Get(), CurrentAlpha);
+			
+			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: %s alpha %.2f (target: %.2f)"), 
+				*MainComponent->GetName(), CurrentAlpha, TargetAlpha);
 		}
 	}
-	
-	LogAnimation(FString::Printf(TEXT("Transition progress: %.2f%% (FadeIn: %.2f, FadeOut: %.2f) - Components: FadingIn=%d, FadingOut=%d)"), 
-		Alpha * 100.0f, FadeInAlpha, FadeOutAlpha, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()), false);
 }
 
 void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)

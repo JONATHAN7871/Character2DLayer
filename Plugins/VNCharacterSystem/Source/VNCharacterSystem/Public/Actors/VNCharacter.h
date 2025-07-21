@@ -148,8 +148,13 @@ private:
 	TSet<TObjectPtr<USceneComponent>> FadingInComponents;
 	TSet<TObjectPtr<USceneComponent>> FadingOutComponents;
 	
-	// --- НОВАЯ ФУНКЦИЯ ДЛЯ ПРЕРЫВАНИЯ АНИМАЦИИ ---
-	/** Мгновенно завершает текущий переход, очищая списки и устанавливая компоненты в финальное состояние. */
+	// --- НОВАЯ СИСТЕМА УПРАВЛЕНИЯ АЛЬФОЙ ДЛЯ АНИМАЦИИ ---
+	/** Карта текущих значений альфы для компонентов в анимации */
+	TMap<TObjectPtr<USceneComponent>, float> ComponentAnimationAlphas;
+	/** Карта целевых значений альфы для завершения анимации */
+	TMap<TObjectPtr<USceneComponent>, float> ComponentTargetAlphas;
+	
+	// --- ФУНКЦИЯ ДЛЯ ПРЕРЫВАНИЯ АНИМАЦИИ ---
 	void FinalizeCurrentTransition();
 	
 	void CreateComponents();
@@ -157,8 +162,18 @@ private:
 	void ResetComponentAttachmentToDefault(USceneComponent* ComponentToReset);
 	bool IsChildOfHeadSprite(USceneComponent* Component) const;
 	void UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale);
+	
+	// --- УПРОЩЕННЫЕ ФУНКЦИИ БЕЗ InitialAlpha ---
 	void ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
 	void ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite);
+	
+	// --- НОВЫЕ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ АЛЬФОЙ АНИМАЦИИ ---
+	void SetAnimationAlpha(USceneComponent* Component, float Alpha);
+	void SetTargetAlpha(USceneComponent* Component, float TargetAlpha);
+	float GetAnimationAlpha(USceneComponent* Component) const;
+	float GetTargetAlpha(USceneComponent* Component) const;
+	void ClearAnimationAlphas(USceneComponent* Component);
+	
 	void CopySkeletalComponentSettings(USkeletalMeshComponent* Source, USkeletalMeshComponent* Target);
 	void CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target);
 	void PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh);
@@ -171,7 +186,13 @@ private:
 	void HideAllFadeComponents();
 	void ApplyIndividualSpriteTransform(UPaperSpriteComponent* SpriteComponent, E_VN_ComponentID_Sprite ComponentID);
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
-	void ApplyAllComponentConfigurationsFromDataAsset(const UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration);
+
+	// --- НОВЫЕ HELPER-ФУНКЦИИ ДЛЯ DATA ASSET ---
+	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, bool bAnimate);
+	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config, bool bAnimate);
+	void ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, bool bAnimate);
+	void ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config, bool bAnimate);
+	
 	USkeletalMeshComponent* GetSkeletalComponentBySpriteTarget(E_SpriteAttachmentTarget Target);
 	UFUNCTION() void OnAnimationStarted(EVNAnimationType AnimationType);
 	UFUNCTION() void OnAnimationFinished(EVNAnimationType AnimationType);

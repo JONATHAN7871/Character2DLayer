@@ -10,290 +10,457 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
 {
     if (!CharacterData)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: CharacterData is null"));
+        UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: CharacterData is null"));
         return;
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"), 
+    UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"), 
         *CharacterData->GetName(), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
-    // --- ЛОГИКА ПРЕРЫВАНИЯ АНИМАЦИИ ---
+    // --- ПРЕРЫВАНИЕ ТЕКУЩЕЙ АНИМАЦИИ ---
     if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: Interrupted an ongoing transition. Finalizing..."));
-        // Эта команда остановит анимацию и вызовет OnAnimationFinished, который, в свою очередь,
-        // вызовет FinalizeCurrentTransition(), очищая систему для нового перехода.
+        UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: Interrupted ongoing transition. Finalizing..."));
         AnimationManager->ClearAnimationQueue(); 
     }
 
+    // --- ГЛОБАЛЬНЫЕ ТРАНСФОРМАЦИИ ---
     if (CharacterData->bOverrideGlobalTransforms)
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms"));
+        UE_LOG(LogTemp, Log, TEXT("ApplyDataAsset: Overriding global transforms"));
         GlobalSkeletalOffset = CharacterData->GlobalSkeletalOffset;
         GlobalSkeletalScale = CharacterData->GlobalSkeletalScale;
         GlobalSpriteOffset = CharacterData->GlobalSpriteOffset;
         GlobalSpriteScale = CharacterData->GlobalSpriteScale;
     }
     
-    // Новая централизованная функция делает всё сама
-    ApplyAllComponentConfigurationsFromDataAsset(CharacterData, bAnimate, Duration);
+    // --- ПРИМЕНЕНИЕ КОНФИГУРАЦИЙ ---
+    UE_LOG(LogTemp, Log, TEXT("ApplyDataAsset: Applying skeletal configurations..."));
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig, bAnimate);
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig, bAnimate);
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig, bAnimate);
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Config, bAnimate);
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config, bAnimate);
+    ApplySkeletalConfig(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config, bAnimate);
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed application of DataAsset %s"), *CharacterData->GetName());
-}
+    UE_LOG(LogTemp, Log, TEXT("ApplyDataAsset: Applying sprite configurations..."));
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig, bAnimate);
 
-void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
-{
-    if (!CharacterData) return;
+    UE_LOG(LogTemp, Log, TEXT("ApplyDataAsset: Applying facial sprite configurations..."));
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig, bAnimate);
+    ApplySpriteConfig(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig, bAnimate);
 
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurationsFromDataAsset: Starting two-stage application process"));
-
-    // --- ЭТАП 1: ПОДГОТОВКА АНИМАЦИИ ТОЛЬКО ДЛЯ ИЗМЕНИВШИХСЯ КОМПОНЕНТОВ ---
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: STAGE 1 - Preparing transitions for changed components"));
-    
-    int32 TransitionsCount = 0;
-
-    // Skeletal Meshes
-    auto PrepareSkeletalTransitionIfNeeded = [&](E_VN_ComponentID_Skeletal ID, const TSoftObjectPtr<USkeletalMesh>& NewMesh, const FString& ComponentName) {
-        if (auto* Comp = GetSkeletalComponent(ID)) {
-            const USkeletalMesh* CurrentMesh = Comp->GetSkeletalMeshAsset();
-            bool bAssetChanged = false;
-            
-            if (!CurrentMesh && !NewMesh.IsNull()) {
-                bAssetChanged = true; // Был пустым, стал непустым
-            } else if (CurrentMesh && NewMesh.IsNull()) {
-                bAssetChanged = true; // Был непустым, стал пустым
-            } else if (CurrentMesh && !NewMesh.IsNull()) {
-                bAssetChanged = (CurrentMesh->GetPathName() != NewMesh.ToString()); // Сравниваем пути
-            }
-            
-            if (bAnimate && bAssetChanged) {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skeletal asset changed for %s: [%s] -> [%s]"), 
-                    *ComponentName,
-                    CurrentMesh ? *CurrentMesh->GetName() : TEXT("None"),
-                    NewMesh.IsNull() ? TEXT("None") : *NewMesh.ToString());
-                    
-                if (auto* FadeComp = GetSkeletalFadeComponent(ID)) {
-                    PrepareSkeletalTransition(Comp, FadeComp, NewMesh);
-                    TransitionsCount++;
-                } else {
-                    VN_LOG_WARNING(TEXT("ApplyAllComponentConfigurations: No fade component found for skeletal %s"), *ComponentName);
-                }
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skeletal asset unchanged for %s"), *ComponentName);
-            }
-        }
-    };
-    
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig.SkeletalMesh, TEXT("Body"));
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig.SkeletalMesh, TEXT("Arms"));
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig.SkeletalMesh, TEXT("Head"));
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Config.SkeletalMesh, TEXT("Custom01"));
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config.SkeletalMesh, TEXT("Custom02"));
-    PrepareSkeletalTransitionIfNeeded(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config.SkeletalMesh, TEXT("Custom03"));
-
-    // Sprites
-    auto PrepareSpriteTransitionIfNeeded = [&](E_VN_ComponentID_Sprite ID, const TSoftObjectPtr<UPaperSprite>& NewSprite, const FString& ComponentName) {
-        if (auto* Comp = GetSpriteComponent(ID)) {
-            const UPaperSprite* CurrentSprite = Comp->GetSprite();
-            bool bAssetChanged = false;
-            
-            if (!CurrentSprite && !NewSprite.IsNull()) {
-                bAssetChanged = true; // Был пустым, стал непустым
-            } else if (CurrentSprite && NewSprite.IsNull()) {
-                bAssetChanged = true; // Был непустым, стал пустым
-            } else if (CurrentSprite && !NewSprite.IsNull()) {
-                bAssetChanged = (CurrentSprite->GetPathName() != NewSprite.ToString()); // Сравниваем пути
-            }
-            
-            if (bAnimate && bAssetChanged) {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Sprite asset changed for %s: [%s] -> [%s]"), 
-                    *ComponentName,
-                    CurrentSprite ? *CurrentSprite->GetName() : TEXT("None"),
-                    NewSprite.IsNull() ? TEXT("None") : *NewSprite.ToString());
-                    
-                if (auto* FadeComp = GetSpriteFadeComponent(ID)) {
-                    PrepareSpriteTransition(Comp, FadeComp, NewSprite);
-                    TransitionsCount++;
-                } else {
-                    VN_LOG_WARNING(TEXT("ApplyAllComponentConfigurations: No fade component found for sprite %s"), *ComponentName);
-                }
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Sprite asset unchanged for %s"), *ComponentName);
-            }
-        }
-    };
-    
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig.Sprite, TEXT("Body_Sprite"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig.Sprite, TEXT("Arms_Sprite"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig.Sprite, TEXT("BodyShadow_Sprite"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig.Sprite, TEXT("Head_Sprite"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig.Sprite, TEXT("EmotionBody01"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig.Sprite, TEXT("EmotionBody02"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig.Sprite, TEXT("EmotionBody03"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig.Sprite, TEXT("Eyebrow"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig.Sprite, TEXT("Eyes"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig.Sprite, TEXT("Eyelids"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig.Sprite, TEXT("Wink"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig.Sprite, TEXT("Mouth"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig.Sprite, TEXT("EmotionHead01"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig.Sprite, TEXT("EmotionHead02"));
-    PrepareSpriteTransitionIfNeeded(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig.Sprite, TEXT("EmotionHead03"));
-
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: STAGE 1 complete - Prepared %d transitions"), TransitionsCount);
-
-    // --- ЭТАП 2: ПРИМЕНЕНИЕ ВСЕХ СВОЙСТВ ---
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: STAGE 2 - Applying properties to all components"));
-    
-    // Skeletal Meshes
-    auto ApplySkeletalProperties = [&](E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, const FString& ComponentName) {
-        if (auto* Comp = GetSkeletalComponent(ID)) {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Applying skeletal properties to %s"), *ComponentName);
-            
-            // Применяем ассет только если он не в списке на анимацию
-            if (!FadingInComponents.Contains(Comp)) {
-                ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skipping asset setup for %s (in animation)"), *ComponentName);
-            }
-            
-            if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-            for (const auto& Elem : Config.MaterialOverrides) {
-                if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
-            }
-            ResetComponentAttachmentToDefault(Comp);
-            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-            SetComponentColor(Comp, Config.Color);
-            if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
-        }
-    };
-
-    auto ApplySkeletalPropertiesWithAttach = [&](E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config, const FString& ComponentName) {
-        if (auto* Comp = GetSkeletalComponent(ID)) {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Applying skeletal attachment properties to %s"), *ComponentName);
-            
-            // Применяем ассет только если он не в списке на анимацию
-            if (!FadingInComponents.Contains(Comp)) {
-                ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skipping asset setup for %s (in animation)"), *ComponentName);
-            }
-            
-            if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-            for (const auto& Elem : Config.MaterialOverrides) {
-                if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
-            }
-            
-            if (Config.AttachTo != E_SkeletalAttachmentTarget::None) {
-                if(USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr) {
-                    Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
-                }
-            } else {
-                ResetComponentAttachmentToDefault(Comp);
-            }
-            
-            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-            SetComponentColor(Comp, Config.Color);
-            if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
-        }
-    };
-    
-    ApplySkeletalProperties(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig, TEXT("Body"));
-    ApplySkeletalPropertiesWithAttach(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig, TEXT("Arms"));
-    ApplySkeletalPropertiesWithAttach(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig, TEXT("Head"));
-    ApplySkeletalPropertiesWithAttach(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Config, TEXT("Custom01"));
-    ApplySkeletalPropertiesWithAttach(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config, TEXT("Custom02"));
-    ApplySkeletalPropertiesWithAttach(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config, TEXT("Custom03"));
-
-    // Sprites
-    auto ApplySpritePropertiesWithAttach = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, const FString& ComponentName) {
-        if (auto* Comp = GetSpriteComponent(ID)) {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Applying sprite attachment properties to %s"), *ComponentName);
-            
-            // Применяем ассет только если он не в списке на анимацию
-            if (!FadingInComponents.Contains(Comp)) {
-                ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skipping asset setup for %s (in animation)"), *ComponentName);
-            }
-            
-            if (Config.AttachTo != E_SpriteAttachmentTarget::None) {
-                if(USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo)) {
-                    Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
-                }
-            } else {
-                ResetComponentAttachmentToDefault(Comp);
-            }
-            
-            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-            Comp->SetSpriteColor(Config.Color);
-            if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
-        }
-    };
-
-    auto ApplySpritePropertiesSimple = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config, const FString& ComponentName) {
-        if (auto* Comp = GetSpriteComponent(ID)) {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Applying sprite simple properties to %s"), *ComponentName);
-            
-            // Применяем ассет только если он не в списке на анимацию
-            if (!FadingInComponents.Contains(Comp)) {
-                ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
-            } else {
-                VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Skipping asset setup for %s (in animation)"), *ComponentName);
-            }
-            
-            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-            Comp->SetSpriteColor(Config.Color);
-            if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
-        }
-    };
-    
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig, TEXT("Body_Sprite"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig, TEXT("Arms_Sprite"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig, TEXT("BodyShadow_Sprite"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig, TEXT("Head_Sprite"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig, TEXT("EmotionBody01"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig, TEXT("EmotionBody02"));
-    ApplySpritePropertiesWithAttach(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig, TEXT("EmotionBody03"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig, TEXT("Eyebrow"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig, TEXT("Eyes"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig, TEXT("Eyelids"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig, TEXT("Wink"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig, TEXT("Mouth"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig, TEXT("EmotionHead01"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig, TEXT("EmotionHead02"));
-    ApplySpritePropertiesSimple(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig, TEXT("EmotionHead03"));
-
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: STAGE 2 complete - Applied properties to all components"));
-
-    // --- ЭТАП 3: ЗАПУСК АНИМАЦИИ, ЕСЛИ БЫЛИ ИЗМЕНЕНИЯ ---
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: STAGE 3 - Finalizing animation"));
-    
+    // --- СКРЫТИЕ ТЕНЕВЫХ КОМПОНЕНТОВ ---
     if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
     if (BodyShadow_Sprite_Fade) BodyShadow_Sprite_Fade->SetVisibility(false);
 
+    // --- ЗАПУСК АНИМАЦИИ ---
+    UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: FadingIn components: %d, FadingOut components: %d"), 
+        FadingInComponents.Num(), FadingOutComponents.Num());
+
     if (bAnimate && Duration > 0.0f && AnimationManager && FadingInComponents.Num() > 0)
     {
-        VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Starting transition animation with %d components (duration=%.2f)"), 
+        UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: Starting transition animation with %d components (duration=%.2f)"), 
             FadingInComponents.Num(), Duration);
         AnimationManager->PlayTransition(Duration);
     }
     else
     {
-        if (FadingInComponents.Num() == 0)
-        {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: No components changed, skipping animation"));
-        }
-        else
-        {
-            VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Animation disabled, applying changes instantly"));
-        }
-        
-        // Если анимация не нужна, или ничего не изменилось, просто скрываем fade-компоненты
+        UE_LOG(LogTemp, Log, TEXT("ApplyDataAsset: No animation needed, hiding fade components"));
         HideAllFadeComponents();
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyAllComponentConfigurations: Two-stage application process complete"));
+    UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: Completed application of DataAsset %s"), *CharacterData->GetName());
 }
+
+// =====================================================
+// SKELETAL CONFIG FUNCTIONS
+// =====================================================
+
+void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, bool bAnimate)
+{
+    USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
+    if (!Comp) 
+    {
+        UE_LOG(LogTemp, Error, TEXT("ApplySkeletalConfig: Component not found for ID %d"), (int32)ID);
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Processing skeletal component %s"), *Comp->GetName());
+
+    // --- ПРОВЕРКА ИЗМЕНЕНИЯ АССЕТА ---
+    const USkeletalMesh* CurrentMesh = Comp->GetSkeletalMeshAsset();
+    bool bAssetChanged = false;
+    
+    if (!CurrentMesh && !Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: %s changed from NULL to %s"), 
+            *Comp->GetName(), *Config.SkeletalMesh.ToString());
+    }
+    else if (CurrentMesh && Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: %s changed from %s to NULL"), 
+            *Comp->GetName(), *CurrentMesh->GetName());
+    }
+    else if (CurrentMesh && !Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = (CurrentMesh->GetPathName() != Config.SkeletalMesh.ToString());
+        if (bAssetChanged)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: %s changed from %s to %s"), 
+                *Comp->GetName(), *CurrentMesh->GetName(), *Config.SkeletalMesh.ToString());
+        }
+    }
+
+    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    if (bAnimate && bAssetChanged)
+    {
+        if (USkeletalMeshComponent* FadeComp = GetSkeletalFadeComponent(ID))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing transition for %s"), *Comp->GetName());
+            PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("ApplySkeletalConfig: Fade component not found for %s"), *Comp->GetName());
+            ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applying %s instantly"), *Comp->GetName());
+        ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+    }
+
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ ---
+    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+    
+    for (const auto& MaterialOverride : Config.MaterialOverrides)
+    {
+        if (!MaterialOverride.Value.IsNull()) 
+        {
+            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+        }
+    }
+    
+    ResetComponentAttachmentToDefault(Comp);
+    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
+    // Альфа управляется отдельно через систему анимации
+    SetComponentColor(Comp, Config.Color);
+    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applied color to %s (R:%.2f G:%.2f B:%.2f A:%.2f)"), 
+        *Comp->GetName(), Config.Color.R, Config.Color.G, Config.Color.B, Config.Color.A);
+    
+    // --- ВИДИМОСТЬ ---
+    if (!Config.SkeletalMesh.IsNull())
+    {
+        Comp->SetVisibility(Config.bVisible);
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for %s to %s"), 
+            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        Comp->SetVisibility(false);
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden %s (null mesh)"), *Comp->GetName());
+    }
+}
+
+void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config, bool bAnimate)
+{
+    USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
+    if (!Comp) 
+    {
+        UE_LOG(LogTemp, Error, TEXT("ApplySkeletalConfig: Attachment component not found for ID %d"), (int32)ID);
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Processing skeletal attachment component %s"), *Comp->GetName());
+
+    // --- ПРОВЕРКА ИЗМЕНЕНИЯ АССЕТА ---
+    const USkeletalMesh* CurrentMesh = Comp->GetSkeletalMeshAsset();
+    bool bAssetChanged = false;
+    
+    if (!CurrentMesh && !Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Attachment %s changed from NULL to %s"), 
+            *Comp->GetName(), *Config.SkeletalMesh.ToString());
+    }
+    else if (CurrentMesh && Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Attachment %s changed from %s to NULL"), 
+            *Comp->GetName(), *CurrentMesh->GetName());
+    }
+    else if (CurrentMesh && !Config.SkeletalMesh.IsNull())
+    {
+        bAssetChanged = (CurrentMesh->GetPathName() != Config.SkeletalMesh.ToString());
+        if (bAssetChanged)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Attachment %s changed from %s to %s"), 
+                *Comp->GetName(), *CurrentMesh->GetName(), *Config.SkeletalMesh.ToString());
+        }
+    }
+
+    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    if (bAnimate && bAssetChanged)
+    {
+        if (USkeletalMeshComponent* FadeComp = GetSkeletalFadeComponent(ID))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing transition for attachment %s"), *Comp->GetName());
+            PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("ApplySkeletalConfig: Fade component not found for attachment %s"), *Comp->GetName());
+            ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applying attachment %s instantly"), *Comp->GetName());
+        ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
+    }
+
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ ---
+    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+    
+    for (const auto& MaterialOverride : Config.MaterialOverrides)
+    {
+        if (!MaterialOverride.Value.IsNull()) 
+        {
+            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+        }
+    }
+    
+    // --- ATTACHMENT ---
+    if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
+    {
+        if (USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr)
+        {
+            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Attached %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+        }
+    }
+    else
+    {
+        ResetComponentAttachmentToDefault(Comp);
+    }
+    
+    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
+    SetComponentColor(Comp, Config.Color);
+    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applied color to attachment %s"), *Comp->GetName());
+    
+    // --- ВИДИМОСТЬ ---
+    if (!Config.SkeletalMesh.IsNull())
+    {
+        Comp->SetVisibility(Config.bVisible);
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for attachment %s to %s"), 
+            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        Comp->SetVisibility(false);
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden attachment %s (null mesh)"), *Comp->GetName());
+    }
+}
+
+// =====================================================
+// SPRITE CONFIG FUNCTIONS
+// =====================================================
+
+void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, bool bAnimate)
+{
+    UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
+    if (!Comp) 
+    {
+        UE_LOG(LogTemp, Error, TEXT("ApplySpriteConfig: Component not found for ID %d"), (int32)ID);
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Processing sprite attachment component %s"), *Comp->GetName());
+
+    // --- ПРОВЕРКА ИЗМЕНЕНИЯ АССЕТА ---
+    const UPaperSprite* CurrentSprite = Comp->GetSprite();
+    bool bAssetChanged = false;
+    
+    if (!CurrentSprite && !Config.Sprite.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: %s changed from NULL to %s"), 
+            *Comp->GetName(), *Config.Sprite.ToString());
+    }
+    else if (CurrentSprite && Config.Sprite.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: %s changed from %s to NULL"), 
+            *Comp->GetName(), *CurrentSprite->GetName());
+    }
+    else if (CurrentSprite && !Config.Sprite.IsNull())
+    {
+        bAssetChanged = (CurrentSprite->GetPathName() != Config.Sprite.ToString());
+        if (bAssetChanged)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: %s changed from %s to %s"), 
+                *Comp->GetName(), *CurrentSprite->GetName(), *Config.Sprite.ToString());
+        }
+    }
+
+    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    if (bAnimate && bAssetChanged)
+    {
+        if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(ID))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing transition for %s"), *Comp->GetName());
+            PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("ApplySpriteConfig: Fade component not found for %s"), *Comp->GetName());
+            ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applying %s instantly"), *Comp->GetName());
+        ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+    }
+
+    // --- ATTACHMENT ---
+    if (Config.AttachTo != E_SpriteAttachmentTarget::None)
+    {
+        if (USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo))
+        {
+            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Attached sprite %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Failed to find attachment target for %s"), *Comp->GetName());
+        }
+    }
+    else
+    {
+        ResetComponentAttachmentToDefault(Comp);
+    }
+    
+    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
+    Comp->SetSpriteColor(Config.Color);
+    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applied color to %s"), *Comp->GetName());
+    
+    // --- ВИДИМОСТЬ ---
+    if (!Config.Sprite.IsNull())
+    {
+        Comp->SetVisibility(Config.bVisible);
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for %s to %s"), 
+            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        Comp->SetVisibility(false);
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden %s (null sprite)"), *Comp->GetName());
+    }
+}
+
+void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config, bool bAnimate)
+{
+    UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
+    if (!Comp) 
+    {
+        UE_LOG(LogTemp, Error, TEXT("ApplySpriteConfig: Simple component not found for ID %d"), (int32)ID);
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Processing simple sprite component %s"), *Comp->GetName());
+
+    // --- ПРОВЕРКА ИЗМЕНЕНИЯ АССЕТА ---
+    const UPaperSprite* CurrentSprite = Comp->GetSprite();
+    bool bAssetChanged = false;
+    
+    if (!CurrentSprite && !Config.Sprite.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Simple %s changed from NULL to %s"), 
+            *Comp->GetName(), *Config.Sprite.ToString());
+    }
+    else if (CurrentSprite && Config.Sprite.IsNull())
+    {
+        bAssetChanged = true;
+        UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Simple %s changed from %s to NULL"), 
+            *Comp->GetName(), *CurrentSprite->GetName());
+    }
+    else if (CurrentSprite && !Config.Sprite.IsNull())
+    {
+        bAssetChanged = (CurrentSprite->GetPathName() != Config.Sprite.ToString());
+        if (bAssetChanged)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Simple %s changed from %s to %s"), 
+                *Comp->GetName(), *CurrentSprite->GetName(), *Config.Sprite.ToString());
+        }
+    }
+
+    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    if (bAnimate && bAssetChanged)
+    {
+        if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(ID))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing transition for simple %s"), *Comp->GetName());
+            PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("ApplySpriteConfig: Fade component not found for simple %s"), *Comp->GetName());
+            ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applying simple %s instantly"), *Comp->GetName());
+        ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
+    }
+
+    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
+    Comp->SetSpriteColor(Config.Color);
+    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applied color to simple %s"), *Comp->GetName());
+    
+    // --- ВИДИМОСТЬ ---
+    if (!Config.Sprite.IsNull())
+    {
+        Comp->SetVisibility(Config.bVisible);
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for simple %s to %s"), 
+            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+    }
+    else
+    {
+        Comp->SetVisibility(false);
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden simple %s (null sprite)"), *Comp->GetName());
+    }
+}
+
+// =====================================================
+// UTILITY FUNCTION
+// =====================================================
 
 USkeletalMeshComponent* AVNCharacter::GetSkeletalComponentBySpriteTarget(E_SpriteAttachmentTarget Target)
 {

@@ -63,6 +63,78 @@ bool AVNCharacter::IsChildOfHeadSprite(USceneComponent* Component) const
     return Component->GetAttachParent() == Head_Sprite;
 }
 
+// =====================================================
+// НОВАЯ СИСТЕМА УПРАВЛЕНИЯ АЛЬФОЙ ДЛЯ АНИМАЦИИ
+// =====================================================
+
+void AVNCharacter::SetAnimationAlpha(USceneComponent* Component, float Alpha)
+{
+    if (!Component) return;
+    
+    Alpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
+    ComponentAnimationAlphas.Add(Component, Alpha);
+    
+    // Применяем альфу к компоненту
+    if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component))
+    {
+        for (int32 i = 0; i < SkeletalMesh->GetNumMaterials(); ++i)
+        {
+            if (UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamicFromMaterial(i, SkeletalMesh->GetMaterial(i)))
+            {
+                DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
+            }
+        }
+    }
+    else if (UPaperSpriteComponent* SpriteComponent = Cast<UPaperSpriteComponent>(Component))
+    {
+        FLinearColor CurrentColor = SpriteComponent->GetSpriteColor();
+        CurrentColor.A = Alpha;
+        SpriteComponent->SetSpriteColor(CurrentColor);
+    }
+    
+    UE_LOG(LogTemp, Verbose, TEXT("SetAnimationAlpha: %s alpha set to %.2f"), *Component->GetName(), Alpha);
+}
+
+void AVNCharacter::SetTargetAlpha(USceneComponent* Component, float TargetAlpha)
+{
+    if (!Component) return;
+    TargetAlpha = FMath::Clamp(TargetAlpha, 0.0f, 1.0f);
+    ComponentTargetAlphas.Add(Component, TargetAlpha);
+    UE_LOG(LogTemp, Log, TEXT("SetTargetAlpha: %s target alpha set to %.2f"), *Component->GetName(), TargetAlpha);
+}
+
+float AVNCharacter::GetAnimationAlpha(USceneComponent* Component) const
+{
+    if (!Component) return 1.0f;
+    if (const float* Alpha = ComponentAnimationAlphas.Find(Component))
+    {
+        return *Alpha;
+    }
+    return 1.0f; // По умолчанию полная непрозрачность
+}
+
+float AVNCharacter::GetTargetAlpha(USceneComponent* Component) const
+{
+    if (!Component) return 1.0f;
+    if (const float* Alpha = ComponentTargetAlphas.Find(Component))
+    {
+        return *Alpha;
+    }
+    return 1.0f; // По умолчанию полная непрозрачность
+}
+
+void AVNCharacter::ClearAnimationAlphas(USceneComponent* Component)
+{
+    if (!Component) return;
+    ComponentAnimationAlphas.Remove(Component);
+    ComponentTargetAlphas.Remove(Component);
+    UE_LOG(LogTemp, Log, TEXT("ClearAnimationAlphas: Cleared animation alphas for %s"), *Component->GetName());
+}
+
+// =====================================================
+// УПРОЩЕННЫЕ ФУНКЦИИ БЕЗ InitialAlpha
+// =====================================================
+
 void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh)
 {
 	if (!Component) return;
@@ -72,23 +144,26 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 		USkeletalMesh* LoadedMesh = SkeletalMesh.LoadSynchronous();
 		if (LoadedMesh)
 		{
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Setting mesh for %s to %s"), *Component->GetName(), *LoadedMesh->GetName());
 			Component->SetSkeletalMesh(LoadedMesh);
 			Component->SetVisibility(true);
+			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
 			SetComponentColor(Component, GetTargetColorForComponent(Component));
+			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s"), *Component->GetName());
 		}
 		else
 		{
-			VN_LOG_WARNING(TEXT("ValidateAndSetupSkeletalComponent: Failed to load mesh for %s"), *Component->GetName());
 			Component->SetSkeletalMesh(nullptr);
+			Component->SetAnimInstanceClass(nullptr);
 			Component->SetVisibility(false);
+			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSkeletalComponent: Failed to load mesh for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
-		VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Clearing mesh for %s"), *Component->GetName());
 		Component->SetSkeletalMesh(nullptr);
+		Component->SetAnimInstanceClass(nullptr);
 		Component->SetVisibility(false);
+		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponent: Cleared mesh for %s"), *Component->GetName());
 	}
 }
 
@@ -101,23 +176,24 @@ void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Compon
 		UPaperSprite* LoadedSprite = Sprite.LoadSynchronous();
 		if (LoadedSprite)
 		{
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Setting sprite for %s to %s"), *Component->GetName(), *LoadedSprite->GetName());
 			Component->SetSprite(LoadedSprite);
 			Component->SetVisibility(true);
-			SetComponentColor(Component, GetTargetColorForComponent(Component));
+			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
+			Component->SetSpriteColor(GetTargetColorForComponent(Component));
+			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
 		}
 		else
 		{
-			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
 			Component->SetSprite(nullptr);
 			Component->SetVisibility(false);
+			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
-		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Clearing sprite for %s"), *Component->GetName());
 		Component->SetSprite(nullptr);
 		Component->SetVisibility(false);
+		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
 	}
 }
 
@@ -130,12 +206,9 @@ void AVNCharacter::SetComponentAlpha(USceneComponent* Component, float Alpha)
 	{
 		for (int32 i = 0; i < SkeletalMesh->GetNumMaterials(); ++i)
 		{
-			if (UMaterialInterface* BaseMaterial = SkeletalMesh->GetMaterial(i))
+			if (UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamicFromMaterial(i, SkeletalMesh->GetMaterial(i)))
 			{
-				if (UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamic(i))
-				{
-					DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
-				}
+				DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Alpha);
 			}
 		}
 	}
@@ -155,13 +228,10 @@ void AVNCharacter::SetComponentColor(USceneComponent* Component, const FLinearCo
 	{
 		for (int32 i = 0; i < SkeletalMesh->GetNumMaterials(); ++i)
 		{
-			if (UMaterialInterface* BaseMaterial = SkeletalMesh->GetMaterial(i))
+			if (UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamicFromMaterial(i, SkeletalMesh->GetMaterial(i)))
 			{
-				if (UMaterialInstanceDynamic* DynamicMaterial = SkeletalMesh->CreateAndSetMaterialInstanceDynamic(i))
-				{
-					DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
-					DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Color.A);
-				}
+				DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
+				DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), Color.A);
 			}
 		}
 	}
@@ -174,8 +244,6 @@ void AVNCharacter::SetComponentColor(USceneComponent* Component, const FLinearCo
 void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source, USkeletalMeshComponent* Target)
 {
 	if (!Source || !Target) return;
-	
-	VN_LOG_DEBUG(TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
 	
 	Target->SetSkeletalMesh(Source->GetSkeletalMeshAsset());
 	Target->SetAnimInstanceClass(Source->GetAnimClass());
@@ -201,8 +269,6 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 {
 	if (!Source || !Target) return;
 	
-	VN_LOG_DEBUG(TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
-	
 	Target->SetSprite(Source->GetSprite());
 	Target->SetSpriteColor(Source->GetSpriteColor());
 	Target->SetVisibility(Source->IsVisible());
@@ -218,105 +284,121 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 	}
 }
 
+// =====================================================
+// НОВАЯ СИСТЕМА ПОДГОТОВКИ ПЕРЕХОДОВ
+// =====================================================
+
 void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh)
 {
 	if (!MainComponent || !FadeComponent) return;
 	
-	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Starting transition for MainComponent=%s, FadeComponent=%s"), *MainComponent->GetName(), *FadeComponent->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Starting transition for %s"), *MainComponent->GetName());
 	
 	FadingInComponents.Add(MainComponent);
 	FadingOutComponents.Add(FadeComponent);
 
-	// --- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ---
-	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Added to transition sets. FadingIn [%s], FadingOut [%s]. Total sets: FadingIn=%d, FadingOut=%d"), 
-		*MainComponent->GetName(), *FadeComponent->GetName(), FadingInComponents.Num(), FadingOutComponents.Num());
-
 	CopySkeletalComponentSettings(MainComponent, FadeComponent);
 
-	// --- ИЗМЕНЕНИЕ: Используем Leader Pose ТОЛЬКО при переходе на валидный меш ---
 	if (!NewMesh.IsNull())
 	{
-		VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Setting Leader Pose Component for %s"), *FadeComponent->GetName());
-		// Это предотвратит "скачок" позы при переходе с одного меша на другой.
 		FadeComponent->SetLeaderPoseComponent(MainComponent);
 	}
-	else
-	{
-		VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Skipping Leader Pose setup (NewMesh is null)"));
-	}
-	// Если NewMesh == nullptr, мы НЕ устанавливаем Leader, т.к. лидер будет невалидным.
-	// FadeComponent просто исчезнет со своей последней валидной позой.
-
-	// Смещаем Fade-компонент назад для решения проблемы Z-fighting
+	
 	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
 	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
-	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Applied Z-offset to %s"), *FadeComponent->GetName());
 	
-	SetComponentAlpha(FadeComponent, 1.0f);
+	// Устанавливаем fade компонент на полную видимость
+	SetAnimationAlpha(FadeComponent, 1.0f);
+	SetTargetAlpha(FadeComponent, 0.0f); // Будет исчезать
 	FadeComponent->SetVisibility(true, true);
-	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: FadeComponent %s set to visible with alpha 1.0"), *FadeComponent->GetName());
 
 	ResetComponentAttachmentToDefault(MainComponent);
+	
+	// Настраиваем новый компонент
 	ValidateAndSetupSkeletalComponent(MainComponent, NewMesh);
-	SetComponentAlpha(MainComponent, 0.0f);
-	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: MainComponent %s set to alpha 0.0"), *MainComponent->GetName());
+	
+	// КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Запоминаем целевую альфу из цвета компонента
+	FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+	SetTargetAlpha(MainComponent, TargetColor.A);
+	
+	// Начинаем с нулевой альфы для плавного появления
+	SetAnimationAlpha(MainComponent, 0.0f);
+	
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s will fade IN (target alpha: %.2f), %s will fade OUT"), 
+	    *MainComponent->GetName(), TargetColor.A, *FadeComponent->GetName());
 }
 
 void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent, UPaperSpriteComponent* FadeComponent, TSoftObjectPtr<UPaperSprite> NewSprite)
 {
 	if (!MainComponent || !FadeComponent) return;
 	
-	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: Starting transition for MainComponent=%s, FadeComponent=%s"), *MainComponent->GetName(), *FadeComponent->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Starting transition for %s"), *MainComponent->GetName());
 	
 	FadingInComponents.Add(MainComponent);
 	FadingOutComponents.Add(FadeComponent);
 
-	// --- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ---
-	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: Added to transition sets. FadingIn [%s], FadingOut [%s]. Total sets: FadingIn=%d, FadingOut=%d"), 
-		*MainComponent->GetName(), *FadeComponent->GetName(), FadingInComponents.Num(), FadingOutComponents.Num());
-
 	CopySpriteComponentSettings(MainComponent, FadeComponent);
 
-	// Смещаем Fade-компонент назад для решения проблемы Z-fighting
 	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
 	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
-	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: Applied Z-offset to %s"), *FadeComponent->GetName());
 	
-	SetComponentAlpha(FadeComponent, 1.0f);
+	// Устанавливаем fade компонент на полную видимость
+	SetAnimationAlpha(FadeComponent, 1.0f);
+	SetTargetAlpha(FadeComponent, 0.0f); // Будет исчезать
 	FadeComponent->SetVisibility(true, true);
-	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: FadeComponent %s set to visible with alpha 1.0"), *FadeComponent->GetName());
 	
 	ResetComponentAttachmentToDefault(MainComponent);
+	
+	// Настраиваем новый компонент
 	ValidateAndSetupSpriteComponent(MainComponent, NewSprite);
-	SetComponentAlpha(MainComponent, 0.0f);
-	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: MainComponent %s set to alpha 0.0"), *MainComponent->GetName());
+	
+	// КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Запоминаем целевую альфу из цвета компонента
+	FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+	SetTargetAlpha(MainComponent, TargetColor.A);
+	
+	// Начинаем с нулевой альфы для плавного появления
+	SetAnimationAlpha(MainComponent, 0.0f);
+	
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s will fade IN (target alpha: %.2f), %s will fade OUT"), 
+	    *MainComponent->GetName(), TargetColor.A, *FadeComponent->GetName());
 }
 
 void AVNCharacter::FinishTransition(USceneComponent* MainComponent, USceneComponent* FadeComponent)
 {
 	if (!MainComponent || !FadeComponent) return;
 	
-	VN_LOG_DEBUG(TEXT("FinishTransition: Finishing transition for MainComponent=%s, FadeComponent=%s"), *MainComponent->GetName(), *FadeComponent->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("FinishTransition: Finishing transition for %s and %s"), 
+		*MainComponent->GetName(), *FadeComponent->GetName());
 	
-	SetComponentAlpha(MainComponent, 1.0f);
+	// Применяем целевую альфу к main компоненту
+	float TargetAlpha = GetTargetAlpha(MainComponent);
+	SetAnimationAlpha(MainComponent, TargetAlpha);
+	
+	// Скрываем fade компонент
 	FadeComponent->SetVisibility(false);
-	SetComponentAlpha(FadeComponent, 0.0f);
+	SetAnimationAlpha(FadeComponent, 0.0f);
 	
 	if (USkeletalMeshComponent* SkeletalFade = Cast<USkeletalMeshComponent>(FadeComponent))
 	{
 		SkeletalFade->SetSkeletalMesh(nullptr);
-		VN_LOG_DEBUG(TEXT("FinishTransition: Cleared skeletal mesh for %s"), *FadeComponent->GetName());
+		SkeletalFade->SetAnimInstanceClass(nullptr);
 	}
 	else if (UPaperSpriteComponent* SpriteFade = Cast<UPaperSpriteComponent>(FadeComponent))
 	{
 		SpriteFade->SetSprite(nullptr);
-		VN_LOG_DEBUG(TEXT("FinishTransition: Cleared sprite for %s"), *FadeComponent->GetName());
 	}
+	
+	// Очищаем данные анимации
+	ClearAnimationAlphas(MainComponent);
+	ClearAnimationAlphas(FadeComponent);
+	
+	UE_LOG(LogTemp, Log, TEXT("FinishTransition: Applied target alpha %.2f to %s"), 
+		TargetAlpha, *MainComponent->GetName());
 }
 
 void AVNCharacter::HideAllFadeComponents()
 {
-	VN_LOG_DEBUG(TEXT("HideAllFadeComponents: Hiding all fade components"));
+	UE_LOG(LogTemp, Warning, TEXT("HideAllFadeComponents: Hiding all fade components"));
 	
 	TArray<USceneComponent*> FadeComponents = GetAllFadeComponents();
 	for (USceneComponent* Component : FadeComponents)
@@ -324,11 +406,13 @@ void AVNCharacter::HideAllFadeComponents()
 		if (Component)
 		{
 			Component->SetVisibility(false);
-			SetComponentAlpha(Component, 0.0f);
+			SetAnimationAlpha(Component, 0.0f);
+			ClearAnimationAlphas(Component);
 			
 			if (USkeletalMeshComponent* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
 			{
 				SkeletalFade->SetSkeletalMesh(nullptr);
+				SkeletalFade->SetAnimInstanceClass(nullptr);
 			}
 			else if (UPaperSpriteComponent* SpriteFade = Cast<UPaperSpriteComponent>(Component))
 			{
@@ -337,5 +421,33 @@ void AVNCharacter::HideAllFadeComponents()
 		}
 	}
 	
-	VN_LOG_DEBUG(TEXT("HideAllFadeComponents: Hidden %d fade components"), FadeComponents.Num());
+	// Очищаем все списки анимации и карты альфы
+	for (USceneComponent* Component : FadingInComponents)
+	{
+		if (Component)
+		{
+			// Применяем целевую альфу, если она есть
+			float TargetAlpha = GetTargetAlpha(Component);
+			if (TargetAlpha != 1.0f || ComponentTargetAlphas.Contains(Component))
+			{
+				SetAnimationAlpha(Component, TargetAlpha);
+				UE_LOG(LogTemp, Log, TEXT("HideAllFadeComponents: Applied target alpha %.2f to %s"), 
+					TargetAlpha, *Component->GetName());
+			}
+			ClearAnimationAlphas(Component);
+		}
+	}
+	
+	for (USceneComponent* Component : FadingOutComponents)
+	{
+		if (Component)
+		{
+			ClearAnimationAlphas(Component);
+		}
+	}
+	
+	FadingInComponents.Empty();
+	FadingOutComponents.Empty();
+	
+	UE_LOG(LogTemp, Log, TEXT("HideAllFadeComponents: Hidden %d fade components"), FadeComponents.Num());
 }

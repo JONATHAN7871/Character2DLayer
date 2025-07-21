@@ -10,16 +10,17 @@
 
 void AVNCharacter::FinalizeCurrentTransition()
 {
-	// --- ЛОГИКА ОЧИСТКИ ТЕПЕРЬ ЗДЕСЬ ---
-	VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleaning up %d FadingIn and %d FadingOut components."), FadingInComponents.Num(), FadingOutComponents.Num());
+	UE_LOG(LogTemp, Warning, TEXT("FinalizeCurrentTransition: Cleaning up %d FadingIn and %d FadingOut components."), 
+		FadingInComponents.Num(), FadingOutComponents.Num());
 
-	// Завершаем все активные переходы
+	// Завершаем все активные переходы для FadingOut компонентов
 	for (USceneComponent* Component : FadingOutComponents)
 	{
 		if (Component)
 		{
 			Component->SetVisibility(false);
-			SetComponentAlpha(Component, 0.0f);
+			SetAnimationAlpha(Component, 0.0f);
+			
 			if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
 			{
 				SkeletalFade->SetSkeletalMesh(nullptr);
@@ -29,22 +30,36 @@ void AVNCharacter::FinalizeCurrentTransition()
 			{
 				SpriteFade->SetSprite(nullptr);
 			}
+			
 			ResetComponentAttachmentToDefault(Component);
+			ClearAnimationAlphas(Component);
+			
+			UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Cleaned up FadingOut component %s"), *Component->GetName());
 		}
 	}
 
-	// Убеждаемся, что все появившиеся компоненты имеют полную непрозрачность
+	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убеждаемся, что все FadingIn компоненты имеют ЦЕЛЕВУЮ альфу
 	for (USceneComponent* Component : FadingInComponents)
 	{
 		if (Component && Component->IsVisible())
 		{
-			SetComponentAlpha(Component, 1.0f);
+			// НОВАЯ СИСТЕМА: Применяем целевую альфу из системы анимации
+			float TargetAlpha = GetTargetAlpha(Component);
+			SetAnimationAlpha(Component, TargetAlpha);
+			
+			// Очищаем данные анимации - компонент больше не анимируется
+			ClearAnimationAlphas(Component);
+			
+			UE_LOG(LogTemp, Warning, TEXT("FinalizeCurrentTransition: Applied target alpha %.2f to %s"), 
+				TargetAlpha, *Component->GetName());
 		}
 	}
 
 	// Очищаем списки для следующей анимации
 	FadingInComponents.Empty();
 	FadingOutComponents.Empty();
+	
+	UE_LOG(LogTemp, Warning, TEXT("FinalizeCurrentTransition: Transition cleanup complete"));
 }
 
 // =====================================================
