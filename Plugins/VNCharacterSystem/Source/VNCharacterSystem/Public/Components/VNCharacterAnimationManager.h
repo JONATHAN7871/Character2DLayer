@@ -4,7 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/Engine.h"
 #include "Data/VNCharacterEnums.h"
-#include "Data/VNCharacterStructs.h"
+#include "Data/VNCharacterTypes.h"
 #include "VNCharacterAnimationManager.generated.h"
 
 // Forward declarations

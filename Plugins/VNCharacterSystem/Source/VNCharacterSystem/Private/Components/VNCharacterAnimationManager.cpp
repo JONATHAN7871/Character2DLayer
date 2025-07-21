@@ -3,6 +3,7 @@
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
+#include "Data/VNCharacterTypes.h"
 
 UVNCharacterAnimationManager::UVNCharacterAnimationManager()
 {
@@ -182,36 +183,6 @@ void UVNCharacterAnimationManager::StartAnimation(const FVNAnimationRequest& Req
 
 	// Уведомляем о начале анимации
 	OnAnimationStarted.Broadcast(Request.AnimationType);
-
-	// Выполняем специфичную для типа анимации подготовку
-	switch (Request.AnimationType)
-	{
-		case EVNAnimationType::Transition:
-			// Подготовка для перехода состояний выполняется в Character
-			break;
-
-		case EVNAnimationType::SpawnDespawn:
-			// Подготовка для появления/исчезновения
-			if (Request.bIsSpawnAnimation)
-			{
-				LogAnimation(TEXT("Preparing Appear animation"));
-			}
-			else
-			{
-				LogAnimation(TEXT("Preparing Disappear animation"));
-			}
-			break;
-
-		case EVNAnimationType::Focus:
-			// Подготовка для смены фокуса
-			LogAnimation(FString::Printf(TEXT("Preparing Focus animation: %s"), 
-				Request.bIsInFocus ? TEXT("In Focus") : TEXT("Out of Focus")));
-			break;
-
-		default:
-			VN_LOG_WARNING(TEXT("Unknown animation type in StartAnimation"));
-			break;
-	}
 }
 
 void UVNCharacterAnimationManager::UpdateCurrentAnimation(float DeltaTime)
@@ -311,7 +282,7 @@ bool UVNCharacterAnimationManager::EnqueueAnimationRequest(const FVNAnimationReq
 }
 
 // =====================================================
-// СПЕЦИАЛИЗИРОВАННЫЕ МЕТОДЫ АНИМАЦИИ
+// СПЕЦИАЛИЗИРОВАННЫЕ МЕТОДЫ АНИМАЦИИ (ПЕРЕРАБОТАННЫЕ)
 // =====================================================
 
 void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
@@ -322,37 +293,41 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		return;
 	}
 
-	// Fade Out старых компонентов
-	for (USkeletalMeshComponent* Component : Character->SkeletalMeshesToFadeOut)
+	// ПЕРЕРАБОТАННАЯ СИСТЕМА: Анимируем переходы между основными и fade компонентами
+	// Находим все видимые fade компоненты и анимируем их исчезновение
+	TArray<USceneComponent*> FadeComponents = Character->GetAllFadeComponents();
+	for (USceneComponent* FadeComponent : FadeComponents)
 	{
-		if (Component)
+		if (FadeComponent && FadeComponent->IsVisible())
 		{
-			Character->SetComponentAlpha(Component, 1.0f - Alpha);
+			// Fade Out: от 1.0 до 0.0
+			Character->SetComponentAlpha(FadeComponent, 1.0f - Alpha);
 		}
 	}
 
-	for (UPaperSpriteComponent* Component : Character->SpritesToFadeOut)
+	// Находим все основные компоненты, которые должны появляться
+	TArray<USceneComponent*> MainComponents = Character->GetAllMainComponents();
+	for (USceneComponent* MainComponent : MainComponents)
 	{
-		if (Component)
+		if (MainComponent && MainComponent->IsVisible())
 		{
-			Character->SetComponentAlpha(Component, 1.0f - Alpha);
-		}
-	}
+			// Проверяем, есть ли содержимое в компоненте
+			bool bHasContent = false;
+			
+			if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(MainComponent))
+			{
+				bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
+			}
+			else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(MainComponent))
+			{
+				bHasContent = (SpriteComp->GetSprite() != nullptr);
+			}
 
-	// Fade In новых компонентов
-	for (USkeletalMeshComponent* Component : Character->SkeletalMeshesToFadeIn)
-	{
-		if (Component)
-		{
-			Character->SetComponentAlpha(Component, Alpha);
-		}
-	}
-
-	for (UPaperSpriteComponent* Component : Character->SpritesToFadeIn)
-	{
-		if (Component)
-		{
-			Character->SetComponentAlpha(Component, Alpha);
+			if (bHasContent)
+			{
+				// Fade In: от 0.0 до 1.0
+				Character->SetComponentAlpha(MainComponent, Alpha);
+			}
 		}
 	}
 	
@@ -375,8 +350,8 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			// ФАЗА 1: BodyShadow появляется (0-50% времени)
 			float PhaseAlpha = Alpha * 2.0f; // Преобразуем 0-0.5 в 0-1
 			
-			// Скрываем все компоненты кроме BodyShadow
-			TArray<USceneComponent*> AllComponents = Character->GetAllRenderComponents();
+			// Скрываем все основные компоненты кроме BodyShadow
+			TArray<USceneComponent*> AllComponents = Character->GetAllMainComponents();
 			for (USceneComponent* Component : AllComponents)
 			{
 				if (Component && Component != Character->BodyShadow_Sprite)
@@ -386,8 +361,11 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			}
 			
 			// Показываем и анимируем BodyShadow
-			Character->BodyShadow_Sprite->SetVisibility(true);
-			Character->SetComponentAlpha(Character->BodyShadow_Sprite, PhaseAlpha);
+			if (Character->BodyShadow_Sprite)
+			{
+				Character->BodyShadow_Sprite->SetVisibility(true);
+				Character->SetComponentAlpha(Character->BodyShadow_Sprite, PhaseAlpha);
+			}
 			
 			LogAnimation(FString::Printf(TEXT("Appear Phase 1: %.2f"), PhaseAlpha), false);
 		}
@@ -397,23 +375,41 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			float PhaseAlpha = (Alpha - 0.5f) * 2.0f; // Преобразуем 0.5-1 в 0-1
 			
 			// Скрываем BodyShadow
-			Character->BodyShadow_Sprite->SetVisibility(false);
+			if (Character->BodyShadow_Sprite)
+			{
+				Character->BodyShadow_Sprite->SetVisibility(false);
+			}
 			
 			// Показываем все остальные компоненты и анимируем цвет от черного к целевому
-			TArray<USceneComponent*> AllComponents = Character->GetAllRenderComponents();
+			TArray<USceneComponent*> AllComponents = Character->GetAllMainComponents();
 			for (USceneComponent* Component : AllComponents)
 			{
 				if (Component && Component != Character->BodyShadow_Sprite)
 				{
-					Component->SetVisibility(true);
+					// Проверяем, есть ли содержимое в компоненте
+					bool bHasContent = false;
 					
-					// Интерполируем цвет от черного к целевому
-					FLinearColor TargetColor = Character->GetTargetColorForComponent(Component);
-					FLinearColor BlackColor = FLinearColor::Black;
-					BlackColor.A = TargetColor.A; // Сохраняем альфу
-					
-					FLinearColor CurrentColor = FMath::Lerp(BlackColor, TargetColor, PhaseAlpha);
-					Character->SetComponentColor(Component, CurrentColor);
+					if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component))
+					{
+						bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
+					}
+					else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(Component))
+					{
+						bHasContent = (SpriteComp->GetSprite() != nullptr);
+					}
+
+					if (bHasContent)
+					{
+						Component->SetVisibility(true);
+						
+						// Интерполируем цвет от черного к целевому
+						FLinearColor TargetColor = Character->GetTargetColorForComponent(Component);
+						FLinearColor BlackColor = FLinearColor::Black;
+						BlackColor.A = TargetColor.A; // Сохраняем альфу
+						
+						FLinearColor CurrentColor = FMath::Lerp(BlackColor, TargetColor, PhaseAlpha);
+						Character->SetComponentColor(Component, CurrentColor);
+					}
 				}
 			}
 			
@@ -429,16 +425,17 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			float PhaseAlpha = Alpha * 2.0f; // Преобразуем 0-0.5 в 0-1
 			
 			// Скрываем BodyShadow
-			Character->BodyShadow_Sprite->SetVisibility(false);
+			if (Character->BodyShadow_Sprite)
+			{
+				Character->BodyShadow_Sprite->SetVisibility(false);
+			}
 			
 			// Затемняем все остальные компоненты
-			TArray<USceneComponent*> AllComponents = Character->GetAllRenderComponents();
+			TArray<USceneComponent*> AllComponents = Character->GetAllMainComponents();
 			for (USceneComponent* Component : AllComponents)
 			{
-				if (Component && Component != Character->BodyShadow_Sprite)
+				if (Component && Component != Character->BodyShadow_Sprite && Component->IsVisible())
 				{
-					Component->SetVisibility(true);
-					
 					// Интерполируем цвет от целевого к черному
 					FLinearColor TargetColor = Character->GetTargetColorForComponent(Component);
 					FLinearColor BlackColor = FLinearColor::Black;
@@ -457,7 +454,7 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			float PhaseAlpha = (Alpha - 0.5f) * 2.0f; // Преобразуем 0.5-1 в 0-1
 			
 			// Скрываем все компоненты кроме BodyShadow
-			TArray<USceneComponent*> AllComponents = Character->GetAllRenderComponents();
+			TArray<USceneComponent*> AllComponents = Character->GetAllMainComponents();
 			for (USceneComponent* Component : AllComponents)
 			{
 				if (Component && Component != Character->BodyShadow_Sprite)
@@ -467,8 +464,11 @@ void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 			}
 			
 			// Показываем и анимируем исчезновение BodyShadow
-			Character->BodyShadow_Sprite->SetVisibility(true);
-			Character->SetComponentAlpha(Character->BodyShadow_Sprite, 1.0f - PhaseAlpha);
+			if (Character->BodyShadow_Sprite)
+			{
+				Character->BodyShadow_Sprite->SetVisibility(true);
+				Character->SetComponentAlpha(Character->BodyShadow_Sprite, 1.0f - PhaseAlpha);
+			}
 			
 			LogAnimation(FString::Printf(TEXT("Disappear Phase 2: %.2f"), PhaseAlpha), false);
 			
@@ -489,11 +489,11 @@ void UVNCharacterAnimationManager::UpdateFocusAnimation(float Alpha)
 		return;
 	}
 
-	TArray<USceneComponent*> AllComponents = Character->GetAllRenderComponents();
+	TArray<USceneComponent*> AllComponents = Character->GetAllMainComponents();
 	
 	for (USceneComponent* Component : AllComponents)
 	{
-		if (Component)
+		if (Component && Component->IsVisible())
 		{
 			FLinearColor BaseColor = Character->GetBaseColorForComponent(Component);
 			FLinearColor DimmedColor = BaseColor * Character->DimColorMultiplier;
