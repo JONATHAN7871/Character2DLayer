@@ -2,13 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Engine/SkeletalMesh.h"
-#include "PaperSprite.h"
+#include "Data/VNCharacterDataAssetStructs.h"
 #include "VNCharacterDataAsset.generated.h"
 
 /**
- * Простой DataAsset для VN персонажа
- * Содержит все компоненты персонажа для быстрого применения
+ * DataAsset для VN персонажа с полными конфигурациями
  */
 UCLASS(BlueprintType, Blueprintable)
 class VNCHARACTERSYSTEM_API UVNCharacterDataAsset : public UPrimaryDataAsset
@@ -19,73 +17,90 @@ public:
 	UVNCharacterDataAsset();
 
 	// =====================================================
-	// SKELETAL MESH КОМПОНЕНТЫ
+	// SKELETAL MESH КОМПОНЕНТЫ С КОНФИГУРАЦИЯМИ
 	// =====================================================
 
+	/** Основное тело персонажа */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> BodyMesh;
+	F_VN_SkeletalConfig_Body BodyConfig;
 
+	/** Руки персонажа */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> ArmsMesh;
+	F_VN_SkeletalConfig_Attachment ArmsConfig;
 
+	/** Голова персонажа */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> HeadMesh;
+	F_VN_SkeletalConfig_Attachment HeadConfig;
 
+	/** Дополнительный элемент 1 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> Custom01Mesh;
+	F_VN_SkeletalConfig_Attachment Custom01Config;
 
+	/** Дополнительный элемент 2 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> Custom02Mesh;
+	F_VN_SkeletalConfig_Attachment Custom02Config;
 
+	/** Дополнительный элемент 3 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skeletal Meshes")
-	TSoftObjectPtr<USkeletalMesh> Custom03Mesh;
+	F_VN_SkeletalConfig_Attachment Custom03Config;
 
 	// =====================================================
-	// SPRITE КОМПОНЕНТЫ
+	// SPRITE КОМПОНЕНТЫ С КОНФИГУРАЦИЯМИ
 	// =====================================================
 
+	/** Спрайт тела (с attachment) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Body")
-	TSoftObjectPtr<UPaperSprite> BodySprite;
+	F_VN_SpriteConfig_Attachment BodySpriteConfig;
 
+	/** Спрайт рук (с attachment) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Body")
-	TSoftObjectPtr<UPaperSprite> ArmsSprite;
+	F_VN_SpriteConfig_Attachment ArmsSpriteConfig;
 
+	/** Спрайт тени тела (с attachment) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Body")
-	TSoftObjectPtr<UPaperSprite> BodyShadowSprite;
+	F_VN_SpriteConfig_Attachment BodyShadowSpriteConfig;
 
+	/** Спрайт головы (с attachment) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> HeadSprite;
+	F_VN_SpriteConfig_Attachment HeadSpriteConfig;
 
+	/** Спрайт бровей (простой) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> EyebrowSprite;
+	F_VN_SpriteConfig_Simple EyebrowSpriteConfig;
 
+	/** Спрайт глаз (простой) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> EyesSprite;
+	F_VN_SpriteConfig_Simple EyesSpriteConfig;
 
+	/** Спрайт век (простой) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> EyelidsSprite;
+	F_VN_SpriteConfig_Simple EyelidsSpriteConfig;
 
+	/** Спрайт подмигивания (простой) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> WinkSprite;
+	F_VN_SpriteConfig_Simple WinkSpriteConfig;
 
+	/** Спрайт рта (простой) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Head")
-	TSoftObjectPtr<UPaperSprite> MouthSprite;
+	F_VN_SpriteConfig_Simple MouthSpriteConfig;
+
+	/** Эмоциональные эффекты головы (простые) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
+	F_VN_SpriteConfig_Simple EmotionHeadEffect01SpriteConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionHeadEffect01Sprite;
+	F_VN_SpriteConfig_Simple EmotionHeadEffect02SpriteConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionHeadEffect02Sprite;
+	F_VN_SpriteConfig_Simple EmotionHeadEffect03SpriteConfig;
+
+	/** Эмоциональные эффекты тела (с attachment) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
+	F_VN_SpriteConfig_Attachment EmotionBodyEffect01SpriteConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionHeadEffect03Sprite;
+	F_VN_SpriteConfig_Attachment EmotionBodyEffect02SpriteConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionBodyEffect01Sprite;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionBodyEffect02Sprite;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
-	TSoftObjectPtr<UPaperSprite> EmotionBodyEffect03Sprite;
+	F_VN_SpriteConfig_Attachment EmotionBodyEffect03SpriteConfig;
 };

@@ -8,6 +8,7 @@
 #include "Components/SceneComponent.h"
 #include "Data/VNCharacterEnums.h"
 #include "Data/VNCharacterTypes.h"
+#include "Data/VNCharacterDataAssetStructs.h"
 #include "VNCharacter.generated.h"
 
 // Forward declarations
@@ -25,6 +26,7 @@ class UMaterialInstanceDynamic;
  * - Упрощена валидация (работает с конкретными компонентами)
  * - Прямое управление спрайтами и мешами через enum'ы
  * - Правильное применение глобальных трансформаций
+ * - Поддержка DataAsset с полными конфигурациями
  */
 
 // Делегаты для событий персонажа
@@ -64,19 +66,6 @@ public:
 	/** Корневой трансформ для всех Sprite компонентов */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USceneComponent* GlobalSpriteTransform;
-
-	// =====================================================
-	// РАБОТА С DATA ASSET
-	// =====================================================
-
-	/**
-	 * Применить DataAsset к персонажу
-	 * @param CharacterData DataAsset с компонентами персонажа
-	 * @param bAnimate Использовать анимацию при смене компонентов
-	 * @param Duration Длительность анимации
-	 */
-	UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
-	void ApplyDataAsset(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
 
 	// =====================================================
 	// SKELETAL MESH КОМПОНЕНТЫ (ОСНОВНЫЕ + FADE)
@@ -268,6 +257,19 @@ public:
 	             bool bAnimate = true, float Duration = 0.5f);
 
 	// =====================================================
+	// РАБОТА С DATA ASSET
+	// =====================================================
+
+	/**
+	 * Применить DataAsset к персонажу
+	 * @param CharacterData DataAsset с компонентами персонажа
+	 * @param bAnimate Использовать анимацию при смене компонентов
+	 * @param Duration Длительность анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
+	void ApplyDataAsset(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+
+	// =====================================================
 	// СИСТЕМА ФОКУСА
 	// =====================================================
 
@@ -434,6 +436,22 @@ private:
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
 
 	// =====================================================
+	// НОВЫЕ МЕТОДЫ ДЛЯ DATAASSET
+	// =====================================================
+
+	/** Применить конфигурацию Body к Skeletal Mesh компоненту */
+	void ApplySkeletalBodyConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Body& Config);
+
+	/** Применить конфигурацию Attachment к Skeletal Mesh компоненту */
+	void ApplySkeletalAttachmentConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Attachment& Config);
+
+	/** Применить конфигурацию Attachment к Sprite компоненту */
+	void ApplySpriteAttachmentConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Attachment& Config);
+
+	/** Применить конфигурацию Simple к Sprite компоненту */
+	void ApplySpriteSimpleConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Simple& Config);
+
+	// =====================================================
 	// ОБРАБОТЧИКИ СОБЫТИЙ АНИМАЦИИ
 	// =====================================================
 
@@ -481,3 +499,4 @@ public:
 
 	friend class UVNCharacterAnimationManager;
 };
+	
