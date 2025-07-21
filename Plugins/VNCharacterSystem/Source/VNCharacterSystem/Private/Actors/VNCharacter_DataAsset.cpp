@@ -17,6 +17,15 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"), 
         *CharacterData->GetName(), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
+    // --- ЛОГИКА ПРЕРЫВАНИЯ АНИМАЦИИ ---
+    if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAsset: Interrupted an ongoing transition. Finalizing..."));
+        // Эта команда остановит анимацию и вызовет OnAnimationFinished, который, в свою очередь,
+        // вызовет FinalizeCurrentTransition(), очищая систему для нового перехода.
+        AnimationManager->ClearAnimationQueue(); 
+    }
+
     if (CharacterData->bOverrideGlobalTransforms)
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms"));

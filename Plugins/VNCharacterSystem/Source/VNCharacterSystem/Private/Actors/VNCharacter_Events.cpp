@@ -5,6 +5,49 @@
 #include "PaperSpriteComponent.h"
 
 // =====================================================
+// НОВАЯ ЦЕНТРАЛИЗОВАННАЯ ФУНКЦИЯ ОЧИСТКИ
+// =====================================================
+
+void AVNCharacter::FinalizeCurrentTransition()
+{
+	// --- ЛОГИКА ОЧИСТКИ ТЕПЕРЬ ЗДЕСЬ ---
+	VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleaning up %d FadingIn and %d FadingOut components."), FadingInComponents.Num(), FadingOutComponents.Num());
+
+	// Завершаем все активные переходы
+	for (USceneComponent* Component : FadingOutComponents)
+	{
+		if (Component)
+		{
+			Component->SetVisibility(false);
+			SetComponentAlpha(Component, 0.0f);
+			if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
+			{
+				SkeletalFade->SetSkeletalMesh(nullptr);
+				SkeletalFade->SetLeaderPoseComponent(nullptr);
+			}
+			else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component))
+			{
+				SpriteFade->SetSprite(nullptr);
+			}
+			ResetComponentAttachmentToDefault(Component);
+		}
+	}
+
+	// Убеждаемся, что все появившиеся компоненты имеют полную непрозрачность
+	for (USceneComponent* Component : FadingInComponents)
+	{
+		if (Component && Component->IsVisible())
+		{
+			SetComponentAlpha(Component, 1.0f);
+		}
+	}
+
+	// Очищаем списки для следующей анимации
+	FadingInComponents.Empty();
+	FadingOutComponents.Empty();
+}
+
+// =====================================================
 // ОБРАБОТЧИКИ СОБЫТИЙ АНИМАЦИИ
 // =====================================================
 
@@ -22,74 +65,8 @@ void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 	{
 	case EVNAnimationType::Transition:
 		{
-			// --- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ---
-			VN_LOG_DEBUG(TEXT("OnAnimationFinished: Transition finished. Cleaning up %d FadingIn and %d FadingOut components."), 
-				FadingInComponents.Num(), FadingOutComponents.Num());
-			
-			// Логируем все компоненты перед очисткой
-			for (USceneComponent* Component : FadingInComponents)
-			{
-				if (Component)
-				{
-					VN_LOG_DEBUG(TEXT("OnAnimationFinished: FadingIn component cleanup: %s"), *Component->GetName());
-				}
-			}
-			
-			for (USceneComponent* Component : FadingOutComponents)
-			{
-				if (Component)
-				{
-					VN_LOG_DEBUG(TEXT("OnAnimationFinished: FadingOut component cleanup: %s"), *Component->GetName());
-				}
-			}
-			
-			// Завершаем все активные переходы
-			for (USceneComponent* Component : FadingOutComponents)
-			{
-				if (Component)
-				{
-					VN_LOG_DEBUG(TEXT("OnAnimationFinished: Hiding and cleaning FadingOut component: %s"), *Component->GetName());
-					
-					Component->SetVisibility(false);
-					SetComponentAlpha(Component, 0.0f);
-					
-					if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
-					{
-						SkeletalFade->SetSkeletalMesh(nullptr);
-						// --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Разрываем связь Leader-Follower ---
-						SkeletalFade->SetLeaderPoseComponent(nullptr);
-						VN_LOG_DEBUG(TEXT("OnAnimationFinished: Cleared mesh and leader pose for skeletal component: %s"), *Component->GetName());
-					}
-					else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component))
-					{
-						SpriteFade->SetSprite(nullptr);
-						VN_LOG_DEBUG(TEXT("OnAnimationFinished: Cleared sprite for component: %s"), *Component->GetName());
-					}
-					
-					ResetComponentAttachmentToDefault(Component);
-				}
-			}
-
-			// Убеждаемся, что все появившиеся компоненты имеют полную непрозрачность
-			for (USceneComponent* Component : FadingInComponents)
-			{
-				if (Component && Component->IsVisible())
-				{
-					VN_LOG_DEBUG(TEXT("OnAnimationFinished: Finalizing FadingIn component: %s (setting alpha to 1.0)"), *Component->GetName());
-					SetComponentAlpha(Component, 1.0f);
-				}
-			}
-			
-			// Очищаем списки для следующей анимации
-			int32 FadingInCount = FadingInComponents.Num();
-			int32 FadingOutCount = FadingOutComponents.Num();
-			
-			FadingInComponents.Empty();
-			FadingOutComponents.Empty();
-			
-			VN_LOG_DEBUG(TEXT("OnAnimationFinished: Transition cleanup complete. Cleared %d FadingIn and %d FadingOut components."), 
-				FadingInCount, FadingOutCount);
-			
+			// Просто вызываем централизованную функцию очистки
+			FinalizeCurrentTransition();
 			break;
 		}
 	case EVNAnimationType::SpawnDespawn:

@@ -148,6 +148,10 @@ private:
 	TSet<TObjectPtr<USceneComponent>> FadingInComponents;
 	TSet<TObjectPtr<USceneComponent>> FadingOutComponents;
 	
+	// --- НОВАЯ ФУНКЦИЯ ДЛЯ ПРЕРЫВАНИЯ АНИМАЦИИ ---
+	/** Мгновенно завершает текущий переход, очищая списки и устанавливая компоненты в финальное состояние. */
+	void FinalizeCurrentTransition();
+	
 	void CreateComponents();
 	void SetupComponentHierarchy();
 	void ResetComponentAttachmentToDefault(USceneComponent* ComponentToReset);
