@@ -17,6 +17,30 @@ public:
 	UVNCharacterDataAsset();
 
 	// =====================================================
+	// GLOBAL TRANSFORMS (НОВЫЙ РАЗДЕЛ)
+	// =====================================================
+
+	/** Если true, применит глобальные трансформации из этого DataAsset к персонажу. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Global Transforms")
+	bool bOverrideGlobalTransforms = false;
+
+	/** Глобальное смещение для всех Skeletal Mesh компонентов. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Global Transforms", meta = (EditCondition = "bOverrideGlobalTransforms"))
+	FVector GlobalSkeletalOffset = FVector::ZeroVector;
+
+	/** Глобальный масштаб для всех Skeletal Mesh компонентов. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Global Transforms", meta = (EditCondition = "bOverrideGlobalTransforms"))
+	float GlobalSkeletalScale = 1.0f;
+
+	/** Глобальное смещение для всех Sprite компонентов. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Global Transforms", meta = (EditCondition = "bOverrideGlobalTransforms"))
+	FVector GlobalSpriteOffset = FVector::ZeroVector;
+
+	/** Глобальный масштаб для всех Sprite компонентов. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Global Transforms", meta = (EditCondition = "bOverrideGlobalTransforms"))
+	float GlobalSpriteScale = 1.0f;
+
+	// =====================================================
 	// SKELETAL MESH КОМПОНЕНТЫ С КОНФИГУРАЦИЯМИ
 	// =====================================================
 

@@ -4,14 +4,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
 
-// =====================================================
-// ОСНОВНОЕ API - ПРЯМОЕ УПРАВЛЕНИЕ КОМПОНЕНТАМИ
-// =====================================================
-
 void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftObjectPtr<USkeletalMesh> SkeletalMesh, bool bAnimate, float Duration)
 {
-	VN_LOG_DEBUG(TEXT("SetSkeletalMesh: ComponentID %d, Animate: %s"), (int32)ComponentID, bAnimate ? TEXT("Yes") : TEXT("No"));
-
 	USkeletalMeshComponent* MainComponent = GetSkeletalComponent(ComponentID);
 	if (!MainComponent)
 	{
@@ -21,30 +15,24 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 
 	if (bAnimate && Duration > 0.0f && AnimationManager)
 	{
-		// Подготавливаем анимацию перехода
-		USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID);
-		if (FadeComponent)
+		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
 			PrepareSkeletalTransition(MainComponent, FadeComponent, SkeletalMesh);
 			AnimationManager->PlayTransition(Duration);
 		}
 		else
 		{
-			// Если нет fade компонента, применяем мгновенно
 			ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 		}
 	}
 	else
 	{
-		// Мгновенное применение
 		ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 	}
 }
 
 void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite, bool bAnimate, float Duration)
 {
-	VN_LOG_DEBUG(TEXT("SetSprite: ComponentID %d, Animate: %s"), (int32)ComponentID, bAnimate ? TEXT("Yes") : TEXT("No"));
-
 	UPaperSpriteComponent* MainComponent = GetSpriteComponent(ComponentID);
 	if (!MainComponent)
 	{
@@ -54,34 +42,23 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 
 	if (bAnimate && Duration > 0.0f && AnimationManager)
 	{
-		// Подготавливаем анимацию перехода
-		UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID);
-		if (FadeComponent)
+		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
 		{
 			PrepareSpriteTransition(MainComponent, FadeComponent, Sprite);
 			AnimationManager->PlayTransition(Duration);
 		}
 		else
 		{
-			// Если нет fade компонента, применяем мгновенно
 			ValidateAndSetupSpriteComponent(MainComponent, Sprite);
-			ApplyIndividualSpriteTransform(MainComponent, ComponentID);
 		}
 	}
 	else
 	{
-		// Мгновенное применение
 		ValidateAndSetupSpriteComponent(MainComponent, Sprite);
-		ApplyIndividualSpriteTransform(MainComponent, ComponentID);
 	}
 
-	// Уведомляем о изменении
 	OnCharacterComponentChanged.Broadcast(ComponentID);
 }
-
-// =====================================================
-// УПРОЩЕННЫЕ МЕТОДЫ ДЛЯ БЫСТРОГО ДОСТУПА
-// =====================================================
 
 void AVNCharacter::SetEyes(TSoftObjectPtr<UPaperSprite> EyesSprite, bool bAnimate, float Duration)
 {
@@ -110,25 +87,15 @@ void AVNCharacter::SetArms(TSoftObjectPtr<USkeletalMesh> ArmsMesh, bool bAnimate
 
 void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectPtr<UPaperSprite> MouthSprite, TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
 {
-	VN_LOG_DEBUG(TEXT("SetFace: Setting multiple facial components"));
-
-	// Устанавливаем все элементы лица
-	// ВАЖНО: Используем bAnimate=false для индивидуальных вызовов, 
-	// чтобы избежать множественных анимаций
 	SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
 	SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
 	SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);
 
-	// Если нужна анимация, запускаем её один раз для всех изменений
 	if (bAnimate && Duration > 0.0f && AnimationManager)
 	{
 		AnimationManager->PlayTransition(Duration);
 	}
 }
-
-// =====================================================
-// УТИЛИТЫ И ИНФОРМАЦИЯ
-// =====================================================
 
 bool AVNCharacter::IsAnimating() const
 {
@@ -137,27 +104,11 @@ bool AVNCharacter::IsAnimating() const
 
 FLinearColor AVNCharacter::GetTargetColorForComponent(USceneComponent* Component) const
 {
-	if (!Component)
-	{
-		return FLinearColor::White;
-	}
-
-	// Получаем базовый цвет (пока всегда белый, так как нет системы состояний)
-	FLinearColor BaseColor = FLinearColor::White;
-
-	// Применяем модификатор фокуса
-	if (bIsInFocus)
-	{
-		return BaseColor;
-	}
-	else
-	{
-		return BaseColor * DimColorMultiplier;
-	}
+	FLinearColor BaseColor = GetBaseColorForComponent(Component);
+	return bIsInFocus ? BaseColor : BaseColor * DimColorMultiplier;
 }
 
 FLinearColor AVNCharacter::GetBaseColorForComponent(USceneComponent* Component) const
 {
-	// Пока всегда возвращаем белый, так как система состояний убрана
 	return FLinearColor::White;
 }

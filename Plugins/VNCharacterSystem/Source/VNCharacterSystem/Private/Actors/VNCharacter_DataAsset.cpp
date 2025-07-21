@@ -6,353 +6,137 @@
 #include "PaperSpriteComponent.h"
 #include "Materials/MaterialInterface.h"
 
-// =====================================================
-// РАБОТА С DATA ASSET
-// =====================================================
-
 void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
 {
-	if (!CharacterData)
-	{
-		VN_LOG_WARNING(TEXT("ApplyDataAsset: CharacterData is null"));
-		return;
-	}
+    if (!CharacterData)
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAsset: CharacterData is null"));
+        return;
+    }
 
-	VN_LOG_DEBUG(TEXT("Applying DataAsset with full configurations"));
+    if (CharacterData->bOverrideGlobalTransforms)
+    {
+        GlobalSkeletalOffset = CharacterData->GlobalSkeletalOffset;
+        GlobalSkeletalScale = CharacterData->GlobalSkeletalScale;
+        GlobalSpriteOffset = CharacterData->GlobalSpriteOffset;
+        GlobalSpriteScale = CharacterData->GlobalSpriteScale;
+    }
+    
+    ApplyAllComponentConfigurationsFromDataAsset(CharacterData, bAnimate);
 
-	// Применяем Skeletal Mesh конфигурации
-	ApplySkeletalBodyConfig(Body_Skeletal, CharacterData->BodyConfig);
-	ApplySkeletalAttachmentConfig(Arms_Skeletal, CharacterData->ArmsConfig);
-	ApplySkeletalAttachmentConfig(Head_Skeletal, CharacterData->HeadConfig);
-	ApplySkeletalAttachmentConfig(Custom01_Skeletal, CharacterData->Custom01Config);
-	ApplySkeletalAttachmentConfig(Custom02_Skeletal, CharacterData->Custom02Config);
-	ApplySkeletalAttachmentConfig(Custom03_Skeletal, CharacterData->Custom03Config);
+    if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
+    if (BodyShadow_Sprite_Fade) BodyShadow_Sprite_Fade->SetVisibility(false);
 
-	// Применяем Sprite конфигурации (Attachment)
-	ApplySpriteAttachmentConfig(Body_Sprite, CharacterData->BodySpriteConfig);
-	ApplySpriteAttachmentConfig(Arms_Sprite, CharacterData->ArmsSpriteConfig);
-	ApplySpriteAttachmentConfig(BodyShadow_Sprite, CharacterData->BodyShadowSpriteConfig);
-	ApplySpriteAttachmentConfig(Head_Sprite, CharacterData->HeadSpriteConfig);
-	ApplySpriteAttachmentConfig(EmotionBodyEffect01_Sprite, CharacterData->EmotionBodyEffect01SpriteConfig);
-	ApplySpriteAttachmentConfig(EmotionBodyEffect02_Sprite, CharacterData->EmotionBodyEffect02SpriteConfig);
-	ApplySpriteAttachmentConfig(EmotionBodyEffect03_Sprite, CharacterData->EmotionBodyEffect03SpriteConfig);
-
-	// Применяем Sprite конфигурации (Simple)
-	ApplySpriteSimpleConfig(Eyebrow_Sprite, CharacterData->EyebrowSpriteConfig);
-	ApplySpriteSimpleConfig(Eyes_Sprite, CharacterData->EyesSpriteConfig);
-	ApplySpriteSimpleConfig(Eyelids_Sprite, CharacterData->EyelidsSpriteConfig);
-	ApplySpriteSimpleConfig(Wink_Sprite, CharacterData->WinkSpriteConfig);
-	ApplySpriteSimpleConfig(Mouth_Sprite, CharacterData->MouthSpriteConfig);
-	ApplySpriteSimpleConfig(EmotionHeadEffect01_Sprite, CharacterData->EmotionHeadEffect01SpriteConfig);
-	ApplySpriteSimpleConfig(EmotionHeadEffect02_Sprite, CharacterData->EmotionHeadEffect02SpriteConfig);
-	ApplySpriteSimpleConfig(EmotionHeadEffect03_Sprite, CharacterData->EmotionHeadEffect03SpriteConfig);
-
-	// Если нужна анимация, запускаем её один раз для всех изменений
-	if (bAnimate && Duration > 0.0f && AnimationManager)
-	{
-		AnimationManager->PlayTransition(Duration);
-	}
-
-	VN_LOG_DEBUG(TEXT("DataAsset applied successfully"));
+    if (bAnimate && Duration > 0.0f && AnimationManager)
+    {
+        AnimationManager->PlayTransition(Duration);
+    }
+    else
+    {
+        HideAllFadeComponents();
+    }
 }
 
-void AVNCharacter::ApplySkeletalBodyConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Body& Config)
+void AVNCharacter::ApplyAllComponentConfigurationsFromDataAsset(const UVNCharacterDataAsset* CharacterData, bool bAnimate)
 {
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("ApplySkeletalBodyConfig: Component is null"));
-		return;
-	}
+    if (!CharacterData) return;
 
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return; // Если компонент невидим, дальше не настраиваем
-	}
+    // --- Skeletal Mesh Application ---
+    
+    // Handle Body separately as it has a different config struct (no attachment properties)
+    if (auto* Comp = GetSkeletalComponent(E_VN_ComponentID_Skeletal::Body))
+    {
+        const auto& Config = CharacterData->BodyConfig;
+        SetSkeletalMesh(E_VN_ComponentID_Skeletal::Body, Config.SkeletalMesh, bAnimate, 0.f);
+        if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+        for (const auto& Elem : Config.MaterialOverrides) {
+            if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
+        }
+        ResetComponentAttachmentToDefault(Comp);
+        UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+        SetComponentColor(Comp, Config.Color);
+        if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
+    }
 
-	// Загружаем и устанавливаем Skeletal Mesh
-	if (!Config.SkeletalMesh.IsNull())
-	{
-		USkeletalMesh* LoadedMesh = Config.SkeletalMesh.LoadSynchronous();
-		if (LoadedMesh)
-		{
-			Component->SetSkeletalMesh(LoadedMesh);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load SkeletalMesh for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSkeletalMesh(nullptr);
-	}
+    // Handle Attachments using a lambda
+    auto ApplySkeletalAttachConfig = [&](E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config) {
+        if (auto* Comp = GetSkeletalComponent(ID)) {
+            SetSkeletalMesh(ID, Config.SkeletalMesh, bAnimate, 0.f);
+            if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+            for (const auto& Elem : Config.MaterialOverrides) {
+                if (!Elem.Value.IsNull()) Comp->SetMaterial(Elem.Key, Elem.Value.LoadSynchronous());
+            }
+            if (Config.AttachTo != E_SkeletalAttachmentTarget::None) {
+                if(USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr) {
+                    Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+                }
+            } else {
+                ResetComponentAttachmentToDefault(Comp);
+            }
+            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+            SetComponentColor(Comp, Config.Color);
+            if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
+        }
+    };
+    ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig);
+    ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig);
+    ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Custom01, CharacterData->Custom01Config);
+    ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config);
+    ApplySkeletalAttachConfig(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config);
 
-	// Устанавливаем AnimInstance класс
-	if (Config.AnimInstanceClass)
-	{
-		Component->SetAnimInstanceClass(Config.AnimInstanceClass);
-	}
-
-	// Применяем переопределения материалов
-	for (const auto& MaterialPair : Config.MaterialOverrides)
-	{
-		int32 MaterialIndex = MaterialPair.Key;
-		TSoftObjectPtr<UMaterialInterface> MaterialPtr = MaterialPair.Value;
-
-		if (!MaterialPtr.IsNull())
-		{
-			UMaterialInterface* LoadedMaterial = MaterialPtr.LoadSynchronous();
-			if (LoadedMaterial)
-			{
-				Component->SetMaterial(MaterialIndex, LoadedMaterial);
-			}
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = FTransform::Identity;
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	SetComponentColor(Component, Config.Color);
-
-	VN_LOG_DEBUG(TEXT("Applied Skeletal Body config to %s"), *Component->GetName());
+    // --- Sprite (Attachment) Application ---
+    auto ApplySpriteAttachConfig = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config) {
+        if (auto* Comp = GetSpriteComponent(ID)) {
+             SetSprite(ID, Config.Sprite, bAnimate, 0.f);
+             if (Config.AttachTo != E_SpriteAttachmentTarget::None) {
+                if(USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo)) {
+                    Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+                }
+            } else {
+                ResetComponentAttachmentToDefault(Comp);
+            }
+            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+            Comp->SetSpriteColor(Config.Color);
+            if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
+        }
+    };
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig);
+    ApplySpriteAttachConfig(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig);
+    
+    // --- Sprite (Simple) Application ---
+    auto ApplySpriteSimpleConfig = [&](E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config) {
+        if (auto* Comp = GetSpriteComponent(ID)) {
+            SetSprite(ID, Config.Sprite, bAnimate, 0.f);
+            UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+            Comp->SetSpriteColor(Config.Color);
+            if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
+        }
+    };
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig);
+    ApplySpriteSimpleConfig(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig);
 }
 
-void AVNCharacter::ApplySkeletalAttachmentConfig(USkeletalMeshComponent* Component, const F_VN_SkeletalConfig_Attachment& Config)
+USkeletalMeshComponent* AVNCharacter::GetSkeletalComponentBySpriteTarget(E_SpriteAttachmentTarget Target)
 {
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("ApplySkeletalAttachmentConfig: Component is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return;
-	}
-
-	// Загружаем и устанавливаем Skeletal Mesh
-	if (!Config.SkeletalMesh.IsNull())
-	{
-		USkeletalMesh* LoadedMesh = Config.SkeletalMesh.LoadSynchronous();
-		if (LoadedMesh)
-		{
-			Component->SetSkeletalMesh(LoadedMesh);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load SkeletalMesh for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSkeletalMesh(nullptr);
-	}
-
-	// Устанавливаем AnimInstance класс
-	if (Config.AnimInstanceClass)
-	{
-		Component->SetAnimInstanceClass(Config.AnimInstanceClass);
-	}
-
-	// Применяем переопределения материалов
-	for (const auto& MaterialPair : Config.MaterialOverrides)
-	{
-		int32 MaterialIndex = MaterialPair.Key;
-		TSoftObjectPtr<UMaterialInterface> MaterialPtr = MaterialPair.Value;
-
-		if (!MaterialPtr.IsNull())
-		{
-			UMaterialInterface* LoadedMaterial = MaterialPtr.LoadSynchronous();
-			if (LoadedMaterial)
-			{
-				Component->SetMaterial(MaterialIndex, LoadedMaterial);
-			}
-		}
-	}
-
-	// Настраиваем прикрепление
-	if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
-	{
-		USkeletalMeshComponent* AttachTarget = nullptr;
-		
-		switch (Config.AttachTo)
-		{
-			case E_SkeletalAttachmentTarget::Body:
-				AttachTarget = Body_Skeletal;
-				break;
-			default:
-				VN_LOG_WARNING(TEXT("Unknown attachment target for component %s"), *Component->GetName());
-				break;
-		}
-
-		if (AttachTarget && Config.bUseSocketTransform && !Config.SocketName.IsNone())
-		{
-			// Прикрепляем к сокету
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepWorldTransform, Config.SocketName);
-		}
-		else if (AttachTarget)
-		{
-			// Прикрепляем к компоненту без сокета
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepRelativeTransform);
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = FTransform::Identity;
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	SetComponentColor(Component, Config.Color);
-
-	VN_LOG_DEBUG(TEXT("Applied Skeletal Attachment config to %s"), *Component->GetName());
-}
-
-void AVNCharacter::ApplySpriteAttachmentConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Attachment& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("ApplySpriteAttachmentConfig: Component is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return;
-	}
-
-	// Загружаем и устанавливаем Sprite
-	if (!Config.Sprite.IsNull())
-	{
-		UPaperSprite* LoadedSprite = Config.Sprite.LoadSynchronous();
-		if (LoadedSprite)
-		{
-			Component->SetSprite(LoadedSprite);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load Sprite for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSprite(nullptr);
-	}
-
-	// Настраиваем прикрепление к Skeletal Mesh компонентам
-	if (Config.AttachTo != E_SpriteAttachmentTarget::None)
-	{
-		USkeletalMeshComponent* AttachTarget = nullptr;
-		
-		switch (Config.AttachTo)
-		{
-			case E_SpriteAttachmentTarget::Body_Skeletal:
-				AttachTarget = Body_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Arms_Skeletal:
-				AttachTarget = Arms_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Head_Skeletal:
-				AttachTarget = Head_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom01_Skeletal:
-				AttachTarget = Custom01_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom02_Skeletal:
-				AttachTarget = Custom02_Skeletal;
-				break;
-			case E_SpriteAttachmentTarget::Custom03_Skeletal:
-				AttachTarget = Custom03_Skeletal;
-				break;
-			default:
-				VN_LOG_WARNING(TEXT("Unknown sprite attachment target for component %s"), *Component->GetName());
-				break;
-		}
-
-		if (AttachTarget && Config.bUseSocketTransform && !Config.SocketName.IsNone())
-		{
-			// Прикрепляем к сокету
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepWorldTransform, Config.SocketName);
-		}
-		else if (AttachTarget)
-		{
-			// Прикрепляем к компоненту без сокета
-			Component->AttachToComponent(AttachTarget, 
-				FAttachmentTransformRules::KeepRelativeTransform);
-		}
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = FTransform::Identity;
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	SetComponentColor(Component, Config.Color);
-
-	VN_LOG_DEBUG(TEXT("Applied Sprite Attachment config to %s"), *Component->GetName());
-}
-
-void AVNCharacter::ApplySpriteSimpleConfig(UPaperSpriteComponent* Component, const F_VN_SpriteConfig_Simple& Config)
-{
-	if (!Component)
-	{
-		VN_LOG_WARNING(TEXT("ApplySpriteSimpleConfig: Component is null"));
-		return;
-	}
-
-	// Устанавливаем видимость
-	Component->SetVisibility(Config.bVisible);
-	
-	if (!Config.bVisible)
-	{
-		return;
-	}
-
-	// Загружаем и устанавливаем Sprite
-	if (!Config.Sprite.IsNull())
-	{
-		UPaperSprite* LoadedSprite = Config.Sprite.LoadSynchronous();
-		if (LoadedSprite)
-		{
-			Component->SetSprite(LoadedSprite);
-		}
-		else
-		{
-			VN_LOG_WARNING(TEXT("Failed to load Sprite for component %s"), *Component->GetName());
-		}
-	}
-	else
-	{
-		Component->SetSprite(nullptr);
-	}
-
-	// Устанавливаем трансформ
-	FTransform ComponentTransform = FTransform::Identity;
-	ComponentTransform.SetLocation(Config.Offset);
-	ComponentTransform.SetScale3D(FVector(Config.Scale));
-	Component->SetRelativeTransform(ComponentTransform);
-
-	// Устанавливаем цвет
-	SetComponentColor(Component, Config.Color);
-
-	VN_LOG_DEBUG(TEXT("Applied Sprite Simple config to %s"), *Component->GetName());
+    switch(Target)
+    {
+        case E_SpriteAttachmentTarget::Body_Skeletal: return Body_Skeletal;
+        case E_SpriteAttachmentTarget::Arms_Skeletal: return Arms_Skeletal;
+        case E_SpriteAttachmentTarget::Head_Skeletal: return Head_Skeletal;
+        case E_SpriteAttachmentTarget::Custom01_Skeletal: return Custom01_Skeletal;
+        case E_SpriteAttachmentTarget::Custom02_Skeletal: return Custom02_Skeletal;
+        case E_SpriteAttachmentTarget::Custom03_Skeletal: return Custom03_Skeletal;
+        default: return nullptr;
+    }
 }
