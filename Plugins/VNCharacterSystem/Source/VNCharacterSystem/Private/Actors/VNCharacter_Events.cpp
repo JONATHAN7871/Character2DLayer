@@ -13,8 +13,8 @@ void AVNCharacter::FinalizeCurrentTransition()
 	UE_LOG(LogTemp, Warning, TEXT("FinalizeCurrentTransition: Cleaning up %d FadingIn and %d FadingOut components."), 
 		FadingInComponents.Num(), FadingOutComponents.Num());
 
-	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обрабатываем FadingIn компоненты ПЕРВЫМИ
-	// чтобы они получили правильную целевую альфу ПЕРЕД очисткой fade компонентов
+	// ПЕРВЫЙ ЭТАП: Обрабатываем FadingIn компоненты
+	// Применяем целевую альфу ПЕРЕД очисткой fade компонентов
 	for (USceneComponent* Component : FadingInComponents)
 	{
 		if (Component && Component->IsVisible())
@@ -28,31 +28,64 @@ void AVNCharacter::FinalizeCurrentTransition()
 		}
 	}
 
-	// ТЕПЕРЬ обрабатываем FadingOut компоненты
+	// ВТОРОЙ ЭТАП: Обрабатываем FadingOut компоненты
 	for (USceneComponent* Component : FadingOutComponents)
 	{
 		if (Component)
 		{
-			Component->SetVisibility(false);
+			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Правильно очищаем контент
+			if (auto* SkeletalComp = Cast<USkeletalMeshComponent>(Component))
+			{
+				// Если это основной компонент (не fade) - очищаем его
+				if (Component == Body_Skeletal || Component == Arms_Skeletal || Component == Head_Skeletal ||
+					Component == Custom01_Skeletal || Component == Custom02_Skeletal || Component == Custom03_Skeletal)
+				{
+					UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Clearing main skeletal component %s"), *Component->GetName());
+					SkeletalComp->SetSkeletalMesh(nullptr);
+					SkeletalComp->SetAnimInstanceClass(nullptr);
+					SkeletalComp->SetVisibility(false);
+				}
+				else
+				{
+					// Это fade компонент - просто очищаем и скрываем
+					UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Clearing fade skeletal component %s"), *Component->GetName());
+					SkeletalComp->SetSkeletalMesh(nullptr);
+					SkeletalComp->SetAnimInstanceClass(nullptr);
+					SkeletalComp->SetLeaderPoseComponent(nullptr);
+					SkeletalComp->SetVisibility(false);
+				}
+			}
+			else if (auto* SpriteComp = Cast<UPaperSpriteComponent>(Component))
+			{
+				// Если это основной компонент (не fade) - очищаем его
+				if (Component == Body_Sprite || Component == Arms_Sprite || Component == Head_Sprite ||
+					Component == Eyebrow_Sprite || Component == Eyes_Sprite || Component == Eyelids_Sprite ||
+					Component == Wink_Sprite || Component == Mouth_Sprite || Component == BodyShadow_Sprite ||
+					Component == EmotionHeadEffect01_Sprite || Component == EmotionHeadEffect02_Sprite || Component == EmotionHeadEffect03_Sprite ||
+					Component == EmotionBodyEffect01_Sprite || Component == EmotionBodyEffect02_Sprite || Component == EmotionBodyEffect03_Sprite)
+				{
+					UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Clearing main sprite component %s"), *Component->GetName());
+					SpriteComp->SetSprite(nullptr);
+					SpriteComp->SetVisibility(false);
+				}
+				else
+				{
+					// Это fade компонент - просто очищаем и скрываем
+					UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Clearing fade sprite component %s"), *Component->GetName());
+					SpriteComp->SetSprite(nullptr);
+					SpriteComp->SetVisibility(false);
+				}
+			}
+			
+			// Сбрасываем альфу и attachment
 			SetAnimationAlpha(Component, 0.0f);
-			
-			if (auto* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
-			{
-				SkeletalFade->SetSkeletalMesh(nullptr);
-				SkeletalFade->SetLeaderPoseComponent(nullptr);
-			}
-			else if (auto* SpriteFade = Cast<UPaperSpriteComponent>(Component))
-			{
-				SpriteFade->SetSprite(nullptr);
-			}
-			
 			ResetComponentAttachmentToDefault(Component);
 			
 			UE_LOG(LogTemp, Log, TEXT("FinalizeCurrentTransition: Cleaned up FadingOut component %s"), *Component->GetName());
 		}
 	}
 
-	// Очищаем данные анимации для ВСЕХ компонентов ПОСЛЕ применения целевой альфы
+	// ТРЕТИЙ ЭТАП: Очищаем данные анимации для ВСЕХ компонентов
 	for (USceneComponent* Component : FadingInComponents)
 	{
 		if (Component)

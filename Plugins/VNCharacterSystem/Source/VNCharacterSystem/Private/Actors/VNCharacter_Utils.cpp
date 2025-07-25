@@ -245,6 +245,8 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 {
 	if (!Source || !Target) return;
 	
+	UE_LOG(LogTemp, Log, TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
+	
 	Target->SetSkeletalMesh(Source->GetSkeletalMeshAsset());
 	Target->SetAnimInstanceClass(Source->GetAnimClass());
 	Target->SetVisibility(Source->IsVisible());
@@ -263,15 +265,24 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 	{
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
+	
+	UE_LOG(LogTemp, Log, TEXT("CopySkeletalComponentSettings: %s settings copied to %s"), *Source->GetName(), *Target->GetName());
 }
 
 void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target)
 {
 	if (!Source || !Target) return;
 	
+	UE_LOG(LogTemp, Log, TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
+	
 	Target->SetSprite(Source->GetSprite());
-	Target->SetSpriteColor(Source->GetSpriteColor());
 	Target->SetVisibility(Source->IsVisible());
+	
+	// Копируем цвет с альфой 1.0 (fade компонент начинает полностью видимым)
+	FLinearColor SourceColor = Source->GetSpriteColor();
+	FLinearColor TargetColor = SourceColor;
+	TargetColor.A = 1.0f; // Fade компонент всегда начинает с полной видимости
+	Target->SetSpriteColor(TargetColor);
 	
 	if (Source->GetAttachParent())
 	{
@@ -282,10 +293,12 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 	{
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
+	
+	UE_LOG(LogTemp, Log, TEXT("CopySpriteComponentSettings: %s settings copied to %s with alpha 1.0"), *Source->GetName(), *Target->GetName());
 }
 
 // =====================================================
-// НОВАЯ СИСТЕМА ПОДГОТОВКИ ПЕРЕХОДОВ
+// УНИВЕРСАЛЬНАЯ КЛАССИЧЕСКАЯ СИСТЕМА ПЕРЕХОДОВ ДЛЯ ВСЕХ КОМПОНЕНТОВ
 // =====================================================
 
 void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh)
@@ -296,48 +309,104 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 		return;
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Starting transition for %s"), *MainComponent->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Starting universal transition for %s"), *MainComponent->GetName());
 	
-	// === ШАГ 1: ПОДГОТОВКА FADE КОМПОНЕНТА ===
-	// Копируем настройки ПЕРЕД добавлением в списки
-	CopySkeletalComponentSettings(MainComponent, FadeComponent);
-
-	// Настраиваем позицию fade компонента (чуть смещаем для слоя)
-	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+	// === АНАЛИЗ СОСТОЯНИЯ ===
+	bool bCurrentlyHasMesh = (MainComponent->GetSkeletalMeshAsset() != nullptr && MainComponent->IsVisible());
+	bool bWillHaveMesh = !NewMesh.IsNull();
 	
-	// Устанавливаем fade компонент как лидера (если применимо)
-	if (!NewMesh.IsNull())
+	UE_LOG(LogTemp, Log, TEXT("PrepareSkeletalTransition: %s - Current: %s, Target: %s"), 
+		*MainComponent->GetName(),
+		bCurrentlyHasMesh ? TEXT("HasMesh") : TEXT("Empty"),
+		bWillHaveMesh ? TEXT("HasMesh") : TEXT("Empty"));
+	
+	// === СЛУЧАЙ 1: КОНТЕНТ → ПУСТОЕ (Перенос в fade + исчезновение) ===
+	if (bCurrentlyHasMesh && !bWillHaveMesh)
 	{
-		FadeComponent->SetLeaderPoseComponent(MainComponent);
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Content to Empty (transfer to fade and disappear)"), *MainComponent->GetName());
+		
+		// ШАГ 1: ПЕРЕНОСИМ текущий контент в fade компонент
+		CopySkeletalComponentSettings(MainComponent, FadeComponent);
+		
+		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+		
+		// ШАГ 2: Fade компонент начинает с полной видимости и будет исчезать
+		FadeComponent->SetVisibility(true, true);
+		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
+		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		FadingOutComponents.Add(FadeComponent);
+		
+		// ШАГ 3: ОЧИЩАЕМ главный компонент (он станет пустым)
+		MainComponent->SetSkeletalMesh(nullptr);
+		MainComponent->SetAnimInstanceClass(nullptr);
+		MainComponent->SetVisibility(false);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s content transferred to %s, %s will fade OUT (1.0→0.0)"), 
+			*MainComponent->GetName(), *FadeComponent->GetName(), *FadeComponent->GetName());
+		return;
 	}
 	
-	// Fade компонент начинает с полной видимости и будет исчезать
-	FadeComponent->SetVisibility(true, true);
-	SetAnimationAlpha(FadeComponent, 1.0f);
-	SetTargetAlpha(FadeComponent, 0.0f);
+	// === СЛУЧАЙ 2: ПУСТОЕ → КОНТЕНТ (Простое появление) ===
+	if (!bCurrentlyHasMesh && bWillHaveMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Empty to Content (fade in)"), *MainComponent->GetName());
+		
+		// Устанавливаем новый mesh
+		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
+		
+		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки mesh
+		SetAnimationAlpha(MainComponent, 0.0f);
+		
+		// Настраиваем для появления
+		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+		SetTargetAlpha(MainComponent, TargetColor.A);
+		FadingInComponents.Add(MainComponent);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s will fade IN from 0.0 to %.2f"), *MainComponent->GetName(), TargetColor.A);
+		return;
+	}
 	
-	// === ШАГ 2: ПОДГОТОВКА MAIN КОМПОНЕНТА ===
-	// КРИТИЧЕСКИ ВАЖНО: устанавливаем альфу 0 ДО настройки компонента
-	SetAnimationAlpha(MainComponent, 0.0f);
+	// === СЛУЧАЙ 3: КОНТЕНТ → ДРУГОЙ КОНТЕНТ (Классический нахлест) ===
+	if (bCurrentlyHasMesh && bWillHaveMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Content to Content (crossfade)"), *MainComponent->GetName());
+		
+		// ШАГ 1: ПЕРЕНОСИМ старый контент в fade компонент
+		CopySkeletalComponentSettings(MainComponent, FadeComponent);
+		
+		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+		
+		// Fade компонент начинает с полной видимости и будет исчезать
+		FadeComponent->SetVisibility(true, true);
+		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
+		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		FadingOutComponents.Add(FadeComponent);
+		
+		// ШАГ 2: УСТАНАВЛИВАЕМ новый контент в main компонент
+		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
+		
+		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки mesh
+		SetAnimationAlpha(MainComponent, 0.0f);  // НАЧИНАЕМ с 0.0!
+		
+		// Сбрасываем attachment для правильной настройки
+		ResetComponentAttachmentToDefault(MainComponent);
+		
+		// Определяем целевую альфу для main компонента
+		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+		SetTargetAlpha(MainComponent, TargetColor.A);  // ЦЕЛЬ - 1.0
+		FadingInComponents.Add(MainComponent);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s crossfade - %s fades OUT (1.0→0.0), %s fades IN (0.0→%.2f)"), 
+			*MainComponent->GetName(), *FadeComponent->GetName(), *MainComponent->GetName(), TargetColor.A);
+		return;
+	}
 	
-	// Сбрасываем attachment для правильной настройки
-	ResetComponentAttachmentToDefault(MainComponent);
-	
-	// Настраиваем новый mesh БЕЗ автоматического применения цвета
-	ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
-	
-	// Определяем целевую альфу для main компонента
-	FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
-	SetTargetAlpha(MainComponent, TargetColor.A);
-	
-	// === ШАГ 3: РЕГИСТРАЦИЯ КОМПОНЕНТОВ ДЛЯ АНИМАЦИИ ===
-	// Добавляем в списки ТОЛЬКО после полной настройки
-	FadingInComponents.Add(MainComponent);
-	FadingOutComponents.Add(FadeComponent);
-	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s will fade IN (target alpha: %.2f), %s will fade OUT"), 
-	    *MainComponent->GetName(), TargetColor.A, *FadeComponent->GetName());
+	// === СЛУЧАЙ 4: ПУСТОЕ → ПУСТОЕ (Ничего не делаем) ===
+	UE_LOG(LogTemp, Log, TEXT("PrepareSkeletalTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
 }
 
 void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent, UPaperSpriteComponent* FadeComponent, TSoftObjectPtr<UPaperSprite> NewSprite)
@@ -348,42 +417,103 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 		return;
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Starting transition for %s"), *MainComponent->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Starting universal transition for %s"), *MainComponent->GetName());
 	
-	// === ШАГ 1: ПОДГОТОВКА FADE КОМПОНЕНТА ===
-	// Копируем настройки ПЕРЕД добавлением в списки
-	CopySpriteComponentSettings(MainComponent, FadeComponent);
-
-	// Настраиваем позицию fade компонента (чуть смещаем для слоя)
-	FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-	FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+	// === АНАЛИЗ СОСТОЯНИЯ ===
+	bool bCurrentlyHasSprite = (MainComponent->GetSprite() != nullptr && MainComponent->IsVisible());
+	bool bWillHaveSprite = !NewSprite.IsNull();
 	
-	// Fade компонент начинает с полной видимости и будет исчезать
-	FadeComponent->SetVisibility(true, true);
-	SetAnimationAlpha(FadeComponent, 1.0f);
-	SetTargetAlpha(FadeComponent, 0.0f);
+	UE_LOG(LogTemp, Log, TEXT("PrepareSpriteTransition: %s - Current: %s, Target: %s"), 
+		*MainComponent->GetName(),
+		bCurrentlyHasSprite ? TEXT("HasSprite") : TEXT("Empty"),
+		bWillHaveSprite ? TEXT("HasSprite") : TEXT("Empty"));
 	
-	// === ШАГ 2: ПОДГОТОВКА MAIN КОМПОНЕНТА ===
-	// КРИТИЧЕСКИ ВАЖНО: устанавливаем альфу 0 ДО настройки компонента
-	SetAnimationAlpha(MainComponent, 0.0f);
+	// === СЛУЧАЙ 1: КОНТЕНТ → ПУСТОЕ (Перенос в fade + исчезновение) ===
+	if (bCurrentlyHasSprite && !bWillHaveSprite)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Empty (transfer to fade and disappear)"), *MainComponent->GetName());
+		
+		// ШАГ 1: ПЕРЕНОСИМ текущий контент в fade компонент
+		CopySpriteComponentSettings(MainComponent, FadeComponent);
+		
+		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+		
+		// ШАГ 2: Fade компонент начинает с полной видимости и будет исчезать
+		FadeComponent->SetVisibility(true, true);
+		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
+		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		FadingOutComponents.Add(FadeComponent);
+		
+		// ШАГ 3: ОЧИЩАЕМ главный компонент (он станет пустым)
+		MainComponent->SetSprite(nullptr);
+		MainComponent->SetVisibility(false);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s content transferred to %s, %s will fade OUT (1.0→0.0)"), 
+			*MainComponent->GetName(), *FadeComponent->GetName(), *FadeComponent->GetName());
+		return;
+	}
 	
-	// Сбрасываем attachment для правильной настройки
-	ResetComponentAttachmentToDefault(MainComponent);
+	// === СЛУЧАЙ 2: ПУСТОЕ → КОНТЕНТ (Простое появление) ===
+	if (!bCurrentlyHasSprite && bWillHaveSprite)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Empty to Content (fade in)"), *MainComponent->GetName());
+		
+		// Устанавливаем новый sprite
+		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
+		
+		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки sprite
+		SetAnimationAlpha(MainComponent, 0.0f);
+		
+		// Настраиваем для появления
+		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+		SetTargetAlpha(MainComponent, TargetColor.A);
+		FadingInComponents.Add(MainComponent);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s will fade IN from 0.0 to %.2f"), *MainComponent->GetName(), TargetColor.A);
+		return;
+	}
 	
-	// Настраиваем новый sprite БЕЗ автоматического применения цвета
-	ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
+	// === СЛУЧАЙ 3: КОНТЕНТ → ДРУГОЙ КОНТЕНТ (Классический нахлест) ===
+	if (bCurrentlyHasSprite && bWillHaveSprite)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Content (crossfade)"), *MainComponent->GetName());
+		
+		// ШАГ 1: ПЕРЕНОСИМ старый контент в fade компонент
+		CopySpriteComponentSettings(MainComponent, FadeComponent);
+		
+		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+		
+		// Fade компонент начинает с полной видимости и будет исчезать
+		FadeComponent->SetVisibility(true, true);
+		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
+		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		FadingOutComponents.Add(FadeComponent);
+		
+		// ШАГ 2: УСТАНАВЛИВАЕМ новый контент в main компонент
+		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
+		
+		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки sprite
+		SetAnimationAlpha(MainComponent, 0.0f);  // НАЧИНАЕМ с 0.0!
+		
+		// Сбрасываем attachment для правильной настройки
+		ResetComponentAttachmentToDefault(MainComponent);
+		
+		// Определяем целевую альфу для main компонента
+		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+		SetTargetAlpha(MainComponent, TargetColor.A);  // ЦЕЛЬ - 1.0
+		FadingInComponents.Add(MainComponent);
+		
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s crossfade - %s fades OUT (1.0→0.0), %s fades IN (0.0→%.2f)"), 
+			*MainComponent->GetName(), *FadeComponent->GetName(), *MainComponent->GetName(), TargetColor.A);
+		return;
+	}
 	
-	// Определяем целевую альфу для main компонента
-	FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
-	SetTargetAlpha(MainComponent, TargetColor.A);
-	
-	// === ШАГ 3: РЕГИСТРАЦИЯ КОМПОНЕНТОВ ДЛЯ АНИМАЦИИ ===
-	// Добавляем в списки ТОЛЬКО после полной настройки
-	FadingInComponents.Add(MainComponent);
-	FadingOutComponents.Add(FadeComponent);
-	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s will fade IN (target alpha: %.2f), %s will fade OUT"), 
-		*MainComponent->GetName(), TargetColor.A, *FadeComponent->GetName());
+	// === СЛУЧАЙ 4: ПУСТОЕ → ПУСТОЕ (Ничего не делаем) ===
+	UE_LOG(LogTemp, Log, TEXT("PrepareSpriteTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
 }
 
 void AVNCharacter::FinishTransition(USceneComponent* MainComponent, USceneComponent* FadeComponent)
@@ -484,7 +614,7 @@ void AVNCharacter::HideAllFadeComponents()
 }
 
 // =====================================================
-// НОВЫЕ "ТИХИЕ" ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ
+// "ТИХИЕ" ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ (БЕЗ АВТОМАТИЧЕСКОГО ПРИМЕНЕНИЯ ЦВЕТА)
 // =====================================================
 
 void AVNCharacter::ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh)

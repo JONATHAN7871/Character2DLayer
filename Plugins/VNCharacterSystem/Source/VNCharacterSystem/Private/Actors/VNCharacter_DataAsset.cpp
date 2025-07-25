@@ -70,10 +70,10 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: FadingIn components: %d, FadingOut components: %d"), 
         FadingInComponents.Num(), FadingOutComponents.Num());
 
-    if (bAnimate && Duration > 0.0f && AnimationManager && FadingInComponents.Num() > 0)
+    if (bAnimate && Duration > 0.0f && AnimationManager && (FadingInComponents.Num() > 0 || FadingOutComponents.Num() > 0))
     {
         UE_LOG(LogTemp, Warning, TEXT("ApplyDataAsset: Starting transition animation with %d components (duration=%.2f)"), 
-            FadingInComponents.Num(), Duration);
+            FadingInComponents.Num() + FadingOutComponents.Num(), Duration);
         AnimationManager->PlayTransition(Duration);
     }
     else
@@ -86,7 +86,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
 }
 
 // =====================================================
-// SKELETAL CONFIG FUNCTIONS
+// УНИВЕРСАЛЬНЫЕ SKELETAL CONFIG FUNCTIONS
 // =====================================================
 
 void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, bool bAnimate)
@@ -126,13 +126,16 @@ void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_
         }
     }
 
-    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    // --- ПРИМЕНЕНИЕ АССЕТА С УНИВЕРСАЛЬНОЙ СИСТЕМОЙ ПЕРЕХОДОВ ---
     if (bAnimate && bAssetChanged)
     {
         if (USkeletalMeshComponent* FadeComp = GetSkeletalFadeComponent(ID))
         {
-            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing transition for %s"), *Comp->GetName());
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing universal transition for %s"), *Comp->GetName());
             PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ применяем свойства для случая "Content → Empty"
+            // Свойства применятся после анимации в FinalizeCurrentTransition
         }
         else
         {
@@ -146,37 +149,41 @@ void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_
         ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
     }
 
-    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ ---
-    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-    
-    for (const auto& MaterialOverride : Config.MaterialOverrides)
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ (ТОЛЬКО ЕСЛИ НЕ В ПРОЦЕССЕ АНИМАЦИИ) ---
+    // Если компонент не исчезает, применяем свойства
+    if (!FadingOutComponents.Contains(Comp))
     {
-        if (!MaterialOverride.Value.IsNull()) 
+        if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+        
+        for (const auto& MaterialOverride : Config.MaterialOverrides)
         {
-            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+            if (!MaterialOverride.Value.IsNull()) 
+            {
+                Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+            }
         }
-    }
-    
-    ResetComponentAttachmentToDefault(Comp);
-    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
-    // Альфа управляется отдельно через систему анимации
-    SetComponentColor(Comp, Config.Color);
-    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applied color to %s (R:%.2f G:%.2f B:%.2f A:%.2f)"), 
-        *Comp->GetName(), Config.Color.R, Config.Color.G, Config.Color.B, Config.Color.A);
-    
-    // --- ВИДИМОСТЬ ---
-    if (!Config.SkeletalMesh.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for %s to %s"), 
-            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        
+        ResetComponentAttachmentToDefault(Comp);
+        UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+        SetComponentColor(Comp, Config.Color);
+        
+        // --- ВИДИМОСТЬ ---
+        if (!Config.SkeletalMesh.IsNull())
+        {
+            Comp->SetVisibility(Config.bVisible);
+            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for %s to %s"), 
+                *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        }
+        else if (!bAnimate || !bAssetChanged)
+        {
+            // Скрываем только если не идет анимация исчезновения
+            Comp->SetVisibility(false);
+            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden %s (null mesh)"), *Comp->GetName());
+        }
     }
     else
     {
-        Comp->SetVisibility(false);
-        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden %s (null mesh)"), *Comp->GetName());
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Skipping properties for %s (component is fading out)"), *Comp->GetName());
     }
 }
 
@@ -217,13 +224,16 @@ void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_
         }
     }
 
-    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    // --- ПРИМЕНЕНИЕ АССЕТА С УНИВЕРСАЛЬНОЙ СИСТЕМОЙ ПЕРЕХОДОВ ---
     if (bAnimate && bAssetChanged)
     {
         if (USkeletalMeshComponent* FadeComp = GetSkeletalFadeComponent(ID))
         {
-            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing transition for attachment %s"), *Comp->GetName());
+            UE_LOG(LogTemp, Warning, TEXT("ApplySkeletalConfig: Preparing universal transition for attachment %s"), *Comp->GetName());
             PrepareSkeletalTransition(Comp, FadeComp, Config.SkeletalMesh);
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ применяем свойства для случая "Content → Empty"
+            // Свойства применятся после анимации в FinalizeCurrentTransition
         }
         else
         {
@@ -237,53 +247,59 @@ void AVNCharacter::ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_
         ValidateAndSetupSkeletalComponent(Comp, Config.SkeletalMesh);
     }
 
-    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ ---
-    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-    
-    for (const auto& MaterialOverride : Config.MaterialOverrides)
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ (ТОЛЬКО ЕСЛИ НЕ В ПРОЦЕССЕ АНИМАЦИИ) ---
+    // Если компонент не исчезает, применяем свойства
+    if (!FadingOutComponents.Contains(Comp))
     {
-        if (!MaterialOverride.Value.IsNull()) 
+        if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+        
+        for (const auto& MaterialOverride : Config.MaterialOverrides)
         {
-            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+            if (!MaterialOverride.Value.IsNull()) 
+            {
+                Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+            }
         }
-    }
-    
-    // --- ATTACHMENT ---
-    if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
-    {
-        if (USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr)
+        
+        // --- ATTACHMENT ---
+        if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
         {
-            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
-            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Attached %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+            if (USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr)
+            {
+                Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+                UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Attached %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+            }
+        }
+        else
+        {
+            ResetComponentAttachmentToDefault(Comp);
+        }
+        
+        UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+        SetComponentColor(Comp, Config.Color);
+        
+        // --- ВИДИМОСТЬ ---
+        if (!Config.SkeletalMesh.IsNull())
+        {
+            Comp->SetVisibility(Config.bVisible);
+            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for attachment %s to %s"), 
+                *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        }
+        else if (!bAnimate || !bAssetChanged)
+        {
+            // Скрываем только если не идет анимация исчезновения
+            Comp->SetVisibility(false);
+            UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden attachment %s (null mesh)"), *Comp->GetName());
         }
     }
     else
     {
-        ResetComponentAttachmentToDefault(Comp);
-    }
-    
-    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
-    SetComponentColor(Comp, Config.Color);
-    UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Applied color to attachment %s"), *Comp->GetName());
-    
-    // --- ВИДИМОСТЬ ---
-    if (!Config.SkeletalMesh.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Set visibility for attachment %s to %s"), 
-            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
-    }
-    else
-    {
-        Comp->SetVisibility(false);
-        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Hidden attachment %s (null mesh)"), *Comp->GetName());
+        UE_LOG(LogTemp, Log, TEXT("ApplySkeletalConfig: Skipping properties for attachment %s (component is fading out)"), *Comp->GetName());
     }
 }
 
 // =====================================================
-// SPRITE CONFIG FUNCTIONS
+// УНИВЕРСАЛЬНЫЕ SPRITE CONFIG FUNCTIONS
 // =====================================================
 
 void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, bool bAnimate)
@@ -323,13 +339,16 @@ void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_Spri
         }
     }
 
-    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    // --- ПРИМЕНЕНИЕ АССЕТА С УНИВЕРСАЛЬНОЙ СИСТЕМОЙ ПЕРЕХОДОВ ---
     if (bAnimate && bAssetChanged)
     {
         if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(ID))
         {
-            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing transition for %s"), *Comp->GetName());
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing universal transition for %s"), *Comp->GetName());
             PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ применяем свойства для случая "Content → Empty"
+            // Свойства применятся после анимации в FinalizeCurrentTransition
         }
         else
         {
@@ -343,41 +362,48 @@ void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_Spri
         ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
     }
 
-    // --- ATTACHMENT ---
-    if (Config.AttachTo != E_SpriteAttachmentTarget::None)
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ (ТОЛЬКО ЕСЛИ НЕ В ПРОЦЕССЕ АНИМАЦИИ) ---
+    // Если компонент не исчезает, применяем свойства
+    if (!FadingOutComponents.Contains(Comp))
     {
-        if (USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo))
+        // --- ATTACHMENT ---
+        if (Config.AttachTo != E_SpriteAttachmentTarget::None)
         {
-            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
-            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Attached sprite %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+            if (USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo))
+            {
+                Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+                UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Attached sprite %s to %s"), *Comp->GetName(), *AttachTarget->GetName());
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Failed to find attachment target for %s"), *Comp->GetName());
+            }
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Failed to find attachment target for %s"), *Comp->GetName());
+            ResetComponentAttachmentToDefault(Comp);
+        }
+        
+        UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+        Comp->SetSpriteColor(Config.Color);
+        
+        // --- ВИДИМОСТЬ ---
+        if (!Config.Sprite.IsNull())
+        {
+            Comp->SetVisibility(Config.bVisible);
+            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for %s to %s"), 
+                *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        }
+        else if (!bAnimate || !bAssetChanged)
+        {
+            // Скрываем только если не идет анимация исчезновения
+            Comp->SetVisibility(false);
+            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden %s (null sprite)"), *Comp->GetName());
         }
     }
     else
     {
-        ResetComponentAttachmentToDefault(Comp);
-    }
-    
-    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
-    Comp->SetSpriteColor(Config.Color);
-    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applied color to %s"), *Comp->GetName());
-    
-    // --- ВИДИМОСТЬ ---
-    if (!Config.Sprite.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for %s to %s"), 
-            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
-    }
-    else
-    {
-        Comp->SetVisibility(false);
-        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden %s (null sprite)"), *Comp->GetName());
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Skipping properties for %s (component is fading out)"), *Comp->GetName());
     }
 }
 
@@ -418,13 +444,16 @@ void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_Spri
         }
     }
 
-    // --- ПРИМЕНЕНИЕ АССЕТА ---
+    // --- ПРИМЕНЕНИЕ АССЕТА С УНИВЕРСАЛЬНОЙ СИСТЕМОЙ ПЕРЕХОДОВ ---
     if (bAnimate && bAssetChanged)
     {
         if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(ID))
         {
-            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing transition for simple %s"), *Comp->GetName());
+            UE_LOG(LogTemp, Warning, TEXT("ApplySpriteConfig: Preparing universal transition for simple %s"), *Comp->GetName());
             PrepareSpriteTransition(Comp, FadeComp, Config.Sprite);
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НЕ применяем свойства для случая "Content → Empty"
+            // Свойства применятся после анимации в FinalizeCurrentTransition
         }
         else
         {
@@ -438,23 +467,30 @@ void AVNCharacter::ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_Spri
         ValidateAndSetupSpriteComponent(Comp, Config.Sprite);
     }
 
-    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // --- НОВАЯ ЛОГИКА ЦВЕТА: ВСЕГДА ПРИМЕНЯЕМ ПОЛНЫЙ ЦВЕТ ---
-    Comp->SetSpriteColor(Config.Color);
-    UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Applied color to simple %s"), *Comp->GetName());
-    
-    // --- ВИДИМОСТЬ ---
-    if (!Config.Sprite.IsNull())
+    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ (ТОЛЬКО ЕСЛИ НЕ В ПРОЦЕССЕ АНИМАЦИИ) ---
+    // Если компонент не исчезает, применяем свойства
+    if (!FadingOutComponents.Contains(Comp))
     {
-        Comp->SetVisibility(Config.bVisible);
-        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for simple %s to %s"), 
-            *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+        Comp->SetSpriteColor(Config.Color);
+        
+        // --- ВИДИМОСТЬ ---
+        if (!Config.Sprite.IsNull())
+        {
+            Comp->SetVisibility(Config.bVisible);
+            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Set visibility for simple %s to %s"), 
+                *Comp->GetName(), Config.bVisible ? TEXT("true") : TEXT("false"));
+        }
+        else if (!bAnimate || !bAssetChanged)
+        {
+            // Скрываем только если не идет анимация исчезновения
+            Comp->SetVisibility(false);
+            UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden simple %s (null sprite)"), *Comp->GetName());
+        }
     }
     else
     {
-        Comp->SetVisibility(false);
-        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Hidden simple %s (null sprite)"), *Comp->GetName());
+        UE_LOG(LogTemp, Log, TEXT("ApplySpriteConfig: Skipping properties for simple %s (component is fading out)"), *Comp->GetName());
     }
 }
 
