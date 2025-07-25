@@ -135,6 +135,23 @@ float UVNCharacterAnimationManager::GetCurrentAnimationProgress() const
 	return FMath::Clamp(CurrentAnimationTime / CurrentAnimation.Duration, 0.0f, 1.0f);
 }
 
+FString UVNCharacterAnimationManager::GetQueueDebugString() const
+{
+	if (AnimationQueue.Num() == 0)
+	{
+		return TEXT("Animation Queue: Empty");
+	}
+
+	FString Result = FString::Printf(TEXT("Animation Queue (%d items):\n"), AnimationQueue.Num());
+	
+	for (int32 i = 0; i < AnimationQueue.Num(); ++i)
+	{
+		Result += FString::Printf(TEXT("  %d: %s\n"), i + 1, *AnimationQueue[i].ToString());
+	}
+
+	return Result;
+}
+
 // =====================================================
 // ВНУТРЕННИЕ МЕТОДЫ
 // =====================================================
@@ -322,32 +339,115 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 	UE_LOG(LogTemp, Log, TEXT("UpdateTransitionAnimation: Progress %.2f%% - FadingIn=%d, FadingOut=%d"), 
 		Alpha * 100.0f, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num());
 
-	// --- НОВАЯ СИСТЕМА: Используем асимметричные кривые для плавного перехода ---
-	const float FadeInAlpha = FMath::Sqrt(Alpha);         // Новый компонент появляется быстро
-	const float FadeOutAlpha = 1.0f - (Alpha * Alpha);   // Старый компонент исчезает медленнее
+	// === НОВАЯ УЛУЧШЕННАЯ СИСТЕМА КРИВЫХ ===
+	// Используем более плавные кривые для предотвращения резких переходов
+	const float SmoothInAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);     // Smooth появление
+	const float SmoothOutAlpha = FMath::SmoothStep(1.0f, 0.0f, Alpha);    // Smooth исчезновение
 
-	// Fade Out: анимируем компоненты из списка FadingOutComponents
-	for (const TObjectPtr<USceneComponent>& FadeComponent : Character->GetFadingOutComponents())
+	// === ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: Проверяем валидность компонентов ===
+	TArray<TObjectPtr<USceneComponent>> ValidFadingIn;
+	TArray<TObjectPtr<USceneComponent>> ValidFadingOut;
+
+	// Собираем только валидные компоненты
+	for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingInComponents())
 	{
-		if (FadeComponent)
+		if (Component && IsValid(Component.Get()))
 		{
-			// НОВАЯ СИСТЕМА: Используем SetAnimationAlpha вместо SetComponentAlpha
-			Character->SetAnimationAlpha(FadeComponent.Get(), FadeOutAlpha);
+			ValidFadingIn.Add(Component);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Invalid FadingIn component detected, skipping"));
 		}
 	}
 
-	// Fade In: анимируем компоненты из списка FadingInComponents  
-	for (const TObjectPtr<USceneComponent>& MainComponent : Character->GetFadingInComponents())
+	for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingOutComponents())
+	{
+		if (Component && IsValid(Component.Get()))
+		{
+			ValidFadingOut.Add(Component);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Invalid FadingOut component detected, skipping"));
+		}
+	}
+
+	// === FADE OUT: Анимируем исчезающие компоненты ===
+	for (const TObjectPtr<USceneComponent>& FadeComponent : ValidFadingOut)
+	{
+		if (FadeComponent && FadeComponent->IsVisible())
+		{
+			// Плавное исчезновение с проверкой границ
+			float CurrentAlpha = FMath::Clamp(SmoothOutAlpha, 0.0f, 1.0f);
+			Character->SetAnimationAlpha(FadeComponent.Get(), CurrentAlpha);
+			
+			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: FadeOut %s alpha %.2f"), 
+				*FadeComponent->GetName(), CurrentAlpha);
+		}
+	}
+
+	// === FADE IN: Анимируем появляющиеся компоненты ===
+	for (const TObjectPtr<USceneComponent>& MainComponent : ValidFadingIn)
 	{
 		if (MainComponent)
 		{
-			// НОВАЯ СИСТЕМА: Интерполируем от 0.0 к целевой альфе
+			// КРИТИЧЕСКАЯ ПРОВЕРКА: Убеждаемся, что компонент готов к анимации
 			float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
-			float CurrentAlpha = FMath::Lerp(0.0f, TargetAlpha, FadeInAlpha);
+			
+			// Интерполируем от 0.0 к целевой альфе с плавной кривой
+			float CurrentAlpha = FMath::Lerp(0.0f, TargetAlpha, SmoothInAlpha);
+			CurrentAlpha = FMath::Clamp(CurrentAlpha, 0.0f, 1.0f);
+			
 			Character->SetAnimationAlpha(MainComponent.Get(), CurrentAlpha);
 			
-			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: %s alpha %.2f (target: %.2f)"), 
-				*MainComponent->GetName(), CurrentAlpha, TargetAlpha);
+			// Убеждаемся, что компонент видим только если у него есть контент
+			bool bHasContent = false;
+			if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(MainComponent.Get()))
+			{
+				bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
+			}
+			else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(MainComponent.Get()))
+			{
+				bHasContent = (SpriteComp->GetSprite() != nullptr);
+			}
+			
+			// ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: показываем компонент только если есть контент и альфа > 0
+			if (bHasContent && CurrentAlpha > 0.01f)
+			{
+				MainComponent->SetVisibility(true);
+			}
+			else if (!bHasContent)
+			{
+				MainComponent->SetVisibility(false);
+			}
+			
+			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: FadeIn %s alpha %.2f (target: %.2f, hasContent: %s)"), 
+				*MainComponent->GetName(), CurrentAlpha, TargetAlpha, bHasContent ? TEXT("Yes") : TEXT("No"));
+		}
+	}
+
+	// === ЗАЩИТА ОТ ЗАВИСАНИЯ: Проверяем завершение анимации ===
+	if (Alpha >= 0.99f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Animation near completion, preparing for finalization"));
+		
+		// Предварительно применяем финальные альфы для предотвращения мерцания
+		for (const TObjectPtr<USceneComponent>& MainComponent : ValidFadingIn)
+		{
+			if (MainComponent)
+			{
+				float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
+				Character->SetAnimationAlpha(MainComponent.Get(), TargetAlpha);
+			}
+		}
+		
+		for (const TObjectPtr<USceneComponent>& FadeComponent : ValidFadingOut)
+		{
+			if (FadeComponent)
+			{
+				Character->SetAnimationAlpha(FadeComponent.Get(), 0.0f);
+			}
 		}
 	}
 }
@@ -563,70 +663,4 @@ void UVNCharacterAnimationManager::LogAnimation(const FString& Message, bool bFo
 			OwnerCharacter.IsValid() ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
 			*Message);
 	}
-}
-
-// =====================================================
-// ОТЛАДОЧНЫЕ МЕТОДЫ
-// =====================================================
-
-#if WITH_EDITOR
-void UVNCharacterAnimationManager::PrintDebugInfo()
-{
-	FString DebugInfo = TEXT("=== VN Animation Manager Debug Info ===\n");
-	
-	DebugInfo += FString::Printf(TEXT("Owner: %s\n"), 
-		OwnerCharacter.IsValid() ? *OwnerCharacter->GetName() : TEXT("None"));
-	
-	DebugInfo += FString::Printf(TEXT("Is Animating: %s\n"), 
-		IsAnimating() ? TEXT("Yes") : TEXT("No"));
-	
-	if (IsAnimating())
-	{
-		DebugInfo += FString::Printf(TEXT("Current Animation: %s\n"), *CurrentAnimation.ToString());
-		DebugInfo += FString::Printf(TEXT("Progress: %.2f%%\n"), GetCurrentAnimationProgress() * 100.0f);
-		DebugInfo += FString::Printf(TEXT("Time: %.2f / %.2f\n"), CurrentAnimationTime, CurrentAnimation.Duration);
-	}
-	
-	DebugInfo += FString::Printf(TEXT("Queue Size: %d / %d\n"), AnimationQueue.Num(), MaxQueueSize);
-	
-	if (AnimationQueue.Num() > 0)
-	{
-		DebugInfo += TEXT("Queued Animations:\n");
-		for (int32 i = 0; i < AnimationQueue.Num(); ++i)
-		{
-			DebugInfo += FString::Printf(TEXT("  %d: %s\n"), i + 1, *AnimationQueue[i].ToString());
-		}
-	}
-	
-	DebugInfo += FString::Printf(TEXT("Settings: MaxQueue=%d, MinDuration=%.2f, DisableAnims=%s, VerboseLog=%s\n"),
-		MaxQueueSize, MinAnimationDuration, 
-		bDisableAnimations ? TEXT("Yes") : TEXT("No"),
-		bVerboseLogging ? TEXT("Yes") : TEXT("No"));
-
-	// Добавляем информацию о компонентах в анимации
-	if (OwnerCharacter.IsValid())
-	{
-		DebugInfo += FString::Printf(TEXT("Fading In Components: %d\n"), OwnerCharacter->GetFadingInComponents().Num());
-		DebugInfo += FString::Printf(TEXT("Fading Out Components: %d\n"), OwnerCharacter->GetFadingOutComponents().Num());
-	}
-
-	VN_LOG(Log, TEXT("%s"), *DebugInfo);
-}
-#endif
-
-FString UVNCharacterAnimationManager::GetQueueDebugString() const
-{
-	if (AnimationQueue.Num() == 0)
-	{
-		return TEXT("Animation Queue: Empty");
-	}
-
-	FString Result = FString::Printf(TEXT("Animation Queue (%d items):\n"), AnimationQueue.Num());
-	
-	for (int32 i = 0; i < AnimationQueue.Num(); ++i)
-	{
-		Result += FString::Printf(TEXT("  %d: %s\n"), i + 1, *AnimationQueue[i].ToString());
-	}
-
-	return Result;
 }

@@ -163,11 +163,15 @@ private:
 	bool IsChildOfHeadSprite(USceneComponent* Component) const;
 	void UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale);
 	
-	// --- УПРОЩЕННЫЕ ФУНКЦИИ БЕЗ InitialAlpha ---
+	// --- ОБЫЧНЫЕ ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ ---
 	void ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
 	void ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite);
 	
-	// --- НОВЫЕ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ АЛЬФОЙ АНИМАЦИИ ---
+	// --- НОВЫЕ "ТИХИЕ" ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ (БЕЗ АВТОМАТИЧЕСКОГО ПРИМЕНЕНИЯ ЦВЕТА) ---
+	void ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
+	void ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite);
+	
+	// --- ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ АЛЬФОЙ АНИМАЦИИ ---
 	void SetAnimationAlpha(USceneComponent* Component, float Alpha);
 	void SetTargetAlpha(USceneComponent* Component, float TargetAlpha);
 	float GetAnimationAlpha(USceneComponent* Component) const;
@@ -187,7 +191,7 @@ private:
 	void ApplyIndividualSpriteTransform(UPaperSpriteComponent* SpriteComponent, E_VN_ComponentID_Sprite ComponentID);
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
 
-	// --- НОВЫЕ HELPER-ФУНКЦИИ ДЛЯ DATA ASSET ---
+	// --- HELPER-ФУНКЦИИ ДЛЯ DATA ASSET ---
 	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, bool bAnimate);
 	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config, bool bAnimate);
 	void ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, bool bAnimate);
@@ -202,11 +206,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterFocusChanged OnCharacterFocusChanged;
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterVisibilityChanged OnCharacterVisibilityChanged;
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterComponentChanged OnCharacterComponentChanged;
-
-#if WITH_EDITOR
-	UFUNCTION(CallInEditor, Category = "Debug") void PrintDebugInfo();
-	UFUNCTION(CallInEditor, Category = "Debug") void ValidateAllComponents();
-#endif
 
 	friend class UVNCharacterAnimationManager;
 };

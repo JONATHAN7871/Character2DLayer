@@ -110,6 +110,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Animation")
 	int32 GetQueuedAnimationsCount() const { return AnimationQueue.Num(); }
 
+	/**
+	 * Получить строковое представление очереди анимаций
+	 * @return Описание текущей очереди анимаций для отладки
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Animation")
+	FString GetQueueDebugString() const;
+
 protected:
 	// =====================================================
 	// ВНУТРЕННИЕ ДАННЫЕ
@@ -219,18 +226,4 @@ public:
 	/** Событие прогресса анимации (вызывается каждый кадр во время анимации) */
 	UPROPERTY(BlueprintAssignable, Category = "VN Animation Events")
 	FOnVNAnimationProgress OnAnimationProgress;
-
-	// =====================================================
-	// ОТЛАДОЧНЫЕ МЕТОДЫ
-	// =====================================================
-
-#if WITH_EDITOR
-	/** Получить информацию о состоянии для отладки */
-	UFUNCTION(CallInEditor, Category = "Debug")
-	void PrintDebugInfo();
-#endif
-
-	/** Получить строковое представление очереди анимаций */
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	FString GetQueueDebugString() const;
 };
