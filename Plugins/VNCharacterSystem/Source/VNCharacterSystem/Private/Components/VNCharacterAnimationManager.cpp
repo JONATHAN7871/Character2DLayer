@@ -46,9 +46,20 @@ void UVNCharacterAnimationManager::TickComponent(float DeltaTime, ELevelTick Tic
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// ДОБАВЛЯЕМ ЛОГИРОВАНИЕ КАЖДЫЕ 0.5 СЕКУНДЫ
+	static float LogTimer = 0.0f;
+	LogTimer += DeltaTime;
+	if (LogTimer >= 0.5f)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TickComponent: IsAnimating=%s, CurrentType=%d"), 
+			IsAnimating() ? TEXT("TRUE") : TEXT("FALSE"), (int32)GetCurrentAnimationType());
+		LogTimer = 0.0f;
+	}
+
 	// Обновляем текущую анимацию
 	if (IsAnimating())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("TickComponent: Updating animation (DeltaTime=%.4f)"), DeltaTime);
 		UpdateCurrentAnimation(DeltaTime);
 	}
 	else
@@ -64,11 +75,20 @@ void UVNCharacterAnimationManager::TickComponent(float DeltaTime, ELevelTick Tic
 
 void UVNCharacterAnimationManager::PlayTransition(float Duration)
 {
+	UE_LOG(LogTemp, Error, TEXT("=== PlayTransition CALLED ==="));
+	UE_LOG(LogTemp, Error, TEXT("PlayTransition: Duration=%.2f"), Duration);
+	
 	FVNAnimationRequest Request;
 	Request.AnimationType = EVNAnimationType::Transition;
 	Request.Duration = FMath::Max(Duration, MinAnimationDuration);
 
-	EnqueueAnimationRequest(Request);
+	UE_LOG(LogTemp, Error, TEXT("PlayTransition: Request Duration=%.2f"), Request.Duration);
+	UE_LOG(LogTemp, Error, TEXT("PlayTransition: Calling EnqueueAnimationRequest"));
+	
+	bool bEnqueued = EnqueueAnimationRequest(Request);
+	
+	UE_LOG(LogTemp, Error, TEXT("PlayTransition: EnqueueAnimationRequest returned %s"), bEnqueued ? TEXT("TRUE") : TEXT("FALSE"));
+	UE_LOG(LogTemp, Error, TEXT("=== PlayTransition END ==="));
 }
 
 void UVNCharacterAnimationManager::PlaySpawnDespawn(bool bAppear, float Duration)
@@ -173,58 +193,40 @@ void UVNCharacterAnimationManager::ProcessAnimationQueue()
 
 void UVNCharacterAnimationManager::StartAnimation(const FVNAnimationRequest& Request)
 {
-	if (!ValidateAnimationRequest(Request))
-	{
-		VN_LOG_WARNING(TEXT("Invalid animation request: %s"), *Request.ToString());
+	if (!ValidateAnimationRequest(Request) || bDisableAnimations)
 		return;
-	}
-
-	if (bDisableAnimations)
-	{
-		LogAnimation(TEXT("Animations disabled, skipping: ") + Request.ToString());
-		return;
-	}
 
 	AVNCharacter* Character = GetVNCharacterOwner();
 	if (!Character)
-	{
-		VN_LOG_ERROR(TEXT("Cannot start animation - VNCharacter owner not found"));
 		return;
-	}
 
-	// Устанавливаем текущую анимацию
 	CurrentAnimation = Request;
 	CurrentAnimationTime = 0.0f;
 
-	// --- СПЕЦИАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ TRANSITION ---
+	UE_LOG(LogTemp, Warning, TEXT("StartAnimation: %s"), *Request.ToString());
+	
 	if (Request.AnimationType == EVNAnimationType::Transition)
 	{
-		LogAnimation(FString::Printf(TEXT("Transition animation starting. Fading in %d components, fading out %d components."), 
-			Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num()));
-		
-		// Дополнительное детальное логирование компонентов
+		// ПРИНУДИТЕЛЬНО СКРЫВАЕМ ВСЕ FADING IN КОМПОНЕНТЫ
 		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingInComponents())
 		{
 			if (Component)
 			{
-				VN_LOG_DEBUG(TEXT("StartAnimation: FadingIn component: %s"), *Component->GetName());
+				Component->SetVisibility(false);
+				Character->SetAnimationAlpha(Component.Get(), 0.0f);
 			}
 		}
 		
+		// ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ ВСЕ FADING OUT КОМПОНЕНТЫ
 		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingOutComponents())
 		{
 			if (Component)
 			{
-				VN_LOG_DEBUG(TEXT("StartAnimation: FadingOut component: %s"), *Component->GetName());
+				Component->SetVisibility(true);
 			}
 		}
 	}
-	else
-	{
-		LogAnimation(FString::Printf(TEXT("Starting animation: %s"), *Request.ToString()));
-	}
 
-	// Уведомляем о начале анимации
 	OnAnimationStarted.Broadcast(Request.AnimationType);
 }
 
@@ -232,6 +234,7 @@ void UVNCharacterAnimationManager::UpdateCurrentAnimation(float DeltaTime)
 {
 	if (!IsAnimating())
 	{
+		UE_LOG(LogTemp, Error, TEXT("UpdateCurrentAnimation: Not animating!"));
 		return;
 	}
 
@@ -241,32 +244,37 @@ void UVNCharacterAnimationManager::UpdateCurrentAnimation(float DeltaTime)
 	// Вычисляем прогресс
 	float Alpha = FMath::Clamp(CurrentAnimationTime / CurrentAnimation.Duration, 0.0f, 1.0f);
 
+	UE_LOG(LogTemp, Warning, TEXT("UpdateCurrentAnimation: Time=%.3f/%.3f, Alpha=%.3f, Type=%d"), 
+		CurrentAnimationTime, CurrentAnimation.Duration, Alpha, (int32)CurrentAnimation.AnimationType);
+
 	// Уведомляем о прогрессе
 	OnAnimationProgress.Broadcast(CurrentAnimation.AnimationType, Alpha);
 
 	// Обновляем специфичную анимацию
 	switch (CurrentAnimation.AnimationType)
 	{
-		case EVNAnimationType::Transition:
-			UpdateTransitionAnimation(Alpha);
-			break;
+	case EVNAnimationType::Transition:
+		UE_LOG(LogTemp, Warning, TEXT("UpdateCurrentAnimation: Calling UpdateTransitionAnimation"));
+		 UpdateTransitionAnimation(Alpha);
+		break;
 
-		case EVNAnimationType::SpawnDespawn:
-			UpdateSpawnDespawnAnimation(Alpha);
-			break;
+	case EVNAnimationType::SpawnDespawn:
+		UpdateSpawnDespawnAnimation(Alpha);
+		break;
 
-		case EVNAnimationType::Focus:
-			UpdateFocusAnimation(Alpha);
-			break;
+	case EVNAnimationType::Focus:
+		UpdateFocusAnimation(Alpha);
+		break;
 
-		default:
-			VN_LOG_WARNING(TEXT("Unknown animation type in UpdateCurrentAnimation"));
-			break;
+	default:
+		UE_LOG(LogTemp, Error, TEXT("UpdateCurrentAnimation: Unknown animation type: %d"), (int32)CurrentAnimation.AnimationType);
+		break;
 	}
 
 	// Проверяем завершение анимации
 	if (Alpha >= 1.0f)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("UpdateCurrentAnimation: Animation finished, calling FinishCurrentAnimation"));
 		FinishCurrentAnimation();
 	}
 }
@@ -333,123 +341,115 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 	AVNCharacter* Character = GetVNCharacterOwner();
 	if (!Character)
 	{
+		UE_LOG(LogTemp, Error, TEXT("UpdateTransitionAnimation: No Character owner!"));
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("UpdateTransitionAnimation: Progress %.2f%% - FadingIn=%d, FadingOut=%d"), 
-		Alpha * 100.0f, Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num());
+	UE_LOG(LogTemp, Warning, TEXT("=== UpdateTransitionAnimation: Progress %.2f%% ==="), Alpha * 100.0f);
+	UE_LOG(LogTemp, Warning, TEXT("FadingIn components: %d, FadingOut components: %d"), 
+		Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num());
 
-	// === НОВАЯ УЛУЧШЕННАЯ СИСТЕМА КРИВЫХ ===
-	// Используем более плавные кривые для предотвращения резких переходов
-	const float SmoothInAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);     // Smooth появление
-	const float SmoothOutAlpha = FMath::SmoothStep(1.0f, 0.0f, Alpha);    // Smooth исчезновение
+	// Простые кривые для плавности
+	const float SmoothInAlpha = Alpha;      
+	const float SmoothOutAlpha = 1.0f - Alpha; 
 
-	// === ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: Проверяем валидность компонентов ===
-	TArray<TObjectPtr<USceneComponent>> ValidFadingIn;
-	TArray<TObjectPtr<USceneComponent>> ValidFadingOut;
-
-	// Собираем только валидные компоненты
-	for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingInComponents())
-	{
-		if (Component && IsValid(Component.Get()))
-		{
-			ValidFadingIn.Add(Component);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Invalid FadingIn component detected, skipping"));
-		}
-	}
-
-	for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingOutComponents())
-	{
-		if (Component && IsValid(Component.Get()))
-		{
-			ValidFadingOut.Add(Component);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Invalid FadingOut component detected, skipping"));
-		}
-	}
+	UE_LOG(LogTemp, Warning, TEXT("SmoothInAlpha: %.3f, SmoothOutAlpha: %.3f"), SmoothInAlpha, SmoothOutAlpha);
 
 	// === FADE OUT: Анимируем исчезающие компоненты ===
-	for (const TObjectPtr<USceneComponent>& FadeComponent : ValidFadingOut)
+	int32 FadeOutIndex = 0;
+	for (const TObjectPtr<USceneComponent>& FadeComponent : Character->GetFadingOutComponents())
 	{
-		if (FadeComponent && FadeComponent->IsVisible())
+		if (!FadeComponent || !IsValid(FadeComponent.Get()))
 		{
-			// Плавное исчезновение с проверкой границ
-			float CurrentAlpha = FMath::Clamp(SmoothOutAlpha, 0.0f, 1.0f);
-			Character->SetAnimationAlpha(FadeComponent.Get(), CurrentAlpha);
-			
-			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: FadeOut %s alpha %.2f"), 
-				*FadeComponent->GetName(), CurrentAlpha);
+			UE_LOG(LogTemp, Error, TEXT("UpdateTransitionAnimation: Invalid FadingOut component at index %d"), FadeOutIndex);
+			FadeOutIndex++;
+			continue;
 		}
+
+		float CurrentAlpha = FMath::Clamp(SmoothOutAlpha, 0.0f, 1.0f);
+		
+		UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - Setting alpha %.3f"), 
+			FadeOutIndex, *FadeComponent->GetName(), CurrentAlpha);
+		
+		Character->SetAnimationAlpha(FadeComponent.Get(), CurrentAlpha);
+		
+		// ИСПРАВЛЕНИЕ: Скрываем fade компоненты только когда альфа становится очень низкой
+		if (CurrentAlpha <= 0.01f)
+		{
+			FadeComponent->SetVisibility(false);
+			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - HIDDEN (alpha too low)"), FadeOutIndex, *FadeComponent->GetName());
+		}
+		else
+		{
+			FadeComponent->SetVisibility(true);
+			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - VISIBLE"), FadeOutIndex, *FadeComponent->GetName());
+		}
+		
+		FadeOutIndex++;
 	}
 
 	// === FADE IN: Анимируем появляющиеся компоненты ===
-	for (const TObjectPtr<USceneComponent>& MainComponent : ValidFadingIn)
+	int32 FadeInIndex = 0;
+	for (const TObjectPtr<USceneComponent>& MainComponent : Character->GetFadingInComponents())
 	{
-		if (MainComponent)
+		if (!MainComponent || !IsValid(MainComponent.Get()))
 		{
-			// КРИТИЧЕСКАЯ ПРОВЕРКА: Убеждаемся, что компонент готов к анимации
-			float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
-			
-			// Интерполируем от 0.0 к целевой альфе с плавной кривой
-			float CurrentAlpha = FMath::Lerp(0.0f, TargetAlpha, SmoothInAlpha);
-			CurrentAlpha = FMath::Clamp(CurrentAlpha, 0.0f, 1.0f);
-			
-			Character->SetAnimationAlpha(MainComponent.Get(), CurrentAlpha);
-			
-			// Убеждаемся, что компонент видим только если у него есть контент
-			bool bHasContent = false;
-			if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(MainComponent.Get()))
-			{
-				bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
-			}
-			else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(MainComponent.Get()))
-			{
-				bHasContent = (SpriteComp->GetSprite() != nullptr);
-			}
-			
-			// ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: показываем компонент только если есть контент и альфа > 0
-			if (bHasContent && CurrentAlpha > 0.01f)
-			{
-				MainComponent->SetVisibility(true);
-			}
-			else if (!bHasContent)
-			{
-				MainComponent->SetVisibility(false);
-			}
-			
-			UE_LOG(LogTemp, Verbose, TEXT("UpdateTransitionAnimation: FadeIn %s alpha %.2f (target: %.2f, hasContent: %s)"), 
-				*MainComponent->GetName(), CurrentAlpha, TargetAlpha, bHasContent ? TEXT("Yes") : TEXT("No"));
+			UE_LOG(LogTemp, Error, TEXT("UpdateTransitionAnimation: Invalid FadingIn component at index %d"), FadeInIndex);
+			FadeInIndex++;
+			continue;
 		}
-	}
 
-	// === ЗАЩИТА ОТ ЗАВИСАНИЯ: Проверяем завершение анимации ===
-	if (Alpha >= 0.99f)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("UpdateTransitionAnimation: Animation near completion, preparing for finalization"));
+		float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
+		float CurrentAlpha = FMath::Lerp(0.0f, TargetAlpha, SmoothInAlpha);
+		CurrentAlpha = FMath::Clamp(CurrentAlpha, 0.0f, 1.0f);
 		
-		// Предварительно применяем финальные альфы для предотвращения мерцания
-		for (const TObjectPtr<USceneComponent>& MainComponent : ValidFadingIn)
+		UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - Target: %.3f, Current: %.3f"), 
+			FadeInIndex, *MainComponent->GetName(), TargetAlpha, CurrentAlpha);
+		
+		Character->SetAnimationAlpha(MainComponent.Get(), CurrentAlpha);
+		
+		// Проверяем контент
+		bool bHasContent = false;
+		if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(MainComponent.Get()))
 		{
-			if (MainComponent)
+			bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
+		}
+		else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(MainComponent.Get()))
+		{
+			bHasContent = (SpriteComp->GetSprite() != nullptr);
+		}
+		
+		UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HasContent: %s"), 
+			FadeInIndex, *MainComponent->GetName(), bHasContent ? TEXT("YES") : TEXT("NO"));
+		
+		// === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Минимальный порог видимости ===
+		const float VISIBILITY_THRESHOLD = 0.1f; // Компонент станет видимым только при альфе >= 10%
+		
+		if (bHasContent && CurrentAlpha >= VISIBILITY_THRESHOLD)
+		{
+			MainComponent->SetVisibility(true);
+			UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - VISIBLE (alpha %.3f >= threshold %.3f)"), 
+				FadeInIndex, *MainComponent->GetName(), CurrentAlpha, VISIBILITY_THRESHOLD);
+		}
+		else
+		{
+			MainComponent->SetVisibility(false);
+			if (bHasContent)
 			{
-				float TargetAlpha = Character->GetTargetAlpha(MainComponent.Get());
-				Character->SetAnimationAlpha(MainComponent.Get(), TargetAlpha);
+				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN (alpha %.3f < threshold %.3f)"), 
+					FadeInIndex, *MainComponent->GetName(), CurrentAlpha, VISIBILITY_THRESHOLD);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN (no content)"), 
+					FadeInIndex, *MainComponent->GetName());
 			}
 		}
 		
-		for (const TObjectPtr<USceneComponent>& FadeComponent : ValidFadingOut)
-		{
-			if (FadeComponent)
-			{
-				Character->SetAnimationAlpha(FadeComponent.Get(), 0.0f);
-			}
-		}
+		FadeInIndex++;
 	}
+	
+	UE_LOG(LogTemp, Warning, TEXT("=== UpdateTransitionAnimation END ==="));
 }
 
 void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)

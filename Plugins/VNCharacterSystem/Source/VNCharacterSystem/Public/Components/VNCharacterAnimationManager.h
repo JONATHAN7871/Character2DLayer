@@ -226,4 +226,5 @@ public:
 	/** Событие прогресса анимации (вызывается каждый кадр во время анимации) */
 	UPROPERTY(BlueprintAssignable, Category = "VN Animation Events")
 	FOnVNAnimationProgress OnAnimationProgress;
+	
 };
