@@ -207,22 +207,30 @@ void UVNCharacterAnimationManager::StartAnimation(const FVNAnimationRequest& Req
 	
 	if (Request.AnimationType == EVNAnimationType::Transition)
 	{
-		// ПРИНУДИТЕЛЬНО СКРЫВАЕМ ВСЕ FADING IN КОМПОНЕНТЫ
+		// Устанавливаем начальную альфу 0 для FadingIn компонентов
 		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingInComponents())
 		{
 			if (Component)
 			{
-				Component->SetVisibility(false);
 				Character->SetAnimationAlpha(Component.Get(), 0.0f);
+				UE_LOG(LogTemp, Warning, TEXT("StartAnimation: Set alpha 0.0 for FadingIn component %s"), *Component->GetName());
 			}
 		}
 		
-		// ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ ВСЕ FADING OUT КОМПОНЕНТЫ
+		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ ВСЕ FADING OUT КОМПОНЕНТЫ
 		for (const TObjectPtr<USceneComponent>& Component : Character->GetFadingOutComponents())
 		{
 			if (Component)
 			{
-				Component->SetVisibility(true);
+				Component->SetHiddenInGame(false);
+				Component->SetVisibility(true); // ДОБАВЛЕНО: Дублируем через SetVisibility
+				UE_LOG(LogTemp, Warning, TEXT("StartAnimation: FORCE VISIBLE FadingOut component %s"), *Component->GetName());
+				
+				// Дополнительная проверка - выводим состояние видимости
+				UE_LOG(LogTemp, Warning, TEXT("StartAnimation: %s HiddenInGame=%s, IsVisible=%s"), 
+					*Component->GetName(),
+					Component->bHiddenInGame ? TEXT("YES") : TEXT("NO"),
+					Component->IsVisible() ? TEXT("YES") : TEXT("NO"));
 			}
 		}
 	}
@@ -349,7 +357,7 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 	UE_LOG(LogTemp, Warning, TEXT("FadingIn components: %d, FadingOut components: %d"), 
 		Character->GetFadingInComponents().Num(), Character->GetFadingOutComponents().Num());
 
-	// Простые кривые для плавности
+	// УЛУЧШЕННЫЕ КРИВЫЕ ДЛЯ ПЛАВНОГО CROSSFADE
 	const float SmoothInAlpha = Alpha;      
 	const float SmoothOutAlpha = 1.0f - Alpha; 
 
@@ -373,16 +381,16 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		
 		Character->SetAnimationAlpha(FadeComponent.Get(), CurrentAlpha);
 		
-		// ИСПРАВЛЕНИЕ: Скрываем fade компоненты только когда альфа становится очень низкой
-		if (CurrentAlpha <= 0.01f)
+		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Fade компоненты должны быть видимы в самом начале
+		if (CurrentAlpha <= 0.001f)
 		{
-			FadeComponent->SetVisibility(false);
-			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - HIDDEN (alpha too low)"), FadeOutIndex, *FadeComponent->GetName());
+			FadeComponent->SetHiddenInGame(true);
+			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - HIDDEN via HiddenInGame (alpha too low)"), FadeOutIndex, *FadeComponent->GetName());
 		}
 		else
 		{
-			FadeComponent->SetVisibility(true);
-			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - VISIBLE"), FadeOutIndex, *FadeComponent->GetName());
+			FadeComponent->SetHiddenInGame(false);
+			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - VISIBLE via HiddenInGame"), FadeOutIndex, *FadeComponent->GetName());
 		}
 		
 		FadeOutIndex++;
@@ -422,26 +430,24 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HasContent: %s"), 
 			FadeInIndex, *MainComponent->GetName(), bHasContent ? TEXT("YES") : TEXT("NO"));
 		
-		// === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Минимальный порог видимости ===
-		const float VISIBILITY_THRESHOLD = 0.1f; // Компонент станет видимым только при альфе >= 10%
-		
-		if (bHasContent && CurrentAlpha >= VISIBILITY_THRESHOLD)
+		// === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Показываем сразу при малейшей альфе ===
+		if (bHasContent && CurrentAlpha > 0.001f)
 		{
-			MainComponent->SetVisibility(true);
-			UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - VISIBLE (alpha %.3f >= threshold %.3f)"), 
-				FadeInIndex, *MainComponent->GetName(), CurrentAlpha, VISIBILITY_THRESHOLD);
+			MainComponent->SetHiddenInGame(false);
+			UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - VISIBLE via HiddenInGame (alpha %.3f > 0.001)"), 
+				FadeInIndex, *MainComponent->GetName(), CurrentAlpha);
 		}
 		else
 		{
-			MainComponent->SetVisibility(false);
+			MainComponent->SetHiddenInGame(true);
 			if (bHasContent)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN (alpha %.3f < threshold %.3f)"), 
-					FadeInIndex, *MainComponent->GetName(), CurrentAlpha, VISIBILITY_THRESHOLD);
+				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN via HiddenInGame (alpha %.3f <= 0.001)"), 
+					FadeInIndex, *MainComponent->GetName(), CurrentAlpha);
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN (no content)"), 
+				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN via HiddenInGame (no content)"), 
 					FadeInIndex, *MainComponent->GetName());
 			}
 		}
