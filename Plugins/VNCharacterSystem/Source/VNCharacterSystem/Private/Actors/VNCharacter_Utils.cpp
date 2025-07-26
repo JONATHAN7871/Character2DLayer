@@ -4,6 +4,66 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
+
+// =====================================================
+// ПРИНЦИП 2: СИСТЕМА ГРУППИРОВКИ (BATCHING)
+// =====================================================
+
+void AVNCharacter::RequestTransitionCommit(float Duration)
+{
+	// Агрегируем максимальную длительность
+	PendingTransitionDuration = FMath::Max(PendingTransitionDuration, Duration);
+	
+	// Если таймер еще не запущен, запускаем его на следующий tick
+	if (!GetWorld()->GetTimerManager().IsTimerActive(CommitTransitionTimerHandle))
+	{
+		VN_LOG_DEBUG(TEXT("RequestTransitionCommit: Scheduling transition commit for next tick (duration: %.2f)"), Duration);
+		
+		GetWorld()->GetTimerManager().SetTimer(
+			CommitTransitionTimerHandle,
+			this,
+			&AVNCharacter::CommitTransitions,
+			0.0f, // Задержка 0 = следующий tick
+			false // Не повторять
+		);
+	}
+	else
+	{
+		VN_LOG_DEBUG(TEXT("RequestTransitionCommit: Transition commit already scheduled, updating duration to %.2f"), 
+			PendingTransitionDuration);
+	}
+}
+
+void AVNCharacter::CommitTransitions()
+{
+	VN_LOG_DEBUG(TEXT("CommitTransitions: Committing batched transitions (duration: %.2f)"), PendingTransitionDuration);
+	
+	// Сбрасываем таймер
+	GetWorld()->GetTimerManager().ClearTimer(CommitTransitionTimerHandle);
+	
+	// Проверяем, есть ли ожидающие изменения
+	if ((FadingInComponents.Num() > 0 || FadingOutComponents.Num() > 0) && AnimationManager)
+	{
+		VN_LOG_DEBUG(TEXT("CommitTransitions: Starting batched transition with %d FadingIn and %d FadingOut components"), 
+			FadingInComponents.Num(), FadingOutComponents.Num());
+		
+		// Запускаем одну общую анимацию с накопленной длительностью
+		AnimationManager->PlayTransition(PendingTransitionDuration);
+	}
+	else
+	{
+		VN_LOG_DEBUG(TEXT("CommitTransitions: No components to animate, skipping transition"));
+	}
+	
+	// Сбрасываем накопленную длительность
+	PendingTransitionDuration = 0.0f;
+}
+
+// =====================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// =====================================================
 
 void AVNCharacter::UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale)
 {
@@ -33,12 +93,6 @@ void AVNCharacter::UpdateComponentTransform(USceneComponent* Component, const FV
     Component->SetRelativeScale3D(FVector(FinalScale));
 }
 
-void AVNCharacter::ApplyIndividualSpriteTransform(UPaperSpriteComponent* SpriteComponent, E_VN_ComponentID_Sprite ComponentID)
-{
-	if (!SpriteComponent) return;
-	UpdateComponentTransform(SpriteComponent, FVector::ZeroVector, 1.0f);
-}
-
 bool AVNCharacter::IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const
 {
 	switch (ComponentID)
@@ -64,7 +118,7 @@ bool AVNCharacter::IsChildOfHeadSprite(USceneComponent* Component) const
 }
 
 // =====================================================
-// НОВАЯ СИСТЕМА УПРАВЛЕНИЯ АЛЬФОЙ ДЛЯ АНИМАЦИИ
+// СИСТЕМА УПРАВЛЕНИЯ АЛЬФОЙ ДЛЯ АНИМАЦИИ
 // =====================================================
 
 void AVNCharacter::SetAnimationAlpha(USceneComponent* Component, float Alpha)
@@ -91,8 +145,6 @@ void AVNCharacter::SetAnimationAlpha(USceneComponent* Component, float Alpha)
         CurrentColor.A = Alpha;
         SpriteComponent->SetSpriteColor(CurrentColor);
     }
-    
-    UE_LOG(LogTemp, Verbose, TEXT("SetAnimationAlpha: %s alpha set to %.2f"), *Component->GetName(), Alpha);
 }
 
 void AVNCharacter::SetTargetAlpha(USceneComponent* Component, float TargetAlpha)
@@ -100,7 +152,7 @@ void AVNCharacter::SetTargetAlpha(USceneComponent* Component, float TargetAlpha)
     if (!Component) return;
     TargetAlpha = FMath::Clamp(TargetAlpha, 0.0f, 1.0f);
     ComponentTargetAlphas.Add(Component, TargetAlpha);
-    UE_LOG(LogTemp, Log, TEXT("SetTargetAlpha: %s target alpha set to %.2f"), *Component->GetName(), TargetAlpha);
+    VN_LOG_DEBUG(TEXT("SetTargetAlpha: %s target alpha set to %.2f"), *Component->GetName(), TargetAlpha);
 }
 
 float AVNCharacter::GetAnimationAlpha(USceneComponent* Component) const
@@ -128,11 +180,10 @@ void AVNCharacter::ClearAnimationAlphas(USceneComponent* Component)
     if (!Component) return;
     ComponentAnimationAlphas.Remove(Component);
     ComponentTargetAlphas.Remove(Component);
-    UE_LOG(LogTemp, Log, TEXT("ClearAnimationAlphas: Cleared animation alphas for %s"), *Component->GetName());
 }
 
 // =====================================================
-// УПРОЩЕННЫЕ ФУНКЦИИ БЕЗ InitialAlpha
+// УПРОЩЕННЫЕ ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ
 // =====================================================
 
 void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh)
@@ -148,14 +199,14 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 			Component->SetVisibility(true);
 			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
 			SetComponentColor(Component, GetTargetColorForComponent(Component));
-			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s"), *Component->GetName());
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s"), *Component->GetName());
 		}
 		else
 		{
 			Component->SetSkeletalMesh(nullptr);
 			Component->SetAnimInstanceClass(nullptr);
 			Component->SetVisibility(false);
-			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSkeletalComponent: Failed to load mesh for %s"), *Component->GetName());
+			VN_LOG_WARNING(TEXT("ValidateAndSetupSkeletalComponent: Failed to load mesh for %s"), *Component->GetName());
 		}
 	}
 	else
@@ -163,7 +214,7 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 		Component->SetSkeletalMesh(nullptr);
 		Component->SetAnimInstanceClass(nullptr);
 		Component->SetVisibility(false);
-		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponent: Cleared mesh for %s"), *Component->GetName());
+		VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Cleared mesh for %s"), *Component->GetName());
 	}
 }
 
@@ -180,22 +231,26 @@ void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Compon
 			Component->SetVisibility(true);
 			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
 			Component->SetSpriteColor(GetTargetColorForComponent(Component));
-			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
 		}
 		else
 		{
 			Component->SetSprite(nullptr);
 			Component->SetVisibility(false);
-			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
+			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
 		Component->SetSprite(nullptr);
 		Component->SetVisibility(false);
-		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
+		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
 	}
 }
+
+// =====================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С КОМПОНЕНТАМИ
+// =====================================================
 
 void AVNCharacter::SetComponentAlpha(USceneComponent* Component, float Alpha)
 {
@@ -245,7 +300,7 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 {
 	if (!Source || !Target) return;
 	
-	UE_LOG(LogTemp, Log, TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
+	VN_LOG_DEBUG(TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
 	
 	Target->SetSkeletalMesh(Source->GetSkeletalMeshAsset());
 	Target->SetAnimInstanceClass(Source->GetAnimClass());
@@ -265,15 +320,13 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 	{
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
-	
-	UE_LOG(LogTemp, Log, TEXT("CopySkeletalComponentSettings: %s settings copied to %s"), *Source->GetName(), *Target->GetName());
 }
 
 void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target)
 {
 	if (!Source || !Target) return;
 	
-	UE_LOG(LogTemp, Log, TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
+	VN_LOG_DEBUG(TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
 	
 	Target->SetSprite(Source->GetSprite());
 	Target->SetVisibility(Source->IsVisible());
@@ -293,29 +346,27 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 	{
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
-	
-	UE_LOG(LogTemp, Log, TEXT("CopySpriteComponentSettings: %s settings copied to %s with alpha 1.0"), *Source->GetName(), *Target->GetName());
 }
 
 // =====================================================
-// УНИВЕРСАЛЬНАЯ КЛАССИЧЕСКАЯ СИСТЕМА ПЕРЕХОДОВ ДЛЯ ВСЕХ КОМПОНЕНТОВ
+// УНИВЕРСАЛЬНАЯ СИСТЕМА ПЕРЕХОДОВ
 // =====================================================
 
 void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh)
 {
 	if (!MainComponent || !FadeComponent) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("PrepareSkeletalTransition: Invalid components passed"));
+		VN_LOG_ERROR(TEXT("PrepareSkeletalTransition: Invalid components passed"));
 		return;
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Starting universal transition for %s"), *MainComponent->GetName());
+	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: Starting transition for %s"), *MainComponent->GetName());
 	
 	// === АНАЛИЗ СОСТОЯНИЯ ===
 	bool bCurrentlyHasMesh = (MainComponent->GetSkeletalMeshAsset() != nullptr && MainComponent->IsVisible());
 	bool bWillHaveMesh = !NewMesh.IsNull();
 	
-	UE_LOG(LogTemp, Log, TEXT("PrepareSkeletalTransition: %s - Current: %s, Target: %s"), 
+	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: %s - Current: %s, Target: %s"), 
 		*MainComponent->GetName(),
 		bCurrentlyHasMesh ? TEXT("HasMesh") : TEXT("Empty"),
 		bWillHaveMesh ? TEXT("HasMesh") : TEXT("Empty"));
@@ -323,57 +374,9 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 	// === СЛУЧАЙ 1: КОНТЕНТ → ПУСТОЕ (Перенос в fade + исчезновение) ===
 	if (bCurrentlyHasMesh && !bWillHaveMesh)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Content to Empty (transfer to fade and disappear)"), *MainComponent->GetName());
+		VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: %s - Content to Empty transition"), *MainComponent->GetName());
 		
-		// ШАГ 1: ПЕРЕНОСИМ текущий контент в fade компонент
-		CopySkeletalComponentSettings(MainComponent, FadeComponent);
-		
-		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
-		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
-		
-		// ШАГ 2: Fade компонент начинает с полной видимости и будет исчезать
-		FadeComponent->SetVisibility(true, true);
-		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
-		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
-		FadingOutComponents.Add(FadeComponent);
-		
-		// ШАГ 3: ОЧИЩАЕМ главный компонент (он станет пустым)
-		MainComponent->SetSkeletalMesh(nullptr);
-		MainComponent->SetAnimInstanceClass(nullptr);
-		MainComponent->SetVisibility(false);
-		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s content transferred to %s, %s will fade OUT (1.0→0.0)"), 
-			*MainComponent->GetName(), *FadeComponent->GetName(), *FadeComponent->GetName());
-		return;
-	}
-	
-	// === СЛУЧАЙ 2: ПУСТОЕ → КОНТЕНТ (Простое появление) ===
-	if (!bCurrentlyHasMesh && bWillHaveMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Empty to Content (fade in)"), *MainComponent->GetName());
-		
-		// Устанавливаем новый mesh
-		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
-		
-		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки mesh
-		SetAnimationAlpha(MainComponent, 0.0f);
-		
-		// Настраиваем для появления
-		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
-		SetTargetAlpha(MainComponent, TargetColor.A);
-		FadingInComponents.Add(MainComponent);
-		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s will fade IN from 0.0 to %.2f"), *MainComponent->GetName(), TargetColor.A);
-		return;
-	}
-	
-	// === СЛУЧАЙ 3: КОНТЕНТ → ДРУГОЙ КОНТЕНТ (Классический нахлест) ===
-	if (bCurrentlyHasMesh && bWillHaveMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Content to Content (crossfade)"), *MainComponent->GetName());
-		
-		// ШАГ 1: ПЕРЕНОСИМ старый контент в fade компонент
+		// Переносим текущий контент в fade компонент
 		CopySkeletalComponentSettings(MainComponent, FadeComponent);
 		
 		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
@@ -382,48 +385,89 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 		
 		// Fade компонент начинает с полной видимости и будет исчезать
 		FadeComponent->SetVisibility(true, true);
-		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
-		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		SetAnimationAlpha(FadeComponent, 1.0f);
+		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
-		// ШАГ 2: УСТАНАВЛИВАЕМ новый контент в main компонент
+		// Очищаем главный компонент
+		MainComponent->SetSkeletalMesh(nullptr);
+		MainComponent->SetAnimInstanceClass(nullptr);
+		MainComponent->SetVisibility(false);
+		
+		return;
+	}
+	
+	// === СЛУЧАЙ 2: ПУСТОЕ → КОНТЕНТ (Простое появление) ===
+	if (!bCurrentlyHasMesh && bWillHaveMesh)
+	{
+		VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: %s - Empty to Content transition"), *MainComponent->GetName());
+		
+		// Устанавливаем новый mesh
 		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
 		
-		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки mesh
-		SetAnimationAlpha(MainComponent, 0.0f);  // НАЧИНАЕМ с 0.0!
+		// Устанавливаем альфу 0 ПОСЛЕ установки mesh
+		SetAnimationAlpha(MainComponent, 0.0f);
+		
+		// Настраиваем для появления
+		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
+		SetTargetAlpha(MainComponent, TargetColor.A);
+		FadingInComponents.Add(MainComponent);
+		
+		return;
+	}
+	
+	// === СЛУЧАЙ 3: КОНТЕНТ → ДРУГОЙ КОНТЕНТ (Классический нахлест) ===
+	if (bCurrentlyHasMesh && bWillHaveMesh)
+	{
+		VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: %s - Content to Content crossfade"), *MainComponent->GetName());
+		
+		// Переносим старый контент в fade компонент
+		CopySkeletalComponentSettings(MainComponent, FadeComponent);
+		
+		// Настраиваем позицию fade компонента
+		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
+		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
+		
+		// Fade компонент начинает с полной видимости и будет исчезать
+		FadeComponent->SetVisibility(true, true);
+		SetAnimationAlpha(FadeComponent, 1.0f);
+		SetTargetAlpha(FadeComponent, 0.0f);
+		FadingOutComponents.Add(FadeComponent);
+		
+		// Устанавливаем новый контент в main компонент
+		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
+		SetAnimationAlpha(MainComponent, 0.0f);
 		
 		// Сбрасываем attachment для правильной настройки
 		ResetComponentAttachmentToDefault(MainComponent);
 		
 		// Определяем целевую альфу для main компонента
 		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
-		SetTargetAlpha(MainComponent, TargetColor.A);  // ЦЕЛЬ - 1.0
+		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s crossfade - %s fades OUT (1.0→0.0), %s fades IN (0.0→%.2f)"), 
-			*MainComponent->GetName(), *FadeComponent->GetName(), *MainComponent->GetName(), TargetColor.A);
 		return;
 	}
 	
 	// === СЛУЧАЙ 4: ПУСТОЕ → ПУСТОЕ (Ничего не делаем) ===
-	UE_LOG(LogTemp, Log, TEXT("PrepareSkeletalTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
+	VN_LOG_DEBUG(TEXT("PrepareSkeletalTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
 }
 
 void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent, UPaperSpriteComponent* FadeComponent, TSoftObjectPtr<UPaperSprite> NewSprite)
 {
 	if (!MainComponent || !FadeComponent) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("PrepareSpriteTransition: Invalid components passed"));
+		VN_LOG_ERROR(TEXT("PrepareSpriteTransition: Invalid components passed"));
 		return;
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Starting universal transition for %s"), *MainComponent->GetName());
+	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: Starting transition for %s"), *MainComponent->GetName());
 	
 	// === АНАЛИЗ СОСТОЯНИЯ ===
 	bool bCurrentlyHasSprite = (MainComponent->GetSprite() != nullptr && MainComponent->IsVisible());
 	bool bWillHaveSprite = !NewSprite.IsNull();
 	
-	UE_LOG(LogTemp, Log, TEXT("PrepareSpriteTransition: %s - Current: %s, Target: %s"), 
+	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: %s - Current: %s, Target: %s"), 
 		*MainComponent->GetName(),
 		bCurrentlyHasSprite ? TEXT("HasSprite") : TEXT("Empty"),
 		bWillHaveSprite ? TEXT("HasSprite") : TEXT("Empty"));
@@ -431,39 +475,37 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 	// === СЛУЧАЙ 1: КОНТЕНТ → ПУСТОЕ (Перенос в fade + исчезновение) ===
 	if (bCurrentlyHasSprite && !bWillHaveSprite)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Empty (transfer to fade and disappear)"), *MainComponent->GetName());
+		VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: %s - Content to Empty transition"), *MainComponent->GetName());
 		
-		// ШАГ 1: ПЕРЕНОСИМ текущий контент в fade компонент
+		// Переносим текущий контент в fade компонент
 		CopySpriteComponentSettings(MainComponent, FadeComponent);
 		
-		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		// Настраиваем позицию fade компонента
 		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
 		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
-		// ШАГ 2: Fade компонент начинает с полной видимости и будет исчезать
+		// Fade компонент начинает с полной видимости и будет исчезать
 		FadeComponent->SetVisibility(true, true);
-		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
-		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		SetAnimationAlpha(FadeComponent, 1.0f);
+		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
-		// ШАГ 3: ОЧИЩАЕМ главный компонент (он станет пустым)
+		// Очищаем главный компонент
 		MainComponent->SetSprite(nullptr);
 		MainComponent->SetVisibility(false);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s content transferred to %s, %s will fade OUT (1.0→0.0)"), 
-			*MainComponent->GetName(), *FadeComponent->GetName(), *FadeComponent->GetName());
 		return;
 	}
 	
 	// === СЛУЧАЙ 2: ПУСТОЕ → КОНТЕНТ (Простое появление) ===
 	if (!bCurrentlyHasSprite && bWillHaveSprite)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Empty to Content (fade in)"), *MainComponent->GetName());
+		VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: %s - Empty to Content transition"), *MainComponent->GetName());
 		
 		// Устанавливаем новый sprite
 		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
 		
-		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки sprite
+		// Устанавливаем альфу 0 ПОСЛЕ установки sprite
 		SetAnimationAlpha(MainComponent, 0.0f);
 		
 		// Настраиваем для появления
@@ -471,87 +513,49 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s will fade IN from 0.0 to %.2f"), *MainComponent->GetName(), TargetColor.A);
 		return;
 	}
 	
 	// === СЛУЧАЙ 3: КОНТЕНТ → ДРУГОЙ КОНТЕНТ (Классический нахлест) ===
 	if (bCurrentlyHasSprite && bWillHaveSprite)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Content (crossfade)"), *MainComponent->GetName());
+		VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: %s - Content to Content crossfade"), *MainComponent->GetName());
 		
-		// ШАГ 1: ПЕРЕНОСИМ старый контент в fade компонент
+		// Переносим старый контент в fade компонент
 		CopySpriteComponentSettings(MainComponent, FadeComponent);
 		
-		// Настраиваем позицию fade компонента (чуть смещаем для слоя)
+		// Настраиваем позицию fade компонента
 		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
 		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
 		// Fade компонент начинает с полной видимости и будет исчезать
 		FadeComponent->SetVisibility(true, true);
-		SetAnimationAlpha(FadeComponent, 1.0f);  // НАЧИНАЕМ с 1.0!
-		SetTargetAlpha(FadeComponent, 0.0f);     // ЦЕЛЬ - 0.0
+		SetAnimationAlpha(FadeComponent, 1.0f);
+		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
-		// ШАГ 2: УСТАНАВЛИВАЕМ новый контент в main компонент
+		// Устанавливаем новый контент в main компонент
 		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
-		
-		// ВАЖНО: Устанавливаем альфу 0 ПОСЛЕ установки sprite
-		SetAnimationAlpha(MainComponent, 0.0f);  // НАЧИНАЕМ с 0.0!
+		SetAnimationAlpha(MainComponent, 0.0f);
 		
 		// Сбрасываем attachment для правильной настройки
 		ResetComponentAttachmentToDefault(MainComponent);
 		
 		// Определяем целевую альфу для main компонента
 		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
-		SetTargetAlpha(MainComponent, TargetColor.A);  // ЦЕЛЬ - 1.0
+		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s crossfade - %s fades OUT (1.0→0.0), %s fades IN (0.0→%.2f)"), 
-			*MainComponent->GetName(), *FadeComponent->GetName(), *MainComponent->GetName(), TargetColor.A);
 		return;
 	}
 	
 	// === СЛУЧАЙ 4: ПУСТОЕ → ПУСТОЕ (Ничего не делаем) ===
-	UE_LOG(LogTemp, Log, TEXT("PrepareSpriteTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
-}
-
-void AVNCharacter::FinishTransition(USceneComponent* MainComponent, USceneComponent* FadeComponent)
-{
-	if (!MainComponent || !FadeComponent) return;
-	
-	UE_LOG(LogTemp, Warning, TEXT("FinishTransition: Finishing transition for %s and %s"), 
-		*MainComponent->GetName(), *FadeComponent->GetName());
-	
-	// Применяем целевую альфу к main компоненту
-	float TargetAlpha = GetTargetAlpha(MainComponent);
-	SetAnimationAlpha(MainComponent, TargetAlpha);
-	
-	// Скрываем fade компонент
-	FadeComponent->SetVisibility(false);
-	SetAnimationAlpha(FadeComponent, 0.0f);
-	
-	if (USkeletalMeshComponent* SkeletalFade = Cast<USkeletalMeshComponent>(FadeComponent))
-	{
-		SkeletalFade->SetSkeletalMesh(nullptr);
-		SkeletalFade->SetAnimInstanceClass(nullptr);
-	}
-	else if (UPaperSpriteComponent* SpriteFade = Cast<UPaperSpriteComponent>(FadeComponent))
-	{
-		SpriteFade->SetSprite(nullptr);
-	}
-	
-	// Очищаем данные анимации
-	ClearAnimationAlphas(MainComponent);
-	ClearAnimationAlphas(FadeComponent);
-	
-	UE_LOG(LogTemp, Log, TEXT("FinishTransition: Applied target alpha %.2f to %s"), 
-		TargetAlpha, *MainComponent->GetName());
+	VN_LOG_DEBUG(TEXT("PrepareSpriteTransition: %s - Empty to Empty (no action)"), *MainComponent->GetName());
 }
 
 void AVNCharacter::HideAllFadeComponents()
 {
-	UE_LOG(LogTemp, Warning, TEXT("HideAllFadeComponents: Hiding all fade components"));
+	VN_LOG_DEBUG(TEXT("HideAllFadeComponents: Hiding all fade components"));
 	
 	TArray<USceneComponent*> FadeComponents = GetAllFadeComponents();
 	for (USceneComponent* Component : FadeComponents)
@@ -574,7 +578,7 @@ void AVNCharacter::HideAllFadeComponents()
 		}
 	}
 	
-	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убеждаемся, что все main компоненты имеют правильную альфу
+	// Убеждаемся, что все main компоненты имеют правильную альфу
 	for (USceneComponent* Component : FadingInComponents)
 	{
 		if (Component)
@@ -584,8 +588,6 @@ void AVNCharacter::HideAllFadeComponents()
 			if (TargetAlpha != 1.0f || ComponentTargetAlphas.Contains(Component))
 			{
 				SetAnimationAlpha(Component, TargetAlpha);
-				UE_LOG(LogTemp, Log, TEXT("HideAllFadeComponents: Applied target alpha %.2f to %s"), 
-					TargetAlpha, *Component->GetName());
 			}
 		}
 	}
@@ -609,8 +611,6 @@ void AVNCharacter::HideAllFadeComponents()
 	
 	FadingInComponents.Empty();
 	FadingOutComponents.Empty();
-	
-	UE_LOG(LogTemp, Log, TEXT("HideAllFadeComponents: Hidden %d fade components"), FadeComponents.Num());
 }
 
 // =====================================================
@@ -621,7 +621,7 @@ void AVNCharacter::ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponen
 {
 	if (!Component) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("ValidateAndSetupSkeletalComponentSilent: Component is null"));
+		VN_LOG_ERROR(TEXT("ValidateAndSetupSkeletalComponentSilent: Component is null"));
 		return;
 	}
 	
@@ -633,14 +633,14 @@ void AVNCharacter::ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponen
 			Component->SetSkeletalMesh(LoadedMesh);
 			Component->SetVisibility(true);
 			// НЕ применяем цвет автоматически - это будет сделано через систему анимации
-			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponentSilent: Set mesh for %s"), *Component->GetName());
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponentSilent: Set mesh for %s"), *Component->GetName());
 		}
 		else
 		{
 			Component->SetSkeletalMesh(nullptr);
 			Component->SetAnimInstanceClass(nullptr);
 			Component->SetVisibility(false);
-			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSkeletalComponentSilent: Failed to load mesh for %s"), *Component->GetName());
+			VN_LOG_WARNING(TEXT("ValidateAndSetupSkeletalComponentSilent: Failed to load mesh for %s"), *Component->GetName());
 		}
 	}
 	else
@@ -648,7 +648,7 @@ void AVNCharacter::ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponen
 		Component->SetSkeletalMesh(nullptr);
 		Component->SetAnimInstanceClass(nullptr);
 		Component->SetVisibility(false);
-		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSkeletalComponentSilent: Cleared mesh for %s"), *Component->GetName());
+		VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponentSilent: Cleared mesh for %s"), *Component->GetName());
 	}
 }
 
@@ -656,7 +656,7 @@ void AVNCharacter::ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* 
 {
 	if (!Component) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("ValidateAndSetupSpriteComponentSilent: Component is null"));
+		VN_LOG_ERROR(TEXT("ValidateAndSetupSpriteComponentSilent: Component is null"));
 		return;
 	}
 	
@@ -668,19 +668,19 @@ void AVNCharacter::ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* 
 			Component->SetSprite(LoadedSprite);
 			Component->SetVisibility(true);
 			// НЕ применяем цвет автоматически - это будет сделано через систему анимации
-			UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponentSilent: Set sprite for %s"), *Component->GetName());
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponentSilent: Set sprite for %s"), *Component->GetName());
 		}
 		else
 		{
 			Component->SetSprite(nullptr);
 			Component->SetVisibility(false);
-			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSpriteComponentSilent: Failed to load sprite for %s"), *Component->GetName());
+			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponentSilent: Failed to load sprite for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
 		Component->SetSprite(nullptr);
 		Component->SetVisibility(false);
-		UE_LOG(LogTemp, Log, TEXT("ValidateAndSetupSpriteComponentSilent: Cleared sprite for %s"), *Component->GetName());
+		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponentSilent: Cleared sprite for %s"), *Component->GetName());
 	}
 }

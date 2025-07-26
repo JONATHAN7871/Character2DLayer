@@ -4,6 +4,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
 
+// ===============================================
+// ПРИНЦИП 2: Группировка индивидуальных изменений
+// ===============================================
+
 void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftObjectPtr<USkeletalMesh> SkeletalMesh, bool bAnimate, float Duration)
 {
 	USkeletalMeshComponent* MainComponent = GetSkeletalComponent(ComponentID);
@@ -41,7 +45,8 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
 			PrepareSkeletalTransition(MainComponent, FadeComponent, SkeletalMesh);
-			AnimationManager->PlayTransition(Duration);
+			// ПРИНЦИП 2: НЕ вызываем PlayTransition напрямую!
+			RequestTransitionCommit(Duration);
 		}
 		else
 		{
@@ -97,7 +102,8 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
 		{
 			PrepareSpriteTransition(MainComponent, FadeComponent, Sprite);
-			AnimationManager->PlayTransition(Duration);
+			// ПРИНЦИП 2: НЕ вызываем PlayTransition напрямую!
+			RequestTransitionCommit(Duration);
 		}
 		else
 		{
@@ -145,16 +151,81 @@ void AVNCharacter::SetArms(TSoftObjectPtr<USkeletalMesh> ArmsMesh, bool bAnimate
 
 void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectPtr<UPaperSprite> MouthSprite, TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
 {
-	VN_LOG_DEBUG(TEXT("SetFace: Setting multiple face components with animate=%s, duration=%.2f"), bAnimate ? TEXT("true") : TEXT("false"), Duration);
-	
-	SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
-	SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
-	SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);
+    VN_LOG_DEBUG(TEXT("SetFace: Setting multiple face components with animate=%s, duration=%.2f"), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
-	if (bAnimate && Duration > 0.0f && AnimationManager)
-	{
-		AnimationManager->PlayTransition(Duration);
-	}
+    // НОВАЯ ЛОГИКА (ОШИБКА #3): Убраны лишние вызовы и дублирование логики.
+    // Теперь мы только подготавливаем переходы и запрашиваем одну общую анимацию.
+    if (bAnimate && Duration > 0.0f && AnimationManager)
+    {
+        bool bAnyComponentChanged = false;
+
+        // --- Проверяем и подготавливаем ГЛАЗА ---
+        UPaperSpriteComponent* EyesComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyes);
+        if (EyesComp)
+        {
+            const UPaperSprite* CurrentSprite = EyesComp->GetSprite();
+            const bool bAssetChanged = (!CurrentSprite && !EyesSprite.IsNull()) ||
+                                       (CurrentSprite && EyesSprite.IsNull()) ||
+                                       (CurrentSprite && !EyesSprite.IsNull() && CurrentSprite->GetPathName() != EyesSprite.ToString());
+            if (bAssetChanged)
+            {
+                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Eyes))
+                {
+                    PrepareSpriteTransition(EyesComp, FadeComp, EyesSprite);
+                    bAnyComponentChanged = true;
+                }
+            }
+        }
+
+        // --- Проверяем и подготавливаем РОТ ---
+        UPaperSpriteComponent* MouthComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Mouth);
+        if (MouthComp)
+        {
+            const UPaperSprite* CurrentSprite = MouthComp->GetSprite();
+            const bool bAssetChanged = (!CurrentSprite && !MouthSprite.IsNull()) ||
+                                       (CurrentSprite && MouthSprite.IsNull()) ||
+                                       (CurrentSprite && !MouthSprite.IsNull() && CurrentSprite->GetPathName() != MouthSprite.ToString());
+            if (bAssetChanged)
+            {
+                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Mouth))
+                {
+                    PrepareSpriteTransition(MouthComp, FadeComp, MouthSprite);
+                    bAnyComponentChanged = true;
+                }
+            }
+        }
+
+        // --- Проверяем и подготавливаем БРОВИ ---
+        UPaperSpriteComponent* EyebrowComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyebrow);
+        if (EyebrowComp)
+        {
+            const UPaperSprite* CurrentSprite = EyebrowComp->GetSprite();
+            const bool bAssetChanged = (!CurrentSprite && !EyebrowSprite.IsNull()) ||
+                                       (CurrentSprite && EyebrowSprite.IsNull()) ||
+                                       (CurrentSprite && !EyebrowSprite.IsNull() && CurrentSprite->GetPathName() != EyebrowSprite.ToString());
+            if (bAssetChanged)
+            {
+                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Eyebrow))
+                {
+                    PrepareSpriteTransition(EyebrowComp, FadeComp, EyebrowSprite);
+                    bAnyComponentChanged = true;
+                }
+            }
+        }
+
+        // Если хоть что-то изменилось, запрашиваем групповую анимацию
+        if (bAnyComponentChanged)
+        {
+            RequestTransitionCommit(Duration);
+        }
+    }
+    else
+    {
+        // Мгновенное применение (этот блок был правильным)
+        SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
+        SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
+        SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);
+    }
 }
 
 bool AVNCharacter::IsAnimating() const

@@ -90,6 +90,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head") class UPaperSpriteComponent* EmotionHeadEffect01_Sprite;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head") class UPaperSpriteComponent* EmotionHeadEffect02_Sprite;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head") class UPaperSpriteComponent* EmotionHeadEffect03_Sprite;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head Fade") class UPaperSpriteComponent* Head_Sprite_Fade;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head Fade") class UPaperSpriteComponent* Eyebrow_Sprite_Fade;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head Fade") class UPaperSpriteComponent* Eyes_Sprite_Fade;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sprites Head Fade") class UPaperSpriteComponent* Eyelids_Sprite_Fade;
@@ -154,8 +155,16 @@ private:
 	/** Карта целевых значений альфы для завершения анимации */
 	TMap<TObjectPtr<USceneComponent>, float> ComponentTargetAlphas;
 	
-	// --- ФУНКЦИЯ ДЛЯ ПРЕРЫВАНИЯ АНИМАЦИИ ---
+	// --- СИСТЕМА ГРУППИРОВКИ (BATCHING) ДЛЯ ИНДИВИДУАЛЬНЫХ ПЕРЕХОДОВ ---
+	/** Таймер для отложенного запуска переходов */
+	FTimerHandle CommitTransitionTimerHandle;
+	/** Накопленная длительность для группированных переходов */
+	float PendingTransitionDuration = 0.0f;
+	
+	// --- ОСНОВНЫЕ ФУНКЦИИ УПРАВЛЕНИЯ ПЕРЕХОДАМИ ---
 	void FinalizeCurrentTransition();
+	void RequestTransitionCommit(float Duration);
+	void CommitTransitions();
 	
 	void CreateComponents();
 	void SetupComponentHierarchy();
@@ -163,41 +172,39 @@ private:
 	bool IsChildOfHeadSprite(USceneComponent* Component) const;
 	void UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale);
 	
-	// --- ОБЫЧНЫЕ ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ ---
+	// --- ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ ---
 	void ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
 	void ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite);
-	
-	// --- "ТИХИЕ" ФУНКЦИИ НАСТРОЙКИ КОМПОНЕНТОВ (БЕЗ АВТОМАТИЧЕСКОГО ПРИМЕНЕНИЯ ЦВЕТА) ---
 	void ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponent* Component, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
 	void ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite);
 	
-	// --- ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ АЛЬФОЙ АНИМАЦИИ ---
+	// --- ФУНКЦИИ УПРАВЛЕНИЯ АЛЬФОЙ АНИМАЦИИ ---
 	void SetAnimationAlpha(USceneComponent* Component, float Alpha);
 	void SetTargetAlpha(USceneComponent* Component, float TargetAlpha);
 	float GetAnimationAlpha(USceneComponent* Component) const;
 	float GetTargetAlpha(USceneComponent* Component) const;
 	void ClearAnimationAlphas(USceneComponent* Component);
 	
-	// --- УНИВЕРСАЛЬНЫЕ ФУНКЦИИ ПЕРЕХОДОВ ДЛЯ ВСЕХ КОМПОНЕНТОВ ---
+	// --- ФУНКЦИИ ПОДГОТОВКИ ПЕРЕХОДОВ ---
 	void PrepareSkeletalTransition(USkeletalMeshComponent* MainComponent, USkeletalMeshComponent* FadeComponent, TSoftObjectPtr<USkeletalMesh> NewMesh);
 	void PrepareSpriteTransition(UPaperSpriteComponent* MainComponent, UPaperSpriteComponent* FadeComponent, TSoftObjectPtr<UPaperSprite> NewSprite);
 	
 	void CopySkeletalComponentSettings(USkeletalMeshComponent* Source, USkeletalMeshComponent* Target);
 	void CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target);
-	void FinishTransition(USceneComponent* MainComponent, USceneComponent* FadeComponent);
 	void SetComponentAlpha(USceneComponent* Component, float Alpha);
 	void SetComponentColor(USceneComponent* Component, const FLinearColor& Color);
 	TArray<USceneComponent*> GetAllMainComponents() const;
 	TArray<USceneComponent*> GetAllFadeComponents() const;
 	void HideAllFadeComponents();
-	void ApplyIndividualSpriteTransform(UPaperSpriteComponent* SpriteComponent, E_VN_ComponentID_Sprite ComponentID);
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
 
-	// --- HELPER-ФУНКЦИИ ДЛЯ DATA ASSET ---
-	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config, bool bAnimate);
-	void ApplySkeletalConfig(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config, bool bAnimate);
-	void ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config, bool bAnimate);
-	void ApplySpriteConfig(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config, bool bAnimate);
+	// --- HELPER-ФУНКЦИИ ДЛЯ DATA ASSET (ДОБАВЛЕНЫ НЕДОСТАЮЩИЕ) ---
+    void ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal ID, TSoftObjectPtr<USkeletalMesh> NewMesh, bool bAnimate);
+    void ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSoftObjectPtr<UPaperSprite> NewSprite, bool bAnimate);
+	void ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config);
+	void ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config);
+	void ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config);
+	void ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config);
 	
 	USkeletalMeshComponent* GetSkeletalComponentBySpriteTarget(E_SpriteAttachmentTarget Target);
 	UFUNCTION() void OnAnimationStarted(EVNAnimationType AnimationType);

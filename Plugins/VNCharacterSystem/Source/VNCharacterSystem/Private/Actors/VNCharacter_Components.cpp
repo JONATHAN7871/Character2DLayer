@@ -46,6 +46,7 @@ void AVNCharacter::CreateComponents()
 	EmotionHeadEffect01_Sprite = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("EmotionHeadEffect01_Sprite"));
 	EmotionHeadEffect02_Sprite = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("EmotionHeadEffect02_Sprite"));
 	EmotionHeadEffect03_Sprite = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("EmotionHeadEffect03_Sprite"));
+	Head_Sprite_Fade = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("Head_Sprite_Fade"));
 	Eyebrow_Sprite_Fade = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("Eyebrow_Sprite_Fade"));
 	Eyes_Sprite_Fade = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("Eyes_Sprite_Fade"));
 	Eyelids_Sprite_Fade = CreateDefaultSubobject<UPaperSpriteComponent>(TEXT("Eyelids_Sprite_Fade"));
@@ -87,6 +88,7 @@ void AVNCharacter::SetupComponentHierarchy()
 	EmotionBodyEffect03_Sprite_Fade->SetupAttachment(CharacterRoot);
 	
 	Head_Sprite->SetupAttachment(CharacterRoot);
+	Head_Sprite_Fade->SetupAttachment(CharacterRoot);
 	
 	Eyebrow_Sprite->SetupAttachment(Head_Sprite);
 	Eyes_Sprite->SetupAttachment(Head_Sprite);
@@ -119,66 +121,67 @@ void AVNCharacter::ResetComponentAttachmentToDefault(USceneComponent* ComponentT
 USkeletalMeshComponent* AVNCharacter::GetSkeletalComponent(E_VN_ComponentID_Skeletal ComponentID) const
 {
 	switch (ComponentID){
-		case E_VN_ComponentID_Skeletal::Body: return Body_Skeletal;
-		case E_VN_ComponentID_Skeletal::Arms: return Arms_Skeletal;
-		case E_VN_ComponentID_Skeletal::Head: return Head_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom01: return Custom01_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom02: return Custom02_Skeletal;
-		case E_VN_ComponentID_Skeletal::Custom03: return Custom03_Skeletal;
-		default: return nullptr;
+	case E_VN_ComponentID_Skeletal::Body: return Body_Skeletal;
+	case E_VN_ComponentID_Skeletal::Arms: return Arms_Skeletal;
+	case E_VN_ComponentID_Skeletal::Head: return Head_Skeletal;
+	case E_VN_ComponentID_Skeletal::Custom01: return Custom01_Skeletal;
+	case E_VN_ComponentID_Skeletal::Custom02: return Custom02_Skeletal;
+	case E_VN_ComponentID_Skeletal::Custom03: return Custom03_Skeletal;
+	default: return nullptr;
 	}
 }
 UPaperSpriteComponent* AVNCharacter::GetSpriteComponent(E_VN_ComponentID_Sprite ComponentID) const
 {
 	switch (ComponentID){
-		case E_VN_ComponentID_Sprite::Body: return Body_Sprite;
-		case E_VN_ComponentID_Sprite::Arms: return Arms_Sprite;
-		case E_VN_ComponentID_Sprite::Head: return Head_Sprite;
-		case E_VN_ComponentID_Sprite::Eyebrow: return Eyebrow_Sprite;
-		case E_VN_ComponentID_Sprite::Eyes: return Eyes_Sprite;
-		case E_VN_ComponentID_Sprite::Eyelids: return Eyelids_Sprite;
-		case E_VN_ComponentID_Sprite::Wink: return Wink_Sprite;
-		case E_VN_ComponentID_Sprite::Mouth: return Mouth_Sprite;
-		case E_VN_ComponentID_Sprite::BodyShadow: return BodyShadow_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_01: return EmotionHeadEffect01_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_02: return EmotionHeadEffect02_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionHead_03: return EmotionHeadEffect03_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_01: return EmotionBodyEffect01_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_02: return EmotionBodyEffect02_Sprite;
-		case E_VN_ComponentID_Sprite::EmotionBody_03: return EmotionBodyEffect03_Sprite;
-		default: return nullptr;
+	case E_VN_ComponentID_Sprite::Body: return Body_Sprite;
+	case E_VN_ComponentID_Sprite::Arms: return Arms_Sprite;
+	case E_VN_ComponentID_Sprite::Head: return Head_Sprite;
+	case E_VN_ComponentID_Sprite::Eyebrow: return Eyebrow_Sprite;
+	case E_VN_ComponentID_Sprite::Eyes: return Eyes_Sprite;
+	case E_VN_ComponentID_Sprite::Eyelids: return Eyelids_Sprite;
+	case E_VN_ComponentID_Sprite::Wink: return Wink_Sprite;
+	case E_VN_ComponentID_Sprite::Mouth: return Mouth_Sprite;
+	case E_VN_ComponentID_Sprite::BodyShadow: return BodyShadow_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionHead_01: return EmotionHeadEffect01_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionHead_02: return EmotionHeadEffect02_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionHead_03: return EmotionHeadEffect03_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionBody_01: return EmotionBodyEffect01_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionBody_02: return EmotionBodyEffect02_Sprite;
+	case E_VN_ComponentID_Sprite::EmotionBody_03: return EmotionBodyEffect03_Sprite;
+	default: return nullptr;
 	}
 }
 USkeletalMeshComponent* AVNCharacter::GetSkeletalFadeComponent(E_VN_ComponentID_Skeletal ComponentID) const
 {
 	switch (ComponentID){
-		case E_VN_ComponentID_Skeletal::Body: return Body_Skeletal_Fade;
-		case E_VN_ComponentID_Skeletal::Arms: return Arms_Skeletal_Fade;
-		case E_VN_ComponentID_Skeletal::Head: return Head_Skeletal_Fade;
-		case E_VN_ComponentID_Skeletal::Custom01: return Custom01_Skeletal_Fade;
-		case E_VN_ComponentID_Skeletal::Custom02: return Custom02_Skeletal_Fade;
-		case E_VN_ComponentID_Skeletal::Custom03: return Custom03_Skeletal_Fade;
-		default: return nullptr;
+	case E_VN_ComponentID_Skeletal::Body: return Body_Skeletal_Fade;
+	case E_VN_ComponentID_Skeletal::Arms: return Arms_Skeletal_Fade;
+	case E_VN_ComponentID_Skeletal::Head: return Head_Skeletal_Fade;
+	case E_VN_ComponentID_Skeletal::Custom01: return Custom01_Skeletal_Fade;
+	case E_VN_ComponentID_Skeletal::Custom02: return Custom02_Skeletal_Fade;
+	case E_VN_ComponentID_Skeletal::Custom03: return Custom03_Skeletal_Fade;
+	default: return nullptr;
 	}
 }
 UPaperSpriteComponent* AVNCharacter::GetSpriteFadeComponent(E_VN_ComponentID_Sprite ComponentID) const
 {
 	switch (ComponentID){
-		case E_VN_ComponentID_Sprite::Body: return Body_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Arms: return Arms_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Eyebrow: return Eyebrow_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Eyes: return Eyes_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Eyelids: return Eyelids_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Wink: return Wink_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::Mouth: return Mouth_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::BodyShadow: return BodyShadow_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionHead_01: return EmotionHeadEffect01_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionHead_02: return EmotionHeadEffect02_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionHead_03: return EmotionHeadEffect03_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionBody_01: return EmotionBodyEffect01_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionBody_02: return EmotionBodyEffect02_Sprite_Fade;
-		case E_VN_ComponentID_Sprite::EmotionBody_03: return EmotionBodyEffect03_Sprite_Fade;
-		default: return nullptr;
+	case E_VN_ComponentID_Sprite::Head: return Head_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Body: return Body_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Arms: return Arms_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Eyebrow: return Eyebrow_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Eyes: return Eyes_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Eyelids: return Eyelids_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Wink: return Wink_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::Mouth: return Mouth_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::BodyShadow: return BodyShadow_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionHead_01: return EmotionHeadEffect01_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionHead_02: return EmotionHeadEffect02_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionHead_03: return EmotionHeadEffect03_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionBody_01: return EmotionBodyEffect01_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionBody_02: return EmotionBodyEffect02_Sprite_Fade;
+	case E_VN_ComponentID_Sprite::EmotionBody_03: return EmotionBodyEffect03_Sprite_Fade;
+	default: return nullptr;
 	}
 }
 
@@ -222,7 +225,8 @@ TArray<USceneComponent*> AVNCharacter::GetAllFadeComponents() const
 	if (Custom01_Skeletal_Fade) Components.Add(Custom01_Skeletal_Fade);
 	if (Custom02_Skeletal_Fade) Components.Add(Custom02_Skeletal_Fade);
 	if (Custom03_Skeletal_Fade) Components.Add(Custom03_Skeletal_Fade);
-
+	
+	if (Head_Sprite_Fade) Components.Add(Head_Sprite_Fade);
 	if (Body_Sprite_Fade) Components.Add(Body_Sprite_Fade);
 	if (Arms_Sprite_Fade) Components.Add(Arms_Sprite_Fade);
 	if (Eyebrow_Sprite_Fade) Components.Add(Eyebrow_Sprite_Fade);
