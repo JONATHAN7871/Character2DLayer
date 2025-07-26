@@ -381,11 +381,12 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		
 		Character->SetAnimationAlpha(FadeComponent.Get(), CurrentAlpha);
 		
-		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Fade компоненты должны быть видимы в самом начале
-		if (CurrentAlpha <= 0.001f)
+		// ИСПРАВЛЕНИЕ: Более агрессивное скрытие при низкой альфе
+		if (CurrentAlpha <= 0.05f) // Увеличили порог с 0.001f до 0.05f
 		{
 			FadeComponent->SetHiddenInGame(true);
-			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - HIDDEN via HiddenInGame (alpha too low)"), FadeOutIndex, *FadeComponent->GetName());
+			UE_LOG(LogTemp, Warning, TEXT("FadeOut[%d]: %s - HIDDEN via HiddenInGame (alpha %.3f <= 0.05)"), 
+				FadeOutIndex, *FadeComponent->GetName(), CurrentAlpha);
 		}
 		else
 		{
@@ -430,19 +431,19 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 		UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HasContent: %s"), 
 			FadeInIndex, *MainComponent->GetName(), bHasContent ? TEXT("YES") : TEXT("NO"));
 		
-		// === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Показываем сразу при малейшей альфе ===
-		if (bHasContent && CurrentAlpha > 0.001f)
+		// === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Более раннее появление компонентов ===
+		if (bHasContent && CurrentAlpha > 0.01f) // Снизили порог с 0.001f до 0.01f
 		{
 			MainComponent->SetHiddenInGame(false);
-			UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - VISIBLE via HiddenInGame (alpha %.3f > 0.001)"), 
+			MainComponent->SetVisibility(true); // ДОБАВЛЕНО: дублируем через SetVisibility
+			UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - VISIBLE via HiddenInGame (alpha %.3f > 0.01)"), 
 				FadeInIndex, *MainComponent->GetName(), CurrentAlpha);
 		}
 		else
 		{
-			MainComponent->SetHiddenInGame(true);
 			if (bHasContent)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN via HiddenInGame (alpha %.3f <= 0.001)"), 
+				UE_LOG(LogTemp, Warning, TEXT("FadeIn[%d]: %s - HIDDEN via HiddenInGame (alpha %.3f <= 0.01)"), 
 					FadeInIndex, *MainComponent->GetName(), CurrentAlpha);
 			}
 			else

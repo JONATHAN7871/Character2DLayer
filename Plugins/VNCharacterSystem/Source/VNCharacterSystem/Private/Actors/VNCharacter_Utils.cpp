@@ -468,8 +468,11 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 	
 	UE_LOG(LogTemp, Warning, TEXT("=== PrepareSkeletalTransition: %s ==="), *MainComponent->GetName());
 	
-	// === АНАЛИЗ СОСТОЯНИЯ ===
-	bool bCurrentlyHasMesh = (MainComponent->GetSkeletalMeshAsset() != nullptr && MainComponent->IsVisible());
+	// === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРАВИЛЬНЫЙ АНАЛИЗ СОСТОЯНИЯ ===
+	// Проверяем не только наличие меша, но и видимость компонента
+	bool bCurrentlyHasMesh = (MainComponent->GetSkeletalMeshAsset() != nullptr) && 
+							(!MainComponent->bHiddenInGame) && 
+							MainComponent->IsVisible();
 	bool bWillHaveMesh = !NewMesh.IsNull();
 	
 	UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Current: %s, Target: %s"), 
@@ -483,18 +486,18 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Content to Empty transition"), *MainComponent->GetName());
 		
 		CopySkeletalComponentSettings(MainComponent, FadeComponent);
-		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
-		// ИЗМЕНЕНИЕ: Используем SetHiddenInGame вместо SetVisibility
-		FadeComponent->SetHiddenInGame(false); // Показываем fade компонент
+		// ИСПРАВЛЕНИЕ: Правильная видимость для fade компонента
+		FadeComponent->SetHiddenInGame(false);
+		FadeComponent->SetVisibility(true);
 		SetAnimationAlpha(FadeComponent, 1.0f);
 		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
+		// Очищаем и скрываем main компонент
 		MainComponent->SetSkeletalMesh(nullptr);
 		MainComponent->SetAnimInstanceClass(nullptr);
-		MainComponent->SetHiddenInGame(true); // ИЗМЕНЕНИЕ: Скрываем main компонент
+		MainComponent->SetHiddenInGame(true);
 		
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Added %s to FadingOut"), *FadeComponent->GetName());
 		return;
@@ -505,23 +508,19 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 	{
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: %s - Empty to Content transition"), *MainComponent->GetName());
 		
-		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Тройная защита через SetHiddenInGame
-		MainComponent->SetHiddenInGame(true);
-		
-		// Устанавливаем новый mesh
+		// Устанавливаем новый mesh БЕЗ видимости
 		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
 		
-		// ИЗМЕНЕНИЕ: Тройная защита через HiddenInGame
+		// ИСПРАВЛЕНИЕ: Принудительно скрываем для анимации появления
+		MainComponent->SetHiddenInGame(true);
 		SetAnimationAlpha(MainComponent, 0.0f);
-		MainComponent->SetHiddenInGame(true); // Принудительно скрываем
-		MainComponent->SetHiddenInGame(true); // Дублируем для надежности
 		
 		// Настраиваем для появления
 		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
 		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Added %s to FadingIn (target alpha: %.3f, TRIPLE HIDDEN via HiddenInGame)"), 
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Added %s to FadingIn (target alpha: %.3f, HIDDEN for animation)"), 
 			*MainComponent->GetName(), TargetColor.A);
 		return;
 	}
@@ -533,25 +532,20 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 		
 		// Переносим старый контент в fade компонент
 		CopySkeletalComponentSettings(MainComponent, FadeComponent);
-		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
-		// ИЗМЕНЕНИЕ: Используем SetHiddenInGame
-		FadeComponent->SetHiddenInGame(false); // Показываем fade
+		// ИСПРАВЛЕНИЕ: Правильная видимость для fade компонента
+		FadeComponent->SetHiddenInGame(false);
+		FadeComponent->SetVisibility(true);
 		SetAnimationAlpha(FadeComponent, 1.0f);
 		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
-		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Тройная защита через SetHiddenInGame
-		MainComponent->SetHiddenInGame(true);
-		
-		// Устанавливаем новый контент
+		// Устанавливаем новый контент БЕЗ видимости
 		ValidateAndSetupSkeletalComponentSilent(MainComponent, NewMesh);
 		
-		// ИЗМЕНЕНИЕ: Тройная защита через HiddenInGame
+		// ИСПРАВЛЕНИЕ: Принудительно скрываем для анимации появления
+		MainComponent->SetHiddenInGame(true);
 		SetAnimationAlpha(MainComponent, 0.0f);
-		MainComponent->SetHiddenInGame(true); // Принудительно скрываем
-		MainComponent->SetHiddenInGame(true); // Дублируем для надежности
 		
 		ResetComponentAttachmentToDefault(MainComponent);
 		
@@ -559,7 +553,7 @@ void AVNCharacter::PrepareSkeletalTransition(USkeletalMeshComponent* MainCompone
 		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Added %s to FadingIn (target alpha: %.3f, TRIPLE HIDDEN via HiddenInGame)"), 
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSkeletalTransition: Added %s to FadingIn (target alpha: %.3f, HIDDEN for animation)"), 
 			*MainComponent->GetName(), TargetColor.A);
 		return;
 	}
@@ -577,7 +571,11 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 	
 	UE_LOG(LogTemp, Warning, TEXT("=== PrepareSpriteTransition: %s ==="), *MainComponent->GetName());
 	
-	bool bCurrentlyHasSprite = (MainComponent->GetSprite() != nullptr && MainComponent->IsVisible());
+	// === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРАВИЛЬНЫЙ АНАЛИЗ СОСТОЯНИЯ ===
+	// Проверяем не только наличие спрайта, но и видимость компонента
+	bool bCurrentlyHasSprite = (MainComponent->GetSprite() != nullptr) && 
+							  (!MainComponent->bHiddenInGame) && 
+							  MainComponent->IsVisible();
 	bool bWillHaveSprite = !NewSprite.IsNull();
 	
 	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Current: %s, Target: %s"), 
@@ -585,23 +583,30 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 		bCurrentlyHasSprite ? TEXT("HasSprite") : TEXT("Empty"),
 		bWillHaveSprite ? TEXT("HasSprite") : TEXT("Empty"));
 	
+	// ДОПОЛНИТЕЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+	UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Sprite=%s, HiddenInGame=%s, IsVisible=%s"), 
+		*MainComponent->GetName(),
+		MainComponent->GetSprite() ? TEXT("YES") : TEXT("NO"),
+		MainComponent->bHiddenInGame ? TEXT("YES") : TEXT("NO"),
+		MainComponent->IsVisible() ? TEXT("YES") : TEXT("NO"));
+	
 	// === СЛУЧАЙ 1: КОНТЕНТ → ПУСТОЕ ===
 	if (bCurrentlyHasSprite && !bWillHaveSprite)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Empty transition"), *MainComponent->GetName());
 		
 		CopySpriteComponentSettings(MainComponent, FadeComponent);
-		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
-		// ИЗМЕНЕНИЕ: Используем SetHiddenInGame
-		FadeComponent->SetHiddenInGame(false); // Показываем fade
+		// ИСПРАВЛЕНИЕ: Правильная видимость для fade компонента
+		FadeComponent->SetHiddenInGame(false);
+		FadeComponent->SetVisibility(true);
 		SetAnimationAlpha(FadeComponent, 1.0f);
 		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
+		// Очищаем и скрываем main компонент
 		MainComponent->SetSprite(nullptr);
-		MainComponent->SetHiddenInGame(true); // ИЗМЕНЕНИЕ: Скрываем main компонент
+		MainComponent->SetHiddenInGame(true);
 		
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Added %s to FadingOut"), *FadeComponent->GetName());
 		return;
@@ -612,21 +617,18 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 	{
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Empty to Content transition"), *MainComponent->GetName());
 		
-		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Тройная защита через SetHiddenInGame
-		MainComponent->SetHiddenInGame(true);
-		
+		// Устанавливаем новый sprite БЕЗ видимости
 		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
 		
-		// ИЗМЕНЕНИЕ: Тройная защита через HiddenInGame
+		// ИСПРАВЛЕНИЕ: Принудительно скрываем для анимации появления
 		MainComponent->SetHiddenInGame(true);
 		SetAnimationAlpha(MainComponent, 0.0f);
-		MainComponent->SetHiddenInGame(true); // Дублируем для надежности
 		
 		FLinearColor TargetColor = GetTargetColorForComponent(MainComponent);
 		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Added %s to FadingIn (target alpha: %.3f, TRIPLE HIDDEN via HiddenInGame)"), 
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Added %s to FadingIn (target alpha: %.3f, HIDDEN for animation)"), 
 			*MainComponent->GetName(), TargetColor.A);
 		return;
 	}
@@ -637,24 +639,20 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: %s - Content to Content crossfade"), *MainComponent->GetName());
 		
 		CopySpriteComponentSettings(MainComponent, FadeComponent);
-		FVector CurrentLocation = FadeComponent->GetRelativeLocation();
-		FadeComponent->SetRelativeLocation(CurrentLocation + FVector(0.f, -1.f, 0.f));
 		
-		// ИЗМЕНЕНИЕ: Используем SetHiddenInGame
-		FadeComponent->SetHiddenInGame(false); // Показываем fade
+		// ИСПРАВЛЕНИЕ: Правильная видимость для fade компонента
+		FadeComponent->SetHiddenInGame(false);
+		FadeComponent->SetVisibility(true);
 		SetAnimationAlpha(FadeComponent, 1.0f);
 		SetTargetAlpha(FadeComponent, 0.0f);
 		FadingOutComponents.Add(FadeComponent);
 		
-		// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Тройная защита через SetHiddenInGame
-		MainComponent->SetHiddenInGame(true);
-		
+		// Устанавливаем новый контент БЕЗ видимости
 		ValidateAndSetupSpriteComponentSilent(MainComponent, NewSprite);
 		
-		// ИЗМЕНЕНИЕ: Тройная защита через HiddenInGame
+		// ИСПРАВЛЕНИЕ: Принудительно скрываем для анимации появления
 		MainComponent->SetHiddenInGame(true);
 		SetAnimationAlpha(MainComponent, 0.0f);
-		MainComponent->SetHiddenInGame(true); // Дублируем для надежности
 		
 		ResetComponentAttachmentToDefault(MainComponent);
 		
@@ -662,7 +660,7 @@ void AVNCharacter::PrepareSpriteTransition(UPaperSpriteComponent* MainComponent,
 		SetTargetAlpha(MainComponent, TargetColor.A);
 		FadingInComponents.Add(MainComponent);
 		
-		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Added %s to FadingIn (target alpha: %.3f, TRIPLE HIDDEN via HiddenInGame)"), 
+		UE_LOG(LogTemp, Warning, TEXT("PrepareSpriteTransition: Added %s to FadingIn (target alpha: %.3f, HIDDEN for animation)"), 
 			*MainComponent->GetName(), TargetColor.A);
 		return;
 	}
@@ -750,9 +748,9 @@ void AVNCharacter::ValidateAndSetupSkeletalComponentSilent(USkeletalMeshComponen
 		USkeletalMesh* LoadedMesh = SkeletalMesh.LoadSynchronous();
 		if (LoadedMesh)
 		{
-			Component->SetHiddenInGame(true);
+			// ИСПРАВЛЕНИЕ: Сначала устанавливаем меш, потом скрываем
 			Component->SetSkeletalMesh(LoadedMesh);
-			Component->SetHiddenInGame(true);
+			Component->SetHiddenInGame(true); // Скрываем для анимации
             
 			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSkeletalComponentSilent: AFTER - %s HiddenInGame=%s"), 
 				*Component->GetName(), Component->bHiddenInGame ? TEXT("YES") : TEXT("NO"));
@@ -790,10 +788,9 @@ void AVNCharacter::ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* 
 		UPaperSprite* LoadedSprite = Sprite.LoadSynchronous();
 		if (LoadedSprite)
 		{
-			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем SetHiddenInGame вместо SetVisibility
-			Component->SetHiddenInGame(true);
+			// ИСПРАВЛЕНИЕ: Сначала устанавливаем спрайт, потом скрываем
 			Component->SetSprite(LoadedSprite);
-			Component->SetHiddenInGame(true); // Дублируем на всякий случай
+			Component->SetHiddenInGame(true); // Скрываем для анимации
 			
 			UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSpriteComponentSilent: AFTER - %s HiddenInGame=%s"), 
 				*Component->GetName(), Component->bHiddenInGame ? TEXT("YES") : TEXT("NO"));
