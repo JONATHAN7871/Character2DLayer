@@ -17,10 +17,10 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"), 
         *CharacterData->GetName(), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
-    // --- STEP 1: ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ТЕКУЩЕЙ АНИМАЦИИ ---
+    // --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ТЕКУЩЕЙ АНИМАЦИИ ---
     if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: Forcing completion of ongoing transition"));
+        VN_LOG_WARNING(TEXT("ApplyDataAsset: Forcing completion of ongoing transition to prevent conflicts"));
         AnimationManager->ClearAnimationQueue();
         FinalizeCurrentTransition();
     }
@@ -29,7 +29,18 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     FadingInComponents.Empty();
     FadingOutComponents.Empty();
 
-    // --- STEP 3: ГЛОБАЛЬНЫЕ ТРАНСФОРМАЦИИ ---
+    // --- STEP 3: ПРИНУДИТЕЛЬНОЕ ПОКАЗАНИЕ ВСЕХ MAIN КОМПОНЕНТОВ ---
+    // Это предотвращает проблемы с HiddenInGame при быстрой смене
+    TArray<USceneComponent*> AllMainComponents = GetAllMainComponents();
+    for (USceneComponent* Component : AllMainComponents)
+    {
+        if (Component)
+        {
+            Component->SetHiddenInGame(false);
+        }
+    }
+
+    // --- STEP 4: ГЛОБАЛЬНЫЕ ТРАНСФОРМАЦИИ ---
     if (CharacterData->bOverrideGlobalTransforms)
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms"));
@@ -39,7 +50,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
         GlobalSpriteScale = CharacterData->GlobalSpriteScale;
     }
     
-    // --- STEP 4: СБОРКА ИЗМЕНЕНИЙ - ПРОХОД ПО ВСЕМ КОМПОНЕНТАМ ---
+    // --- STEP 5: СБОРКА ИЗМЕНЕНИЙ - ПРОХОД ПО ВСЕМ КОМПОНЕНТАМ ---
     
     // === SKELETAL КОМПОНЕНТЫ ===
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig.SkeletalMesh, bAnimate);
@@ -97,7 +108,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
     if (BodyShadow_Sprite_Fade) BodyShadow_Sprite_Fade->SetVisibility(false);
 
-    // --- ИЗМЕНЕНИЕ (ОШИБКА #1): ИСПОЛЬЗУЕМ ЕДИНЫЙ МЕХАНИЗМ ЗАПУСКА АНИМАЦИИ ---
+    // --- ЗАПУСК АНИМАЦИИ ---
     VN_LOG_DEBUG(TEXT("ApplyDataAsset: FadingIn components: %d, FadingOut components: %d"), 
         FadingInComponents.Num(), FadingOutComponents.Num());
 
@@ -176,7 +187,7 @@ void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSof
 void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config)
 {
     USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
-    if (!Comp) return; // ИЗМЕНЕНИЕ: Оставлена только проверка на null
+    if (!Comp) return;
     
     if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
     
@@ -190,7 +201,11 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     
     ResetComponentAttachmentToDefault(Comp);
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    SetComponentColor(Comp, Config.Color);
+    
+    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
+    FLinearColor ConfigColor = Config.Color;
+    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
+    SetComponentColor(Comp, FinalColor);
     
     if (!Config.SkeletalMesh.IsNull())
     {
@@ -201,7 +216,7 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
 void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config)
 {
     USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
-    if (!Comp) return; // ИЗМЕНЕНИЕ: Оставлена только проверка на null
+    if (!Comp) return;
     
     if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
     
@@ -226,7 +241,11 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     }
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    SetComponentColor(Comp, Config.Color);
+    
+    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
+    FLinearColor ConfigColor = Config.Color;
+    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
+    SetComponentColor(Comp, FinalColor);
     
     if (!Config.SkeletalMesh.IsNull())
     {
@@ -237,7 +256,7 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config)
 {
     UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
-    if (!Comp) return; // ИЗМЕНЕНИЕ: Оставлена только проверка на null
+    if (!Comp) return;
     
     if (Config.AttachTo != E_SpriteAttachmentTarget::None)
     {
@@ -252,7 +271,11 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     }
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    Comp->SetSpriteColor(Config.Color);
+    
+    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
+    FLinearColor ConfigColor = Config.Color;
+    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
+    Comp->SetSpriteColor(FinalColor);
     
     if (!Config.Sprite.IsNull())
     {
@@ -263,10 +286,14 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config)
 {
     UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
-    if (!Comp) return; // ИЗМЕНЕНИЕ: Оставлена только проверка на null
+    if (!Comp) return;
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    Comp->SetSpriteColor(Config.Color);
+    
+    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
+    FLinearColor ConfigColor = Config.Color;
+    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
+    Comp->SetSpriteColor(FinalColor);
     
     if (!Config.Sprite.IsNull())
     {

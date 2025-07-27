@@ -13,7 +13,7 @@ void AVNCharacter::FinalizeCurrentTransition()
 	VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Starting cleanup of %d FadingIn and %d FadingOut components"), 
 		FadingInComponents.Num(), FadingOutComponents.Num());
 
-	// === ШАГ 1: Обработка компонентов FadingOut ===
+	// === ШАГ 1: Обработка компонентов FadingOut (БЕЗ ИЗМЕНЕНИЙ) ===
 	for (TObjectPtr<USceneComponent>& Component : FadingOutComponents)
 	{
 		if (!Component || !IsValid(Component.Get()))
@@ -41,7 +41,7 @@ void AVNCharacter::FinalizeCurrentTransition()
 		ResetComponentAttachmentToDefault(Component.Get());
 	}
 	
-	// === ШАГ 2: Обработка компонентов FadingIn ===
+	// === ШАГ 2: Обработка компонентов FadingIn (ИСПРАВЛЕНИЕ ФОКУСА) ===
 	for (TObjectPtr<USceneComponent>& Component : FadingInComponents)
 	{
 		if (!Component || !IsValid(Component.Get()))
@@ -53,11 +53,10 @@ void AVNCharacter::FinalizeCurrentTransition()
 		float TargetAlpha = GetTargetAlpha(Component.Get());
 		SetAnimationAlpha(Component.Get(), TargetAlpha);
 		
-		// ИЗМЕНЕНИЕ (ПРОБЛЕМА #4): Принудительно устанавливаем финальный цвет, учитывая фокус.
-		// Это предотвращает "застревание" в затемненном состоянии.
+		// ИСПРАВЛЕНИЕ ФОКУСА: Применяем финальный цвет с учетом фокуса
 		SetComponentColor(Component.Get(), GetTargetColorForComponent(Component.Get()));
 		
-		VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Set final alpha %.2f and color for %s"), 
+		VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Set final alpha %.2f and focus-aware color for %s"), 
 			TargetAlpha, *Component->GetName());
 		
 		bool bHasContent = false;
@@ -76,7 +75,7 @@ void AVNCharacter::FinalizeCurrentTransition()
 		}
 	}
 	
-	// === ШАГ 3: Очистка всех связанных данных ===
+	// === ШАГ 3 и 4: Очистка (БЕЗ ИЗМЕНЕНИЙ) ===
 	for (TObjectPtr<USceneComponent>& Component : FadingInComponents)
 	{
 		if (Component && IsValid(Component.Get()))
@@ -93,11 +92,10 @@ void AVNCharacter::FinalizeCurrentTransition()
 		}
 	}
 	
-	// === ШАГ 4: Очистка списков ===
 	FadingInComponents.Empty();
 	FadingOutComponents.Empty();
 	
-	VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleanup complete"));
+	VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleanup complete with focus-aware colors applied"));
 }
 
 // =====================================================

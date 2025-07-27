@@ -261,16 +261,21 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 {
 	if (!Component) return;
 	
+	// ИСПРАВЛЕНИЕ: Принудительно сбрасываем состояние перед изменениями
+	Component->SetHiddenInGame(false);
+	Component->SetVisibility(true);
+	
 	if (!SkeletalMesh.IsNull())
 	{
 		USkeletalMesh* LoadedMesh = SkeletalMesh.LoadSynchronous();
 		if (LoadedMesh)
 		{
 			Component->SetSkeletalMesh(LoadedMesh);
-			Component->SetVisibility(true);
-			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
+			
+			// ИСПРАВЛЕНИЕ: Применяем цвет с учетом фокуса
 			SetComponentColor(Component, GetTargetColorForComponent(Component));
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s"), *Component->GetName());
+			
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s with focus-aware color"), *Component->GetName());
 		}
 		else
 		{
@@ -293,16 +298,21 @@ void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Compon
 {
 	if (!Component) return;
 	
+	// ИСПРАВЛЕНИЕ: Принудительно сбрасываем состояние перед изменениями
+	Component->SetHiddenInGame(false);
+	Component->SetVisibility(true);
+	
 	if (!Sprite.IsNull())
 	{
 		UPaperSprite* LoadedSprite = Sprite.LoadSynchronous();
 		if (LoadedSprite)
 		{
 			Component->SetSprite(LoadedSprite);
-			Component->SetVisibility(true);
-			// Применяем полный цвет БЕЗ модификации альфы - альфа управляется отдельно
+			
+			// ИСПРАВЛЕНИЕ: Применяем цвет с учетом фокуса
 			Component->SetSpriteColor(GetTargetColorForComponent(Component));
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
+			
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s with focus-aware color"), *Component->GetName());
 		}
 		else
 		{
@@ -373,31 +383,23 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 	
 	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
 	
-	// ОСНОВНОЕ КОПИРОВАНИЕ
 	Target->SetSkeletalMesh(Source->GetSkeletalMeshAsset());
 	Target->SetAnimInstanceClass(Source->GetAnimClass());
 	
-	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ FADE КОМПОНЕНТ
 	Target->SetHiddenInGame(false);
-	Target->SetVisibility(true); // ДОБАВЛЕНО: Дублируем через SetVisibility
+	Target->SetVisibility(true);
 	
-	// Логируем состояние видимости
-	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: %s set to VISIBLE (HiddenInGame=%s, IsVisible=%s)"), 
-		*Target->GetName(),
-		Target->bHiddenInGame ? TEXT("YES") : TEXT("NO"),
-		Target->IsVisible() ? TEXT("YES") : TEXT("NO"));
-	
-	// Копируем материалы
 	for (int32 i = 0; i < Source->GetNumMaterials(); ++i)
 	{
 		Target->SetMaterial(i, Source->GetMaterial(i));
 	}
 	
-	// Принудительно обновляем компонент
+	// ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет с учетом фокуса
+	SetComponentColor(Target, GetTargetColorForComponent(Target));
+	
 	Target->MarkRenderStateDirty();
 	Target->RecreateRenderState_Concurrent();
 	
-	// Копируем трансформацию
 	if (Source->GetAttachParent())
 	{
 		Target->AttachToComponent(Source->GetAttachParent(), FAttachmentTransformRules::KeepWorldTransform, Source->GetAttachSocketName());
@@ -408,7 +410,7 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: Copy completed for %s"), *Target->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: Copy completed for %s with focus-aware color"), *Target->GetName());
 }
 
 void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target)
@@ -417,30 +419,19 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 	
 	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
 	
-	// ОСНОВНОЕ КОПИРОВАНИЕ
 	Target->SetSprite(Source->GetSprite());
 	
-	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ FADE КОМПОНЕНТ
 	Target->SetHiddenInGame(false);
-	Target->SetVisibility(true); // ДОБАВЛЕНО: Дублируем через SetVisibility
+	Target->SetVisibility(true);
 	
-	// Логируем состояние видимости
-	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: %s set to VISIBLE (HiddenInGame=%s, IsVisible=%s)"), 
-		*Target->GetName(),
-		Target->bHiddenInGame ? TEXT("YES") : TEXT("NO"),
-		Target->IsVisible() ? TEXT("YES") : TEXT("NO"));
-	
-	// Копируем цвет с альфой 1.0
-	FLinearColor SourceColor = Source->GetSpriteColor();
-	FLinearColor TargetColor = SourceColor;
+	// ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет с учетом фокуса, но с альфой 1.0 для fade компонента
+	FLinearColor TargetColor = GetTargetColorForComponent(Target);
 	TargetColor.A = 1.0f; // Fade компонент начинает с полной видимости
 	Target->SetSpriteColor(TargetColor);
 	
-	// Принудительно обновляем компонент
 	Target->MarkRenderStateDirty();
 	Target->RecreateRenderState_Concurrent();
 	
-	// Копируем трансформацию
 	if (Source->GetAttachParent())
 	{
 		Target->AttachToComponent(Source->GetAttachParent(), FAttachmentTransformRules::KeepWorldTransform, Source->GetAttachSocketName());
@@ -451,7 +442,7 @@ void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UP
 		Target->SetWorldTransform(Source->GetComponentTransform());
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: Copy completed for %s"), *Target->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: Copy completed for %s with focus-aware color"), *Target->GetName());
 }
 
 // =====================================================
@@ -678,6 +669,7 @@ void AVNCharacter::HideAllFadeComponents()
 		if (Component)
 		{
 			Component->SetVisibility(false);
+			Component->SetHiddenInGame(true); // ДОБАВЛЕНО: Дополнительное сокрытие
 			SetAnimationAlpha(Component, 0.0f);
 			
 			if (USkeletalMeshComponent* SkeletalFade = Cast<USkeletalMeshComponent>(Component))
@@ -693,7 +685,7 @@ void AVNCharacter::HideAllFadeComponents()
 		}
 	}
 	
-	// Убеждаемся, что все main компоненты имеют правильную альфу
+	// ИСПРАВЛЕНИЕ: Убеждаемся, что все main компоненты правильно отображаются
 	for (USceneComponent* Component : FadingInComponents)
 	{
 		if (Component)
@@ -703,6 +695,16 @@ void AVNCharacter::HideAllFadeComponents()
 			if (TargetAlpha != 1.0f || ComponentTargetAlphas.Contains(Component))
 			{
 				SetAnimationAlpha(Component, TargetAlpha);
+			}
+			
+			// ИСПРАВЛЕНИЕ: Устанавливаем правильный цвет с учетом фокуса
+			SetComponentColor(Component, GetTargetColorForComponent(Component));
+			
+			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убеждаемся, что компонент виден
+			if (TargetAlpha > 0.01f)
+			{
+				Component->SetHiddenInGame(false);
+				Component->SetVisibility(true);
 			}
 		}
 	}

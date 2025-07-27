@@ -17,6 +17,14 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		return;
 	}
 
+	// --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Завершаем текущие анимации если быстро меняем ---
+	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
+	{
+		VN_LOG_WARNING(TEXT("SetSkeletalMesh: Forcing completion of ongoing transition"));
+		AnimationManager->ClearAnimationQueue();
+		FinalizeCurrentTransition();
+	}
+
 	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
 	bool bAssetChanged = false;
 	const USkeletalMesh* CurrentMesh = MainComponent->GetSkeletalMeshAsset();
@@ -36,7 +44,6 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
-		// --- ЛОГИРОВАНИЕ ---
 		VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Preparing transition for component: %s. From [%s] to [%s]"), 
 			*MainComponent->GetName(),
 			CurrentMesh ? *CurrentMesh->GetName() : TEXT("None"),
@@ -45,7 +52,6 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
 			PrepareSkeletalTransition(MainComponent, FadeComponent, SkeletalMesh);
-			// ПРИНЦИП 2: НЕ вызываем PlayTransition напрямую!
 			RequestTransitionCommit(Duration);
 		}
 		else
@@ -56,7 +62,7 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 	}
 	else
 	{
-		// Мгновенное применение, если анимация отключена или ассет не изменился
+		// Мгновенное применение
 		if (!bAssetChanged)
 		{
 			VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Asset unchanged for component: %s, skipping animation"), *MainComponent->GetName());
@@ -67,18 +73,20 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 
 void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite, bool bAnimate, float Duration)
 {
-	UE_LOG(LogTemp, Error, TEXT("=== SetSprite CALLED ==="));
-	UE_LOG(LogTemp, Error, TEXT("SetSprite: ComponentID=%d, bAnimate=%s, Duration=%.2f"), 
-		(int32)ComponentID, bAnimate ? TEXT("TRUE") : TEXT("FALSE"), Duration);
-	
 	UPaperSpriteComponent* MainComponent = GetSpriteComponent(ComponentID);
 	if (!MainComponent)
 	{
 		UE_LOG(LogTemp, Error, TEXT("SetSprite: Component not found for ID %d"), (int32)ComponentID);
 		return;
 	}
-	
-	UE_LOG(LogTemp, Error, TEXT("SetSprite: MainComponent found: %s"), *MainComponent->GetName());
+
+	// --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Завершаем текущие анимации если быстро меняем ---
+	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SetSprite: Forcing completion of ongoing transition"));
+		AnimationManager->ClearAnimationQueue();
+		FinalizeCurrentTransition();
+	}
 
 	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
 	bool bAssetChanged = false;
@@ -87,62 +95,40 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 	if (!CurrentSprite && !Sprite.IsNull())
 	{
 		bAssetChanged = true; // Был пустым, стал непустым
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Asset change: Empty -> HasSprite"));
 	}
 	else if (CurrentSprite && Sprite.IsNull())
 	{
 		bAssetChanged = true; // Был непустым, стал пустым
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Asset change: HasSprite -> Empty"));
 	}
 	else if (CurrentSprite && !Sprite.IsNull())
 	{
 		bAssetChanged = (CurrentSprite->GetPathName() != Sprite.ToString()); // Сравниваем пути
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Asset change: HasSprite -> OtherSprite (changed=%s)"), bAssetChanged ? TEXT("TRUE") : TEXT("FALSE"));
 	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Asset change: Empty -> Empty (no change)"));
-	}
-
-	UE_LOG(LogTemp, Error, TEXT("SetSprite: bAssetChanged=%s"), bAssetChanged ? TEXT("TRUE") : TEXT("FALSE"));
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Taking animated path"));
-		
 		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
 		{
-			UE_LOG(LogTemp, Error, TEXT("SetSprite: FadeComponent found: %s"), *FadeComponent->GetName());
-			
 			PrepareSpriteTransition(MainComponent, FadeComponent, Sprite);
-			
-			UE_LOG(LogTemp, Error, TEXT("SetSprite: Calling RequestTransitionCommit"));
 			RequestTransitionCommit(Duration);
-			UE_LOG(LogTemp, Error, TEXT("SetSprite: RequestTransitionCommit returned"));
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("SetSprite: Fade component not found for ID %d"), (int32)ComponentID);
+			UE_LOG(LogTemp, Warning, TEXT("SetSprite: Fade component not found for ID %d"), (int32)ComponentID);
 			ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 		}
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Taking instant path (bAnimate=%s, bAssetChanged=%s, Duration=%.2f, AnimationManager=%s)"), 
-			bAnimate ? TEXT("TRUE") : TEXT("FALSE"),
-			bAssetChanged ? TEXT("TRUE") : TEXT("FALSE"),
-			Duration,
-			AnimationManager ? TEXT("EXISTS") : TEXT("NULL"));
-		
+		// Мгновенное применение
 		if (!bAssetChanged)
 		{
-			UE_LOG(LogTemp, Error, TEXT("SetSprite: Asset unchanged, skipping"));
+			UE_LOG(LogTemp, Warning, TEXT("SetSprite: Asset unchanged, skipping"));
 		}
 		ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 	}
 
 	OnCharacterComponentChanged.Broadcast(ComponentID);
-	UE_LOG(LogTemp, Error, TEXT("=== SetSprite END ==="));
 }
 
 void AVNCharacter::SetEyes(TSoftObjectPtr<UPaperSprite> EyesSprite, bool bAnimate, float Duration)
