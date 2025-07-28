@@ -1,6 +1,7 @@
 #include "Actors/VNCharacter.h"
 #include "Data/VNCharacterDataAsset.h"
 #include "Components/VNCharacterAnimationManager.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
@@ -121,6 +122,30 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: No animation needed or animation disabled, finalizing state immediately"));
         HideAllFadeComponents();
+    }
+
+    // --- ПРИМЕНЕНИЕ IDLE АНИМАЦИЙ ---
+    if (IdleAnimationManager)
+    {
+        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Applying idle animations config"));
+        
+        // Устанавливаем конфигурацию idle анимаций
+        IdleAnimationManager->SetIdleAnimationsConfig(CharacterData->IdleAnimationsConfig);
+        
+        // Автоматически запускаем idle анимации если включен флаг
+        if (CharacterData->bAutoStartIdleAnimations)
+        {
+            VN_LOG_DEBUG(TEXT("ApplyDataAsset: Auto-starting idle animations"));
+            IdleAnimationManager->StartAllIdleAnimations();
+        }
+        else
+        {
+            VN_LOG_DEBUG(TEXT("ApplyDataAsset: Idle animations config applied but not auto-started"));
+        }
+    }
+    else
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAsset: IdleAnimationManager is null, skipping idle animations"));
     }
 
     VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed application of DataAsset %s"), *CharacterData->GetName());

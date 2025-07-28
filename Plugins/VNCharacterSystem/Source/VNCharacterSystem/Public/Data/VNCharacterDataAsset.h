@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Data/VNCharacterDataAssetStructs.h"
+#include "Data/VNCharacterIdleAnimationStructs.h"  // ДОБАВЛЕНО для idle анимаций
 #include "VNCharacterDataAsset.generated.h"
 
 /**
@@ -127,4 +128,16 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sprites Effects")
 	F_VN_SpriteConfig_Attachment EmotionBodyEffect03SpriteConfig;
+
+	// =====================================================
+	// IDLE АНИМАЦИИ (НОВАЯ СЕКЦИЯ)
+	// =====================================================
+
+	/** Конфигурация idle анимаций персонажа */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Idle Animations")
+	FVNIdleAnimationsConfig IdleAnimationsConfig;
+
+	/** Автоматически запускать idle анимации при применении DataAsset */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Idle Animations")
+	bool bAutoStartIdleAnimations = true;
 };

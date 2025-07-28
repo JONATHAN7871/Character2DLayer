@@ -1,5 +1,6 @@
 #include "Actors/VNCharacter.h"
 #include "Components/VNCharacterAnimationManager.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
@@ -10,6 +11,7 @@ void AVNCharacter::CreateComponents()
 {
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
 	AnimationManager = CreateDefaultSubobject<UVNCharacterAnimationManager>(TEXT("AnimationManager"));
+	IdleAnimationManager = CreateDefaultSubobject<UVNCharacterIdleAnimationManager>(TEXT("IdleAnimationManager"));
 	CharacterRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CharacterRoot"));
 
 	Body_Skeletal = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body_Skeletal"));

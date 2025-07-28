@@ -9,10 +9,12 @@
 #include "Data/VNCharacterEnums.h"
 #include "Data/VNCharacterTypes.h"
 #include "Data/VNCharacterDataAssetStructs.h"
+#include "Data/VNCharacterIdleAnimationStructs.h"
 #include "VNCharacter.generated.h"
 
 // Forward declarations
 class UVNCharacterAnimationManager;
+class UVNCharacterIdleAnimationManager;
 class UVNCharacterDataAsset;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
@@ -44,6 +46,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VN Character")
 	class UVNCharacterAnimationManager* AnimationManager;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VN Character")
+	class UVNCharacterIdleAnimationManager* IdleAnimationManager;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USceneComponent* CharacterRoot;
@@ -133,6 +138,77 @@ public:
 
 	/** Получить компоненты, которые должны плавно исчезать */
 	const TSet<TObjectPtr<USceneComponent>>& GetFadingOutComponents() const { return FadingOutComponents; }
+
+	// =====================================================
+// IDLE АНИМАЦИИ
+// =====================================================
+
+/**
+ * Включить/выключить анимацию моргания
+ * @param bEnable true для включения, false для выключения
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+void SetBlinkEnabled(bool bEnable);
+
+/**
+ * Включить/выключить анимацию разговора
+ * @param bEnable true для включения, false для выключения
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
+void SetTalkEnabled(bool bEnable);
+
+/**
+ * Включить/выключить анимацию случайных движений глаз
+ * @param bEnable true для включения, false для выключения
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+void SetEyesRandomEnabled(bool bEnable);
+
+/**
+ * Установить конфигурацию idle анимаций
+ * @param NewConfig Новая конфигурация idle анимаций
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+void SetIdleAnimationsConfig(const FVNIdleAnimationsConfig& NewConfig);
+
+/**
+ * Получить текущую конфигурацию idle анимаций
+ * @return Текущая конфигурация idle анимаций
+ */
+UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+const FVNIdleAnimationsConfig& GetIdleAnimationsConfig() const;
+
+/**
+ * Остановить все idle анимации
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+void StopAllIdleAnimations();
+
+/**
+ * Запустить все включенные idle анимации
+ */
+UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
+void StartAllIdleAnimations();
+
+/**
+ * Проверить, активна ли анимация моргания
+ */
+UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+bool IsBlinkActive() const;
+
+/**
+ * Проверить, активна ли анимация разговора
+ */
+UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+bool IsTalkActive() const;
+
+/**
+ * Проверить, активна ли анимация случайных движений глаз
+ */
+UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+bool IsEyesRandomActive() const;
+	
+	
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character") FString CharacterName = TEXT("Unnamed Character");
