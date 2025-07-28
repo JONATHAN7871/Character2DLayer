@@ -1,15 +1,41 @@
-// VNCharacter_IdleAnimationIntegration.cpp - Интеграция с системой idle-анимаций
+// VNCharacter_IdleAnimationIntegration.cpp - Интеграция с системой idle-анимаций V2
 
 #include "Actors/VNCharacter.h"
 #include "Components/VNCharacterIdleAnimationManager.h"
 #include "Data/VNCharacterIdleAnimationDataAsset.h"
-#include "Data/VNCharacterDataAsset.h"  // ДОБАВЛЕНО: для корректной компиляции
+#include "Data/VNCharacterDataAsset.h"
 #include "VNCharacterSystemModule.h"
 #include "Engine/World.h"
 
 // =====================================================
-// ИНТЕГРАЦИЯ С IDLE ANIMATION DATAASSET
+// ИСПРАВЛЕННАЯ ИНТЕГРАЦИЯ С IDLE ANIMATION DATAASSET
 // =====================================================
+
+void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bAnimate, float Duration)
+{
+    if (!IdleAnimationData)
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleAnimations: IdleAnimationData is null"));
+        return;
+    }
+
+    if (!IdleAnimationManager)
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleAnimations: IdleAnimationManager is null"));
+        return;
+    }
+
+    VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Applying IdleAnimationDataAsset %s"), *IdleAnimationData->GetName());
+
+    // Останавливаем текущие анимации и синхронизируем состояния
+    IdleAnimationManager->StopAllIdleAnimations();
+    SynchronizeIdleAnimationStates();
+
+    // Применяем конфигурацию с учетом эмоционального состояния
+    ApplyIdleAnimationDataAssetWithEmotionalState(IdleAnimationData, IdleAnimationData->DefaultEmotionalState, true);
+
+    VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Applied successfully"));
+}
 
 void AVNCharacter::ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bRestartAnimations)
 {
@@ -31,16 +57,8 @@ void AVNCharacter::ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsse
     IdleAnimationManager->StopAllIdleAnimations();
     SynchronizeIdleAnimationStates();
 
-    // Применяем новую конфигурацию
-    FVNIdleAnimationsConfig NewConfig = IdleAnimationData->GetIdleAnimationsConfig();
-    IdleAnimationManager->SetIdleAnimationsConfig(NewConfig);
-
-    // Перезапускаем анимации если нужно
-    if (bRestartAnimations)
-    {
-        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAsset: Restarting animations"));
-        IdleAnimationManager->StartAllIdleAnimations();
-    }
+    // Применяем с эмоциональным состоянием по умолчанию
+    ApplyIdleAnimationDataAssetWithEmotionalState(IdleAnimationData, IdleAnimationData->DefaultEmotionalState, bRestartAnimations);
 
     VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAsset: Applied successfully - %s"), 
         *IdleAnimationData->GetConfigSummary());
@@ -62,9 +80,7 @@ void AVNCharacter::ApplyIdleAnimationDataAssetSmooth(UVNCharacterIdleAnimationDa
         {
             if (IdleAnimationManager)
             {
-                FVNIdleAnimationsConfig NewConfig = IdleAnimationData->GetIdleAnimationsConfig();
-                IdleAnimationManager->SetIdleAnimationsConfig(NewConfig);
-                IdleAnimationManager->StartAllIdleAnimations();
+                ApplyIdleAnimationDataAssetWithEmotionalState(IdleAnimationData, IdleAnimationData->DefaultEmotionalState, true);
             }
         },
         DelayBeforeRestart,
@@ -157,17 +173,19 @@ void AVNCharacter::ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* Characte
         return;
     }
 
-    // Синхронизируем состояния ПЕРЕД применением DataAsset
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Синхронизируем состояния ПЕРЕД применением DataAsset
     if (IdleAnimationManager)
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: Synchronizing states before DataAsset application"));
+        IdleAnimationManager->StopAllIdleAnimations();
         SynchronizeIdleAnimationStates();
     }
 
     // Применяем DataAsset (который теперь содержит только спрайты и мешы)
     ApplyDataAsset(CharacterData, bAnimate, Duration);
 
-    // После применения DataAsset синхронизируем состояния снова
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДЛЯ ПРОБЛЕМЫ С ГЛАЗАМИ:
+    // После применения DataAsset принудительно обновляем сохраненные спрайты
     if (IdleAnimationManager)
     {
         if (bAnimate && Duration > 0.0f)
@@ -180,8 +198,13 @@ void AVNCharacter::ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* Characte
                 {
                     if (IdleAnimationManager)
                     {
-                        SynchronizeIdleAnimationStates();
-                        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized after animation"));
+                        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Принудительно обновляем все сохраненные спрайты
+                        IdleAnimationManager->UpdateSavedSprites();
+                        
+                        // Перезапускаем idle анимации после синхронизации
+                        IdleAnimationManager->StartAllIdleAnimations();
+                        
+                        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized and idle animations restarted"));
                     }
                 },
                 Duration + 0.1f,
@@ -190,8 +213,10 @@ void AVNCharacter::ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* Characte
         }
         else
         {
-            // Мгновенная синхронизация
-            SynchronizeIdleAnimationStates();
+            // Мгновенная синхронизация и перезапуск
+            IdleAnimationManager->UpdateSavedSprites();
+            IdleAnimationManager->StartAllIdleAnimations();
+            VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized immediately"));
         }
     }
 }
@@ -297,8 +322,26 @@ void AVNCharacter::SynchronizeIdleAnimationStates()
 {
     if (!IdleAnimationManager) return;
 
-    // Обновляем все сохраненные спрайты до текущего состояния
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДЛЯ ПРОБЛЕМЫ С ГЛАЗАМИ:
+    // Принудительно обновляем все сохраненные спрайты до текущего состояния
     IdleAnimationManager->UpdateSavedSprites();
+    
+    // Дополнительная проверка и восстановление если нужно
+    if (Eyes_Sprite && Eyes_Sprite->GetSprite())
+    {
+        VN_LOG_DEBUG(TEXT("SynchronizeIdleAnimationStates: Eyes sprite synchronized: %s"), 
+            *Eyes_Sprite->GetSprite()->GetName());
+    }
+    else
+    {
+        VN_LOG_WARNING(TEXT("SynchronizeIdleAnimationStates: Eyes sprite is still missing after sync"));
+    }
+    
+    if (Mouth_Sprite && Mouth_Sprite->GetSprite())
+    {
+        VN_LOG_DEBUG(TEXT("SynchronizeIdleAnimationStates: Mouth sprite synchronized: %s"), 
+            *Mouth_Sprite->GetSprite()->GetName());
+    }
     
     VN_LOG_DEBUG(TEXT("SynchronizeIdleAnimationStates: Idle animation states synchronized"));
 }

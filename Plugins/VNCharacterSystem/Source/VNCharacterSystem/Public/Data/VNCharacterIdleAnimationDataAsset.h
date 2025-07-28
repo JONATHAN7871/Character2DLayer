@@ -3,11 +3,12 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Data/VNCharacterIdleAnimationStructs.h"
+#include "Data/VNCharacterEnums.h"
 #include "VNCharacterIdleAnimationDataAsset.generated.h"
 
 /**
- * Отдельный DataAsset для настроек idle анимаций
- * Полностью независим от VNCharacterDataAsset
+ * Упрощенный DataAsset для настроек idle анимаций
+ * Содержит только базовые настройки, эмоциональные состояния применяются отдельно
  */
 UCLASS(BlueprintType, Blueprintable)
 class VNCHARACTERSYSTEM_API UVNCharacterIdleAnimationDataAsset : public UPrimaryDataAsset
@@ -21,13 +22,9 @@ public:
     // ОСНОВНЫЕ НАСТРОЙКИ
     // =====================================================
 
-    /** Название пресета анимаций */
+    /** Эмоциональное состояние по умолчанию (None = использовать настройки из DataAsset) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General")
-    FString PresetName = TEXT("Default Idle Animations");
-
-    /** Описание пресета */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General", meta = (MultiLine = true))
-    FString Description = TEXT("Default idle animation settings");
+    EIdleEmotionalState DefaultEmotionalState = EIdleEmotionalState::None;
 
     /** Автоматически применять эти настройки при загрузке */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "General")

@@ -3,8 +3,7 @@
 
 UVNCharacterIdleAnimationDataAsset::UVNCharacterIdleAnimationDataAsset()
 {
-    PresetName = TEXT("Default Idle Animations");
-    Description = TEXT("Default idle animation settings");
+    DefaultEmotionalState = EIdleEmotionalState::None;
     bAutoApplyOnLoad = true;
 
     // Настройки по умолчанию
@@ -30,8 +29,7 @@ UVNCharacterIdleAnimationDataAsset::UVNCharacterIdleAnimationDataAsset()
 
 void UVNCharacterIdleAnimationDataAsset::SetCalmPreset()
 {
-    PresetName = TEXT("Calm Character");
-    Description = TEXT("Peaceful, relaxed character with slow natural blinking");
+    DefaultEmotionalState = EIdleEmotionalState::Calm;
 
     // Спокойное моргание
     BlinkConfig.MinBlinkInterval = 3.0f;
@@ -53,8 +51,7 @@ void UVNCharacterIdleAnimationDataAsset::SetCalmPreset()
 
 void UVNCharacterIdleAnimationDataAsset::SetNervousPreset()
 {
-    PresetName = TEXT("Nervous Character");
-    Description = TEXT("Anxious character with rapid, frequent blinking");
+    DefaultEmotionalState = EIdleEmotionalState::Nervous;
 
     // Нервное частое моргание
     BlinkConfig.MinBlinkInterval = 0.8f;
@@ -75,8 +72,7 @@ void UVNCharacterIdleAnimationDataAsset::SetNervousPreset()
 
 void UVNCharacterIdleAnimationDataAsset::SetSleepyPreset()
 {
-    PresetName = TEXT("Sleepy Character");
-    Description = TEXT("Tired character with slow, long blinks");
+    DefaultEmotionalState = EIdleEmotionalState::Sleepy;
 
     // Медленное сонное моргание
     BlinkConfig.MinBlinkInterval = 4.0f;
@@ -97,8 +93,7 @@ void UVNCharacterIdleAnimationDataAsset::SetSleepyPreset()
 
 void UVNCharacterIdleAnimationDataAsset::SetExcitedPreset()
 {
-    PresetName = TEXT("Excited Character");
-    Description = TEXT("Energetic character with quick, lively animations");
+    DefaultEmotionalState = EIdleEmotionalState::Excited;
 
     // Быстрое живое моргание
     BlinkConfig.MinBlinkInterval = 1.0f;
@@ -121,8 +116,7 @@ void UVNCharacterIdleAnimationDataAsset::SetExcitedPreset()
 
 void UVNCharacterIdleAnimationDataAsset::DisableAllAnimations()
 {
-    PresetName = TEXT("Static Character");
-    Description = TEXT("All idle animations disabled");
+    DefaultEmotionalState = EIdleEmotionalState::None;
 
     BlinkConfig.bEnabled = false;
     TalkConfig.bEnabled = false;
@@ -188,7 +182,7 @@ FVNIdleAnimationsConfig UVNCharacterIdleAnimationDataAsset::GetIdleAnimationsCon
 
 FString UVNCharacterIdleAnimationDataAsset::GetConfigSummary() const
 {
-    FString Summary = FString::Printf(TEXT("%s: "), *PresetName);
+    FString Summary = FString::Printf(TEXT("Emotional State: %d, "), (int32)DefaultEmotionalState);
     
     TArray<FString> ActiveAnimations;
     if (BlinkConfig.bEnabled) ActiveAnimations.Add(TEXT("Blink"));

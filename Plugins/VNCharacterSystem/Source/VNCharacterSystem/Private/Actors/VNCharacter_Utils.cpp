@@ -812,3 +812,88 @@ void AVNCharacter::ValidateAndSetupSpriteComponentSilent(UPaperSpriteComponent* 
 		UE_LOG(LogTemp, Warning, TEXT("ValidateAndSetupSpriteComponentSilent: Cleared sprite for %s"), *Component->GetName());
 	}
 }
+
+FString AVNCharacter::GetSpritesStatusReport() const
+{
+	TArray<FString> StatusLines;
+	
+	// Основные спрайты лица
+	StatusLines.Add(TEXT("=== FACIAL SPRITES ==="));
+	StatusLines.Add(FString::Printf(TEXT("Eyes: %s"), 
+		(Eyes_Sprite && Eyes_Sprite->GetSprite()) ? *Eyes_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Mouth: %s"), 
+		(Mouth_Sprite && Mouth_Sprite->GetSprite()) ? *Mouth_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Eyebrows: %s"), 
+		(Eyebrow_Sprite && Eyebrow_Sprite->GetSprite()) ? *Eyebrow_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	StatusLines.Add(FString::Printf(TEXT("Eyelids: %s"), 
+		(Eyelids_Sprite && Eyelids_Sprite->GetSprite()) ? *Eyelids_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	StatusLines.Add(FString::Printf(TEXT("Wink: %s"), 
+		(Wink_Sprite && Wink_Sprite->GetSprite()) ? *Wink_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	// Основные спрайты тела
+	StatusLines.Add(TEXT(""));
+	StatusLines.Add(TEXT("=== BODY SPRITES ==="));
+	StatusLines.Add(FString::Printf(TEXT("Head: %s"), 
+		(Head_Sprite && Head_Sprite->GetSprite()) ? *Head_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Body: %s"), 
+		(Body_Sprite && Body_Sprite->GetSprite()) ? *Body_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Arms: %s"), 
+		(Arms_Sprite && Arms_Sprite->GetSprite()) ? *Arms_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	// Эмоциональные эффекты
+	StatusLines.Add(TEXT(""));
+	StatusLines.Add(TEXT("=== EMOTION EFFECTS ==="));
+	StatusLines.Add(FString::Printf(TEXT("Head Effect 01: %s"), 
+		(EmotionHeadEffect01_Sprite && EmotionHeadEffect01_Sprite->GetSprite()) ? *EmotionHeadEffect01_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Head Effect 02: %s"), 
+		(EmotionHeadEffect02_Sprite && EmotionHeadEffect02_Sprite->GetSprite()) ? *EmotionHeadEffect02_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Head Effect 03: %s"), 
+		(EmotionHeadEffect03_Sprite && EmotionHeadEffect03_Sprite->GetSprite()) ? *EmotionHeadEffect03_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	StatusLines.Add(FString::Printf(TEXT("Body Effect 01: %s"), 
+		(EmotionBodyEffect01_Sprite && EmotionBodyEffect01_Sprite->GetSprite()) ? *EmotionBodyEffect01_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Body Effect 02: %s"), 
+		(EmotionBodyEffect02_Sprite && EmotionBodyEffect02_Sprite->GetSprite()) ? *EmotionBodyEffect02_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+	
+	StatusLines.Add(FString::Printf(TEXT("Body Effect 03: %s"), 
+		(EmotionBodyEffect03_Sprite && EmotionBodyEffect03_Sprite->GetSprite()) ? *EmotionBodyEffect03_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
+
+	// Статистика
+	int32 FilledSprites = 0;
+	int32 TotalSprites = 0;
+	
+	TArray<UPaperSpriteComponent*> AllSpriteComponents = {
+		Eyes_Sprite, Mouth_Sprite, Eyebrow_Sprite, Eyelids_Sprite, Wink_Sprite,
+		Head_Sprite, Body_Sprite, Arms_Sprite,
+		EmotionHeadEffect01_Sprite, EmotionHeadEffect02_Sprite, EmotionHeadEffect03_Sprite,
+		EmotionBodyEffect01_Sprite, EmotionBodyEffect02_Sprite, EmotionBodyEffect03_Sprite
+	};
+	
+	for (UPaperSpriteComponent* Component : AllSpriteComponents)
+	{
+		if (Component)
+		{
+			TotalSprites++;
+			if (Component->GetSprite())
+			{
+				FilledSprites++;
+			}
+		}
+	}
+
+	StatusLines.Add(TEXT(""));
+	StatusLines.Add(TEXT("=== SUMMARY ==="));
+	StatusLines.Add(FString::Printf(TEXT("Filled Sprites: %d/%d (%.1f%%)"), 
+		FilledSprites, TotalSprites, TotalSprites > 0 ? (float)FilledSprites / TotalSprites * 100.0f : 0.0f));
+
+	return FString::Join(StatusLines, TEXT("\n"));
+}

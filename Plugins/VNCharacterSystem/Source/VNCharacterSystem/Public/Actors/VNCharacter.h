@@ -16,6 +16,7 @@
 class UVNCharacterAnimationManager;
 class UVNCharacterIdleAnimationManager;
 class UVNCharacterDataAsset;
+class UVNCharacterIdleAnimationDataAsset;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
@@ -107,7 +108,7 @@ public:
 	
 public:
 	// =====================================================
-	// API
+	// ОСНОВНОЕ API
 	// =====================================================
 	UFUNCTION(BlueprintCallable, Category = "VN Character|Skeletal") void SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftObjectPtr<USkeletalMesh> SkeletalMesh, bool bAnimate = true, float Duration = 1.0f);
 	UFUNCTION(BlueprintCallable, Category = "VN Character|Sprites") void SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite, bool bAnimate = true, float Duration = 0.5f);
@@ -140,84 +141,155 @@ public:
 	const TSet<TObjectPtr<USceneComponent>>& GetFadingOutComponents() const { return FadingOutComponents; }
 
 	// =====================================================
-// IDLE АНИМАЦИИ
-// =====================================================
+	// IDLE АНИМАЦИИ - ОСНОВНОЕ API
+	// =====================================================
 
-/**
- * Включить/выключить анимацию моргания
- * @param bEnable true для включения, false для выключения
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void SetBlinkEnabled(bool bEnable);
+	/**
+	 * Включить/выключить анимацию моргания
+	 * @param bEnable true для включения, false для выключения
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void SetBlinkEnabled(bool bEnable);
 
-/**
- * Включить/выключить анимацию разговора
- * @param bEnable true для включения, false для выключения
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
-void SetTalkEnabled(bool bEnable);
+	/**
+	 * Включить/выключить анимацию разговора
+	 * @param bEnable true для включения, false для выключения
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
+	void SetTalkEnabled(bool bEnable);
 
-/**
- * Включить/выключить анимацию случайных движений глаз
- * @param bEnable true для включения, false для выключения
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void SetEyesRandomEnabled(bool bEnable);
+	/**
+	 * Включить/выключить анимацию случайных движений глаз
+	 * @param bEnable true для включения, false для выключения
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void SetEyesRandomEnabled(bool bEnable);
 
-/**
- * Установить конфигурацию idle анимаций
- * @param NewConfig Новая конфигурация idle анимаций
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void SetIdleAnimationsConfig(const FVNIdleAnimationsConfig& NewConfig);
+	/**
+	 * Установить конфигурацию idle анимаций
+	 * @param NewConfig Новая конфигурация idle анимаций
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void SetIdleAnimationsConfig(const FVNIdleAnimationsConfig& NewConfig);
 
-/**
- * Получить текущую конфигурацию idle анимаций
- * @return Текущая конфигурация idle анимаций
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
-const FVNIdleAnimationsConfig& GetIdleAnimationsConfig() const;
+	/**
+	 * Получить текущую конфигурацию idle анимаций
+	 * @return Текущая конфигурация idle анимаций
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+	const FVNIdleAnimationsConfig& GetIdleAnimationsConfig() const;
 
-/**
- * Остановить все idle анимации
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void StopAllIdleAnimations();
+	/**
+	 * Остановить все idle анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void StopAllIdleAnimations();
 
-/**
- * Запустить все включенные idle анимации
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
-void StartAllIdleAnimations();
+	/**
+	 * Запустить все включенные idle анимации
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations") 
+	void StartAllIdleAnimations();
 
-/**
- * Проверить, активна ли анимация моргания
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
-bool IsBlinkActive() const;
+	/**
+	 * Проверить, активна ли анимация моргания
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+	bool IsBlinkActive() const;
 
-/**
- * Проверить, активна ли анимация разговора
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
-bool IsTalkActive() const;
+	/**
+	 * Проверить, активна ли анимация разговора
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+	bool IsTalkActive() const;
 
-/**
- * Проверить, активна ли анимация случайных движений глаз
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
-bool IsEyesRandomActive() const;
+	/**
+	 * Проверить, активна ли анимация случайных движений глаз
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
+	bool IsEyesRandomActive() const;
+
+	// =====================================================
+	// IDLE АНИМАЦИИ - РАСШИРЕННОЕ API
+	// =====================================================
 	
 	/**
- * Применить DataAsset с корректной обработкой idle анимаций
- * Исправляет конфликты между DataAsset и idle анимациями
- * @param CharacterData DataAsset для применения
- * @param bAnimate Анимировать переход
- * @param Duration Длительность анимации
- */
-	UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
-	void ApplyDataAssetWithIdleAnimations(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+	 * Настроить живое моргание с эмоциональными вариациями
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Advanced Idle")
+	void SetupLivelyBlinking(
+		UPaperFlipbook* BlinkFlipbook,
+		float BaseMinInterval = 2.0f,
+		float BaseMaxInterval = 5.0f, 
+		float EmotionalVariation = 1.0f,
+		float BlinkDuration = 0.15f,
+		float DoubleBlinkChance = 0.3f
+	);
+	
+	/**
+	 * Установить эмоциональное состояние для idle анимаций
+	 * @param EmotionState Эмоциональное состояние (None = использовать настройки DataAsset)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Advanced Idle")
+	void SetIdleEmotionalState(EIdleEmotionalState EmotionState);
+	
+	/**
+	 * ИСПРАВЛЕННЫЙ МЕТОД: Применить DataAsset для idle анимаций (теперь принимает UVNCharacterIdleAnimationDataAsset)
+	 * @param IdleAnimationData DataAsset с настройками idle анимаций  
+	 * @param bAnimate Анимировать переход (не используется, оставлен для совместимости)
+	 * @param Duration Длительность (не используется, оставлен для совместимости)
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void ApplyDataAssetWithIdleAnimations(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bAnimate = true, float Duration = 1.0f);
+	
+	/**
+	 * Применить DataAsset для idle анимаций с плавным переходом
+	 * @param IdleAnimationData DataAsset с настройками idle анимаций  
+	 * @param DelayBeforeRestart Задержка перед перезапуском анимаций
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
+	void ApplyIdleAnimationDataAssetSmooth(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, float DelayBeforeRestart = 0.5f);
 
+	/**
+	 * Применить idle анимации с эмоциональным состоянием
+	 * @param IdleAnimationData DataAsset с базовыми настройками
+	 * @param EmotionState Эмоциональное состояние для модификации настроек
+	 * @param bRestartAnimations Перезапустить анимации после применения
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Advanced Idle")
+	void ApplyIdleAnimationDataAssetWithEmotionalState(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, EIdleEmotionalState EmotionState, bool bRestartAnimations = true);
+	
+	// =====================================================
+	// IDLE INTEGRATION API (С++, НЕ BLUEPRINT)
+	// =====================================================
+	
+	// === IDLE ANIMATION INTEGRATION ===
+	void ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleData, bool bRestartAnimations = true);
+	void ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+
+	// === ANIMATION CONFIGURATION ===
+	void ConfigureBlinkAnimation(UPaperFlipbook* BlinkFlipbook, bool bEnabled, float MinInterval, float MaxInterval, float Duration, float DoubleBlinkChance);
+	void ConfigureTalkAnimation(UPaperFlipbook* TalkFlipbook, bool bEnabled, float TalkSpeed);
+	void ConfigureEyesAnimation(UPaperFlipbook* EyesFlipbook, bool bEnabled, float MinLookDuration, float MaxLookDuration, float MinWaitDuration, float MaxWaitDuration);
+
+	// === STATE MANAGEMENT ===
+	void RestoreComponentStates();
+	bool ValidateComponentStates() const;
+	FString GetComponentStatusReport() const;
+
+	// === DEPRECATED METHODS ===
+	
+	/**
+	 * @deprecated Этот метод устарел. Используйте ApplyIdleAnimationDataAsset с UVNCharacterIdleAnimationDataAsset
+	 */
+	UE_DEPRECATED(5.0, "Use ApplyIdleAnimationDataAsset with UVNCharacterIdleAnimationDataAsset instead")
+	void ApplyIdleAnimationsFromDataAsset(class UVNCharacterDataAsset* CharacterData);
+
+	/**
+	 * Получить отчет о состоянии спрайтов
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Debug")
+	FString GetSpritesStatusReport() const;
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character") FString CharacterName = TEXT("Unnamed Character");
@@ -283,7 +355,7 @@ private:
 	void HideAllFadeComponents();
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
 
-	// --- HELPER-ФУНКЦИИ ДЛЯ DATA ASSET (ДОБАВЛЕНЫ НЕДОСТАЮЩИЕ) ---
+	// --- HELPER-ФУНКЦИИ ДЛЯ DATA ASSET ---
     void ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal ID, TSoftObjectPtr<USkeletalMesh> NewMesh, bool bAnimate);
     void ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSoftObjectPtr<UPaperSprite> NewSprite, bool bAnimate);
 	void ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Body& Config);
@@ -296,75 +368,15 @@ private:
 	UFUNCTION() void OnAnimationFinished(EVNAnimationType AnimationType);
 	UFUNCTION() void OnAnimationProgress(EVNAnimationType AnimationType, float Progress);
 	
-	/**
- * Применить idle анимации из DataAsset после основной анимации
- * @param CharacterData DataAsset с конфигурацией idle анимаций
- */
-	void ApplyIdleAnimationsFromDataAsset(class UVNCharacterDataAsset* CharacterData);
-	
+	// --- IDLE ANIMATION HELPERS ---
+	void SynchronizeIdleAnimationStates();
+	void ApplyFocusStateImmediate();
+	void ApplyVisibilityStateImmediate(bool bShouldBeVisible);
+
 public:
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterFocusChanged OnCharacterFocusChanged;
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterVisibilityChanged OnCharacterVisibilityChanged;
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterComponentChanged OnCharacterComponentChanged;
 
 	friend class UVNCharacterAnimationManager;
-
-
-	
-	/**
-	 * Настроить живое моргание с эмоциональными вариациями
-	 */
-	UFUNCTION(BlueprintCallable, Category = "VN Character|Advanced Idle")
-	void SetupLivelyBlinking(
-		UPaperFlipbook* BlinkFlipbook,
-		float BaseMinInterval = 2.0f,
-		float BaseMaxInterval = 5.0f, 
-		float EmotionalVariation = 1.0f,
-		float BlinkDuration = 0.15f,
-		float DoubleBlinkChance = 0.3f
-	);
-	
-/**
- * Применить DataAsset для idle анимаций с плавным переходом
- * @param IdleAnimationData DataAsset с настройками idle анимаций  
- * @param DelayBeforeRestart Задержка перед перезапуском анимаций
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void ApplyIdleAnimationDataAssetSmooth(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, float DelayBeforeRestart = 0.5f);
-
-
-
-	// ДОБАВИТЬ ✅
-	// === IDLE ANIMATION INTEGRATION ===
-	void ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleData, bool bRestartAnimations = true);
-	void ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
-
-	// === ANIMATION CONFIGURATION ===
-	void ConfigureBlinkAnimation(UPaperFlipbook* BlinkFlipbook, bool bEnabled, float MinInterval, float MaxInterval, float Duration, float DoubleBlinkChance);
-	void ConfigureTalkAnimation(UPaperFlipbook* TalkFlipbook, bool bEnabled, float TalkSpeed);
-	void ConfigureEyesAnimation(UPaperFlipbook* EyesFlipbook, bool bEnabled, float MinLookDuration, float MaxLookDuration, float MinWaitDuration, float MaxWaitDuration);
-
-	// === STATE MANAGEMENT ===
-	void RestoreComponentStates();
-	bool ValidateComponentStates() const;
-	FString GetComponentStatusReport() const;
-
-	// === PRIVATE HELPERS ===
-private:
-	void SynchronizeIdleAnimationStates();
-	void ApplyFocusStateImmediate();
-	void ApplyVisibilityStateImmediate(bool bShouldBeVisible);
-
-
-
-
-
-
-
-/**
- * Получить отчет о состоянии спрайтов
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Debug")
-FString GetSpritesStatusReport() const;
-	
 };

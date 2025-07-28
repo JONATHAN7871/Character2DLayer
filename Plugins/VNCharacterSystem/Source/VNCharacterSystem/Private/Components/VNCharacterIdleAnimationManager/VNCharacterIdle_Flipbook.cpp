@@ -48,6 +48,69 @@ int32 UVNCharacterIdleAnimationManager::GetFlipbookFrameCountImproved(UPaperFlip
 }
 
 // =====================================================
+// DEBUG МЕТОД - РЕАЛИЗАЦИЯ
+// =====================================================
+
+void UVNCharacterIdleAnimationManager::DebugFlipbook(UPaperFlipbook* Flipbook) const
+{
+    if (!Flipbook)
+    {
+        VN_LOG_WARNING(TEXT("DebugFlipbook: Flipbook is null"));
+        return;
+    }
+
+    VN_LOG(Log, TEXT("=== FLIPBOOK DEBUG INFO ==="));
+    VN_LOG(Log, TEXT("Flipbook Name: %s"), *Flipbook->GetName());
+    VN_LOG(Log, TEXT("Flipbook Path: %s"), *Flipbook->GetPathName());
+    
+    int32 FrameCount = Flipbook->GetNumFrames();
+    float TotalDuration = Flipbook->GetTotalDuration();
+    
+    VN_LOG(Log, TEXT("Frame Count: %d"), FrameCount);
+    VN_LOG(Log, TEXT("Total Duration: %.3f seconds"), TotalDuration);
+    VN_LOG(Log, TEXT("Average Frame Duration: %.3f seconds"), FrameCount > 0 ? TotalDuration / FrameCount : 0.0f);
+    
+    // Проверяем первые несколько кадров
+    int32 MaxFramesToCheck = FMath::Min(FrameCount, 5);
+    VN_LOG(Log, TEXT("First %d frames:"), MaxFramesToCheck);
+    
+    for (int32 i = 0; i < MaxFramesToCheck; ++i)
+    {
+        UPaperSprite* Sprite = Flipbook->GetSpriteAtFrame(i);
+        if (Sprite)
+        {
+            VN_LOG(Log, TEXT("  Frame %d: %s"), i, *Sprite->GetName());
+        }
+        else
+        {
+            VN_LOG(Log, TEXT("  Frame %d: NULL SPRITE"), i);
+        }
+    }
+    
+    // Проверяем временные точки
+    if (TotalDuration > 0.0f)
+    {
+        VN_LOG(Log, TEXT("Time-based sprite check:"));
+        TArray<float> TestTimes = {0.0f, TotalDuration * 0.25f, TotalDuration * 0.5f, TotalDuration * 0.75f, TotalDuration};
+        
+        for (float TestTime : TestTimes)
+        {
+            UPaperSprite* Sprite = Flipbook->GetSpriteAtTime(TestTime);
+            if (Sprite)
+            {
+                VN_LOG(Log, TEXT("  Time %.3fs: %s"), TestTime, *Sprite->GetName());
+            }
+            else
+            {
+                VN_LOG(Log, TEXT("  Time %.3fs: NULL SPRITE"), TestTime);
+            }
+        }
+    }
+    
+    VN_LOG(Log, TEXT("=== END FLIPBOOK DEBUG ==="));
+}
+
+// =====================================================
 // УСТАРЕВШИЕ МЕТОДЫ (СОВМЕСТИМОСТЬ)
 // =====================================================
 

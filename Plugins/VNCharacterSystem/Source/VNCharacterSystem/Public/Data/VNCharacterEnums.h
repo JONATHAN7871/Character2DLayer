@@ -124,6 +124,7 @@ enum class EVNVisibilityState : uint8
 UENUM(BlueprintType)
 enum class EIdleEmotionalState : uint8
 {
+    None        UMETA(DisplayName = "None (Use DataAsset Settings)"),  // Использовать настройки из DataAsset
     Calm        UMETA(DisplayName = "Calm"),           // Спокойное состояние
     Nervous     UMETA(DisplayName = "Nervous"),        // Нервное состояние (быстрое моргание)
     Sleepy      UMETA(DisplayName = "Sleepy"),         // Сонное состояние (медленное моргание)
