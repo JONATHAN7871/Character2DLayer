@@ -4,10 +4,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
 
-// ===============================================
-// ПРИНЦИП 2: Группировка индивидуальных изменений
-// ===============================================
-
 void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftObjectPtr<USkeletalMesh> SkeletalMesh, bool bAnimate, float Duration)
 {
 	USkeletalMeshComponent* MainComponent = GetSkeletalComponent(ComponentID);
@@ -17,7 +13,6 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		return;
 	}
 
-	// --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Завершаем текущие анимации если быстро меняем ---
 	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
 	{
 		VN_LOG_WARNING(TEXT("SetSkeletalMesh: Forcing completion of ongoing transition"));
@@ -25,29 +20,25 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 		FinalizeCurrentTransition();
 	}
 
-	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
 	bool bAssetChanged = false;
 	const USkeletalMesh* CurrentMesh = MainComponent->GetSkeletalMeshAsset();
 	
 	if (!CurrentMesh && !SkeletalMesh.IsNull())
 	{
-		bAssetChanged = true; // Был пустым, стал непустым
+		bAssetChanged = true;
 	}
 	else if (CurrentMesh && SkeletalMesh.IsNull())
 	{
-		bAssetChanged = true; // Был непустым, стал пустым
+		bAssetChanged = true;
 	}
 	else if (CurrentMesh && !SkeletalMesh.IsNull())
 	{
-		bAssetChanged = (CurrentMesh->GetPathName() != SkeletalMesh.ToString()); // Сравниваем пути
+		bAssetChanged = (CurrentMesh->GetPathName() != SkeletalMesh.ToString());
 	}
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
-		VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Preparing transition for component: %s. From [%s] to [%s]"), 
-			*MainComponent->GetName(),
-			CurrentMesh ? *CurrentMesh->GetName() : TEXT("None"),
-			SkeletalMesh.IsNull() ? TEXT("None") : *SkeletalMesh.ToString());
+		VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Preparing transition for component: %s"), *MainComponent->GetName());
 		
 		if (USkeletalMeshComponent* FadeComponent = GetSkeletalFadeComponent(ComponentID))
 		{
@@ -62,10 +53,9 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 	}
 	else
 	{
-		// Мгновенное применение
 		if (!bAssetChanged)
 		{
-			VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Asset unchanged for component: %s, skipping animation"), *MainComponent->GetName());
+			VN_LOG_DEBUG(TEXT("SetSkeletalMesh: Asset unchanged for component: %s"), *MainComponent->GetName());
 		}
 		ValidateAndSetupSkeletalComponent(MainComponent, SkeletalMesh);
 	}
@@ -80,7 +70,9 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		return;
 	}
 
-	// --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Завершаем текущие анимации если быстро меняем ---
+	// Автоматическое кэширование спрайта
+	CacheSpriteOnSet(ComponentID, Sprite);
+
 	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("SetSprite: Forcing completion of ongoing transition"));
@@ -88,21 +80,20 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		FinalizeCurrentTransition();
 	}
 
-	// --- КЛЮЧЕВАЯ ПРОВЕРКА: Изменился ли ассет ---
 	bool bAssetChanged = false;
 	const UPaperSprite* CurrentSprite = MainComponent->GetSprite();
 	
 	if (!CurrentSprite && !Sprite.IsNull())
 	{
-		bAssetChanged = true; // Был пустым, стал непустым
+		bAssetChanged = true;
 	}
 	else if (CurrentSprite && Sprite.IsNull())
 	{
-		bAssetChanged = true; // Был непустым, стал пустым
+		bAssetChanged = true;
 	}
 	else if (CurrentSprite && !Sprite.IsNull())
 	{
-		bAssetChanged = (CurrentSprite->GetPathName() != Sprite.ToString()); // Сравниваем пути
+		bAssetChanged = (CurrentSprite->GetPathName() != Sprite.ToString());
 	}
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
@@ -120,7 +111,6 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 	}
 	else
 	{
-		// Мгновенное применение
 		if (!bAssetChanged)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("SetSprite: Asset unchanged, skipping"));
@@ -131,42 +121,15 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 	OnCharacterComponentChanged.Broadcast(ComponentID);
 }
 
-void AVNCharacter::SetEyes(TSoftObjectPtr<UPaperSprite> EyesSprite, bool bAnimate, float Duration)
-{
-	SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, bAnimate, Duration);
-}
-
-void AVNCharacter::SetMouth(TSoftObjectPtr<UPaperSprite> MouthSprite, bool bAnimate, float Duration)
-{
-	SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, bAnimate, Duration);
-}
-
-void AVNCharacter::SetEyebrows(TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
-{
-	SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, bAnimate, Duration);
-}
-
-void AVNCharacter::SetBody(TSoftObjectPtr<USkeletalMesh> BodyMesh, bool bAnimate, float Duration)
-{
-	SetSkeletalMesh(E_VN_ComponentID_Skeletal::Body, BodyMesh, bAnimate, Duration);
-}
-
-void AVNCharacter::SetArms(TSoftObjectPtr<USkeletalMesh> ArmsMesh, bool bAnimate, float Duration)
-{
-	SetSkeletalMesh(E_VN_ComponentID_Skeletal::Arms, ArmsMesh, bAnimate, Duration);
-}
-
 void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectPtr<UPaperSprite> MouthSprite, TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
 {
     VN_LOG_DEBUG(TEXT("SetFace: Setting multiple face components with animate=%s, duration=%.2f"), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
-    // НОВАЯ ЛОГИКА (ОШИБКА #3): Убраны лишние вызовы и дублирование логики.
-    // Теперь мы только подготавливаем переходы и запрашиваем одну общую анимацию.
     if (bAnimate && Duration > 0.0f && AnimationManager)
     {
         bool bAnyComponentChanged = false;
 
-        // --- Проверяем и подготавливаем ГЛАЗА ---
+        // Проверяем и подготавливаем ГЛАЗА
         UPaperSpriteComponent* EyesComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyes);
         if (EyesComp)
         {
@@ -184,7 +147,7 @@ void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectP
             }
         }
 
-        // --- Проверяем и подготавливаем РОТ ---
+        // Проверяем и подготавливаем РОТ
         UPaperSpriteComponent* MouthComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Mouth);
         if (MouthComp)
         {
@@ -202,7 +165,7 @@ void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectP
             }
         }
 
-        // --- Проверяем и подготавливаем БРОВИ ---
+        // Проверяем и подготавливаем БРОВИ
         UPaperSpriteComponent* EyebrowComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyebrow);
         if (EyebrowComp)
         {
@@ -220,7 +183,6 @@ void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectP
             }
         }
 
-        // Если хоть что-то изменилось, запрашиваем групповую анимацию
         if (bAnyComponentChanged)
         {
             RequestTransitionCommit(Duration);
@@ -228,7 +190,6 @@ void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectP
     }
     else
     {
-        // Мгновенное применение (этот блок был правильным)
         SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
         SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
         SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);

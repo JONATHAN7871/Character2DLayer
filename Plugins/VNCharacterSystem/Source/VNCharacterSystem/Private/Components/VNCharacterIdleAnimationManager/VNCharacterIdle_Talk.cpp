@@ -1,13 +1,7 @@
-// VNCharacterIdle_Talk.cpp - Анимация разговора с исправлением пропадания рта
-
 #include "Components/VNCharacterIdleAnimationManager.h"
 #include "Actors/VNCharacter.h"
 #include "VNCharacterSystemModule.h"
 #include "Engine/World.h"
-
-// =====================================================
-// СИСТЕМА АНИМАЦИИ РАЗГОВОРА
-// =====================================================
 
 void UVNCharacterIdleAnimationManager::StartTalkAnimation()
 {
@@ -24,9 +18,8 @@ void UVNCharacterIdleAnimationManager::StartTalkAnimation()
         return;
     }
 
-    // ИСПРАВЛЕНИЕ: Сохраняем ТЕКУЩИЙ спрайт рта
-    SaveCurrentSprite(Character->Mouth_Sprite, OriginalMouthSprite);
-    
+    VN_LOG_DEBUG(TEXT("StartTalkAnimation: Starting talk animation"));
+
     float FrameInterval = IdleAnimationsConfig.TalkConfig.GetFrameInterval();
     GetWorld()->GetTimerManager().SetTimer(
         TalkTimerHandle,
@@ -41,25 +34,27 @@ void UVNCharacterIdleAnimationManager::StartTalkAnimation()
 
 void UVNCharacterIdleAnimationManager::StopTalkAnimation()
 {
+    VN_LOG_DEBUG(TEXT("StopTalkAnimation: Stopping talk animation"));
+    
+    // ИСПРАВЛЕНИЕ: Сначала очищаем таймер
     GetWorld()->GetTimerManager().ClearTimer(TalkTimerHandle);
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Mouth_Sprite)
     {
-        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Умная проверка восстановления
         UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
         
         if (IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
         {
-            // Текущий спрайт - часть Talk анимации, восстанавливаем оригинал
-            RestoreCurrentSprite(Character->Mouth_Sprite, OriginalMouthSprite);
-            VN_LOG_DEBUG(TEXT("Talk: Restored original mouth sprite"));
+            // Восстанавливаем из кэша
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Mouth);
+            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Restored mouth from cache"));
         }
         else
         {
-            // Спрайт был изменен извне во время анимации - оставляем как есть
-            OriginalMouthSprite = CurrentSprite;
-            VN_LOG_DEBUG(TEXT("Talk: Keeping externally changed mouth sprite"));
+            // Спрайт был изменен извне - обновляем кэш
+            Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
+            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Updated cache with external mouth sprite"));
         }
     }
     
@@ -68,9 +63,18 @@ void UVNCharacterIdleAnimationManager::StopTalkAnimation()
 
 void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
 {
+    // ИСПРАВЛЕНИЕ: Проверяем, что анимация еще должна работать
+    if (!IdleAnimationsConfig.TalkConfig.bEnabled)
+    {
+        VN_LOG_DEBUG(TEXT("UpdateTalkFrame: Animation disabled, stopping"));
+        StopTalkAnimation();
+        return;
+    }
+
     AVNCharacter* Character = GetVNCharacterOwner();
     if (!Character || !Character->Mouth_Sprite)
     {
+        VN_LOG_DEBUG(TEXT("UpdateTalkFrame: No character or mouth sprite, stopping"));
         StopTalkAnimation();
         return;
     }
@@ -78,11 +82,11 @@ void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
     UPaperFlipbook* TalkFlipbook = IdleAnimationsConfig.TalkConfig.TalkFlipbook.LoadSynchronous();
     if (!TalkFlipbook)
     {
+        VN_LOG_DEBUG(TEXT("UpdateTalkFrame: No talk flipbook, stopping"));
         StopTalkAnimation();
         return;
     }
 
-    // Получаем случайный кадр из flipbook
     UPaperSprite* RandomSprite = GetRandomFlipbookSpriteImproved(TalkFlipbook, false);
     if (RandomSprite)
     {

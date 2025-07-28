@@ -1,13 +1,7 @@
-// VNCharacterIdle_Eyes.cpp - Анимация случайных движений глаз
-
 #include "Components/VNCharacterIdleAnimationManager.h"
 #include "Actors/VNCharacter.h"
 #include "VNCharacterSystemModule.h"
 #include "Engine/World.h"
-
-// =====================================================
-// СИСТЕМА АНИМАЦИИ ДВИЖЕНИЙ ГЛАЗ
-// =====================================================
 
 void UVNCharacterIdleAnimationManager::StartEyesRandomAnimation()
 {
@@ -24,8 +18,18 @@ void UVNCharacterIdleAnimationManager::StartEyesRandomAnimation()
         return;
     }
 
-    // Сохраняем текущий спрайт глаз
-    SaveCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+    VN_LOG_DEBUG(TEXT("StartEyesRandomAnimation: Starting eyes animation"));
+
+    // ИСПРАВЛЕНИЕ: Убеждаемся, что кэш обновлен и не пустой
+    Character->UpdateSpriteCache();
+    
+    // Дополнительная проверка - если кэш глаз пустой, но спрайт есть - исправляем
+    TSoftObjectPtr<UPaperSprite> CachedEyes = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
+    if (CachedEyes.IsNull() && Character->Eyes_Sprite->GetSprite())
+    {
+        VN_LOG_WARNING(TEXT("StartEyesRandomAnimation: Eyes cache was empty, fixing with current sprite"));
+        Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, Character->Eyes_Sprite->GetSprite());
+    }
     
     ScheduleNextEyesMovement();
     LogIdleAnimation(TEXT("Eyes random animation started"));
@@ -33,13 +37,35 @@ void UVNCharacterIdleAnimationManager::StartEyesRandomAnimation()
 
 void UVNCharacterIdleAnimationManager::StopEyesRandomAnimation()
 {
+    VN_LOG_DEBUG(TEXT("StopEyesRandomAnimation: Stopping eyes animation"));
+    
     GetWorld()->GetTimerManager().ClearTimer(EyesRandomTimerHandle);
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyes_Sprite)
     {
-        // Восстанавливаем исходный спрайт глаз
-        RestoreCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+        // ИСПРАВЛЕНИЕ: Проверяем кэш перед восстановлением
+        TSoftObjectPtr<UPaperSprite> CachedEyes = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
+        
+        if (CachedEyes.IsNull())
+        {
+            VN_LOG_WARNING(TEXT("StopEyesRandomAnimation: Cached eyes is null! Current sprite: %s"), 
+                Character->Eyes_Sprite->GetSprite() ? *Character->Eyes_Sprite->GetSprite()->GetName() : TEXT("NULL"));
+            
+            // Если кэш пустой, но текущий спрайт не является частью анимации - сохраняем его
+            UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
+            if (CurrentSprite && !IsAnimationSprite(Character->Eyes_Sprite, CurrentSprite))
+            {
+                VN_LOG_WARNING(TEXT("StopEyesRandomAnimation: Saving current non-animation sprite to cache"));
+                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, CurrentSprite);
+            }
+        }
+        else
+        {
+            // Восстанавливаем из кэша
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
+            VN_LOG_DEBUG(TEXT("StopEyesRandomAnimation: Restored eyes from cache"));
+        }
     }
 
     bIsEyesRandomAnimationPlaying = false;
@@ -48,7 +74,12 @@ void UVNCharacterIdleAnimationManager::StopEyesRandomAnimation()
 
 void UVNCharacterIdleAnimationManager::ScheduleNextEyesMovement()
 {
-    if (!IdleAnimationsConfig.EyesRandomConfig.bEnabled) return;
+    // ИСПРАВЛЕНИЕ: Проверяем флаг перед планированием
+    if (!IdleAnimationsConfig.EyesRandomConfig.bEnabled) 
+    {
+        VN_LOG_DEBUG(TEXT("ScheduleNextEyesMovement: Animation disabled, not scheduling"));
+        return;
+    }
 
     float NextMovementDelay = IdleAnimationsConfig.EyesRandomConfig.GetRandomWaitDuration();
     
@@ -63,20 +94,34 @@ void UVNCharacterIdleAnimationManager::ScheduleNextEyesMovement()
 
 void UVNCharacterIdleAnimationManager::ExecuteRandomEyesMovement()
 {
+    // ИСПРАВЛЕНИЕ: Проверяем флаг перед выполнением
+    if (!IdleAnimationsConfig.EyesRandomConfig.bEnabled)
+    {
+        VN_LOG_DEBUG(TEXT("ExecuteRandomEyesMovement: Animation disabled, stopping"));
+        StopEyesRandomAnimation();
+        return;
+    }
+
     AVNCharacter* Character = GetVNCharacterOwner();
-    if (!Character || !Character->Eyes_Sprite) return;
+    if (!Character || !Character->Eyes_Sprite) 
+    {
+        VN_LOG_DEBUG(TEXT("ExecuteRandomEyesMovement: No character or eyes sprite"));
+        return;
+    }
 
     UPaperFlipbook* EyesFlipbook = IdleAnimationsConfig.EyesRandomConfig.EyesDirectionsFlipbook.LoadSynchronous();
-    if (!EyesFlipbook) return;
+    if (!EyesFlipbook) 
+    {
+        VN_LOG_DEBUG(TEXT("ExecuteRandomEyesMovement: No eyes flipbook"));
+        return;
+    }
 
-    // Получаем случайное направление взгляда
     UPaperSprite* RandomDirection = GetRandomFlipbookSpriteImproved(EyesFlipbook, false);
     if (RandomDirection)
     {
         Character->Eyes_Sprite->SetSprite(RandomDirection);
         bIsEyesRandomAnimationPlaying = true;
         
-        // Запланировать возврат к исходному положению
         float LookDuration = IdleAnimationsConfig.EyesRandomConfig.GetRandomLookDuration();
         GetWorld()->GetTimerManager().SetTimer(
             EyesRandomTimerHandle,
@@ -85,6 +130,8 @@ void UVNCharacterIdleAnimationManager::ExecuteRandomEyesMovement()
             LookDuration,
             false
         );
+        
+        VN_LOG_DEBUG(TEXT("ExecuteRandomEyesMovement: Set random direction, will return in %.2fs"), LookDuration);
     }
 }
 
@@ -93,13 +140,35 @@ void UVNCharacterIdleAnimationManager::ReturnEyesToOriginal()
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyes_Sprite)
     {
-        RestoreCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+        // ИСПРАВЛЕНИЕ: Проверяем кэш перед восстановлением
+        TSoftObjectPtr<UPaperSprite> CachedEyes = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
+        
+        if (!CachedEyes.IsNull())
+        {
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
+            VN_LOG_DEBUG(TEXT("ReturnEyesToOriginal: Restored from cache"));
+        }
+        else
+        {
+            VN_LOG_WARNING(TEXT("ReturnEyesToOriginal: Cache is empty, keeping current sprite"));
+            // Сохраняем текущий спрайт в кэш для будущих использований
+            UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
+            if (CurrentSprite)
+            {
+                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, CurrentSprite);
+            }
+        }
     }
 
     bIsEyesRandomAnimationPlaying = false;
     
+    // ИСПРАВЛЕНИЕ: Проверяем флаг перед планированием следующего движения
     if (IdleAnimationsConfig.EyesRandomConfig.bEnabled)
     {
         ScheduleNextEyesMovement();
+    }
+    else
+    {
+        VN_LOG_DEBUG(TEXT("ReturnEyesToOriginal: Animation disabled, not scheduling next"));
     }
 }

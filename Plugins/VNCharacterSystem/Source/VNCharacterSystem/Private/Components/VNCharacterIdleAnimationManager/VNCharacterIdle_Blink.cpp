@@ -1,13 +1,7 @@
-// VNCharacterIdle_Blink.cpp - Живое моргание с эмоциональными вариациями
-
 #include "Components/VNCharacterIdleAnimationManager.h"
 #include "Actors/VNCharacter.h"
 #include "VNCharacterSystemModule.h"
 #include "Engine/World.h"
-
-// =====================================================
-// УЛУЧШЕННАЯ СИСТЕМА МОРГАНИЯ
-// =====================================================
 
 void UVNCharacterIdleAnimationManager::StartBlinkAnimation()
 {
@@ -24,10 +18,9 @@ void UVNCharacterIdleAnimationManager::StartBlinkAnimation()
         return;
     }
 
-    // Сохраняем ТЕКУЩИЙ спрайт век
-    SaveCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+    // Убеждаемся, что кэш обновлен
+    Character->UpdateSpriteCache();
     
-    CurrentBlinkState = EBlinkState::WaitingForBlink;
     ScheduleNextBlink();
     LogIdleAnimation(TEXT("Blink animation started"));
 }
@@ -36,13 +29,14 @@ void UVNCharacterIdleAnimationManager::StopBlinkAnimation()
 {
     GetWorld()->GetTimerManager().ClearTimer(BlinkTimerHandle);
     
-    if (bIsBlinkAnimationPlaying)
+    AVNCharacter* Character = GetVNCharacterOwner();
+    if (Character && Character->Eyelids_Sprite)
     {
-        FinishBlinkAnimation();
+        // Восстанавливаем из кэша
+        Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
     }
-    
-    CurrentBlinkState = EBlinkState::WaitingForBlink;
-    bPendingDoubleBlink = false;
+
+    bIsBlinkAnimationPlaying = false;
     LogIdleAnimation(TEXT("Blink animation stopped"));
 }
 
@@ -50,7 +44,6 @@ void UVNCharacterIdleAnimationManager::ScheduleNextBlink()
 {
     if (!IdleAnimationsConfig.BlinkConfig.bEnabled) return;
 
-    // ЖИВОЕ МОРГАНИЕ: Эмоциональные вариации
     float BaseInterval = IdleAnimationsConfig.BlinkConfig.GetRandomBlinkInterval();
     
     static int32 BlinkCounter = 0;
@@ -58,7 +51,7 @@ void UVNCharacterIdleAnimationManager::ScheduleNextBlink()
     
     float EmotionalMultiplier = 1.0f;
     
-    // Создаем живые паттерны моргания
+    // Живые паттерны моргания
     if (BlinkCounter % 4 == 0)
     {
         EmotionalMultiplier = 0.3f; // Нервное быстрое моргание
@@ -103,11 +96,9 @@ void UVNCharacterIdleAnimationManager::ExecuteBlink()
     
     if (!HalfClosed || !Closed) return;
 
-    // УЛУЧШЕННАЯ логика двойного моргания
     static int32 ConsecutiveSingle = 0;
     float DoubleChance = IdleAnimationsConfig.BlinkConfig.DoubleBlinkChance;
     
-    // Увеличиваем шанс после серии одиночных
     if (ConsecutiveSingle >= 3)
     {
         DoubleChance *= 2.0f;
@@ -120,9 +111,6 @@ void UVNCharacterIdleAnimationManager::ExecuteBlink()
     {
         ConsecutiveSingle++;
     }
-
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем ТЕКУЩИЙ спрайт перед анимацией
-    SaveCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
 
     bIsBlinkAnimationPlaying = true;
     CurrentBlinkState = EBlinkState::FirstBlinkHalf;
@@ -154,9 +142,8 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
         return;
     }
 
-    // ЖИВОЕ МОРГАНИЕ: Вариативная длительность
     float BaseDuration = IdleAnimationsConfig.BlinkConfig.BlinkDuration;
-    float VariableDuration = BaseDuration * FMath::RandRange(0.8f, 1.2f); // ±20% вариации
+    float VariableDuration = BaseDuration * FMath::RandRange(0.8f, 1.2f);
     float DoubleBlinkPause = IdleAnimationsConfig.BlinkConfig.DoubleBlinkPause;
 
     switch (CurrentBlinkState)
@@ -170,7 +157,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                VariableDuration * 0.4f, // Быстрее до полного закрытия
+                VariableDuration * 0.4f,
                 false
             );
             break;
@@ -187,7 +174,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                     BlinkTimerHandle,
                     this,
                     &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                    VariableDuration * 0.6f, // Дольше в закрытом состоянии
+                    VariableDuration * 0.6f,
                     false
                 );
             }
@@ -207,10 +194,9 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
         case EBlinkState::BetweenBlinks:
         {
             // Возврат к оригиналу между двойными морганиями
-            RestoreCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
             CurrentBlinkState = EBlinkState::SecondBlinkHalf;
             
-            // Вариативная пауза
             float VariablePause = DoubleBlinkPause * FMath::RandRange(0.5f, 1.5f);
             
             GetWorld()->GetTimerManager().SetTimer(
@@ -232,7 +218,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                VariableDuration * 0.3f, // Быстрее второе моргание
+                VariableDuration * 0.3f,
                 false
             );
             break;
@@ -246,7 +232,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::FinishBlinkAnimation,
-                VariableDuration * 0.4f, // Короче второе закрытие
+                VariableDuration * 0.4f,
                 false
             );
             break;
@@ -259,18 +245,17 @@ void UVNCharacterIdleAnimationManager::FinishBlinkAnimation()
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyelids_Sprite)
     {
-        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Умная проверка восстановления
         UPaperSprite* CurrentSprite = Character->Eyelids_Sprite->GetSprite();
         
         if (IsCurrentSpritePartOfBlinkAnimation(CurrentSprite))
         {
-            // Текущий спрайт - часть анимации, восстанавливаем оригинал
-            RestoreCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+            // Восстанавливаем из кэша
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
         }
         else
         {
-            // Спрайт был изменен извне - сохраняем как новый оригинал
-            OriginalEyelidsSprite = CurrentSprite;
+            // Спрайт был изменен извне - обновляем кэш
+            Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyelids, CurrentSprite);
         }
     }
 
