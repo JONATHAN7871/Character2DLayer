@@ -19,6 +19,11 @@ class UPaperSpriteComponent;
  * - Моргание (Blink)
  * - Разговор (Talk)
  * - Случайные движения глаз (Eyes Random)
+ * 
+ * НОВЫЕ ВОЗМОЖНОСТИ:
+ * - Отслеживание изменений спрайтов во время анимации
+ * - Улучшенная работа с flipbook
+ * - Сохранение актуального состояния спрайтов
  */
 UCLASS(BlueprintType, Blueprintable, ClassGroup=(VNCharacter), meta=(BlueprintSpawnableComponent))
 class VNCHARACTERSYSTEM_API UVNCharacterIdleAnimationManager : public UActorComponent
@@ -95,13 +100,20 @@ public:
      */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Idle Animations")
     bool IsTalkActive() const { return IdleAnimationsConfig.TalkConfig.bEnabled; }
-
+    
     /**
      * Проверить, активна ли анимация случайных движений глаз
      */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Idle Animations")
     bool IsEyesRandomActive() const { return IdleAnimationsConfig.EyesRandomConfig.bEnabled; }
 
+    /**
+     * Обновить все сохраненные спрайты до текущего состояния
+     * Используется при применении DataAsset для синхронизации
+     */
+    UFUNCTION(BlueprintCallable, Category = "VN Idle Animations")
+    void UpdateSavedSprites();
+    
 protected:
     // =====================================================
     // НАСТРОЙКИ КОМПОНЕНТА
@@ -131,7 +143,7 @@ private:
     // === ДАННЫЕ ДЛЯ АНИМАЦИИ МОРГАНИЯ ===
     /** Таймеры для анимации моргания */
     FTimerHandle BlinkTimerHandle;
-    /** Исходный спрайт век до анимации моргания */
+    /** Сохраненный спрайт век до анимации моргания */
     TSoftObjectPtr<UPaperSprite> OriginalEyelidsSprite;
     /** Выполняется ли анимация моргания */
     bool bIsBlinkAnimationPlaying = false;
@@ -152,16 +164,57 @@ private:
     // === ДАННЫЕ ДЛЯ АНИМАЦИИ РАЗГОВОРА ===
     /** Таймер для анимации разговора */
     FTimerHandle TalkTimerHandle;
-    /** Исходный спрайт рта до анимации разговора */
+    /** Сохраненный спрайт рта до анимации разговора */
     TSoftObjectPtr<UPaperSprite> OriginalMouthSprite;
 
     // === ДАННЫЕ ДЛЯ АНИМАЦИИ СЛУЧАЙНЫХ ДВИЖЕНИЙ ГЛАЗ ===
     /** Таймер для анимации случайных движений глаз */
     FTimerHandle EyesRandomTimerHandle;
-    /** Исходный спрайт глаз до анимации */
+    /** Сохраненный спрайт глаз до анимации */
     TSoftObjectPtr<UPaperSprite> OriginalEyesSprite;
     /** Выполняется ли анимация случайных движений глаз */
     bool bIsEyesRandomAnimationPlaying = false;
+
+    // =====================================================
+    // НОВАЯ СИСТЕМА ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ СПРАЙТОВ
+    // =====================================================
+
+    /**
+     * Проверить, изменились ли спрайты во время анимации
+     * Вызывается каждый кадр в Tick
+     */
+    void CheckForSpriteChanges();
+
+    /**
+     * Обработать изменение спрайта извне во время анимации
+     * @param Component Компонент, спрайт которого изменился
+     * @param NewSprite Новый спрайт
+     * @param ComponentName Имя компонента для логирования
+     */
+    void HandleExternalSpriteChange(UPaperSpriteComponent* Component, UPaperSprite* NewSprite, const FString& ComponentName);
+
+    /**
+     * Проверить, является ли спрайт частью текущей анимации
+     * @param Component Компонент для проверки
+     * @param Sprite Спрайт для проверки
+     * @return true если спрайт является частью flipbook анимации
+     */
+    bool IsAnimationSprite(UPaperSpriteComponent* Component, UPaperSprite* Sprite) const;
+
+    /**
+     * Получить текущий спрайт анимации для компонента
+     * @param Component Компонент
+     * @return Текущий спрайт или nullptr
+     */
+    UPaperSprite* GetCurrentAnimationSprite(UPaperSpriteComponent* Component) const;
+
+    /**
+     * Проверить, содержит ли flipbook данный спрайт
+     * @param Flipbook Flipbook для проверки
+     * @param Sprite Спрайт для поиска
+     * @return true если спрайт найден в flipbook
+     */
+    bool IsFlipbookSprite(UPaperFlipbook* Flipbook, UPaperSprite* Sprite) const;
 
     // =====================================================
     // ВНУТРЕННИЕ МЕТОДЫ
@@ -207,17 +260,93 @@ private:
     /** Запланировать следующее движение глаз */
     void ScheduleNextEyesMovement();
 
-    // === УТИЛИТЫ ДЛЯ РАБОТЫ С FLIPBOOK ===
-    /** Получить спрайт из flipbook по индексу */
-    UPaperSprite* GetSpriteFromFlipbook(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
-    /** Получить количество кадров в flipbook */
-    int32 GetFlipbookFrameCount(UPaperFlipbook* Flipbook) const;
-    /** Получить случайный спрайт из flipbook (исключая первый кадр) */
-    UPaperSprite* GetRandomSpriteFromFlipbook(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame = false) const;
+    // === УЛУЧШЕННЫЕ УТИЛИТЫ ДЛЯ РАБОТЫ С FLIPBOOK ===
+    
+    /**
+     * УЛУЧШЕННАЯ версия получения спрайта из flipbook по индексу
+     * Использует временные точки с умной логикой для UE 5.5
+     * @param Flipbook Flipbook для извлечения
+     * @param FrameIndex Индекс кадра (0, 1, 2...)
+     * @return Спрайт или nullptr если не найден
+     */
+    UPaperSprite* GetFlipbookSpriteImproved(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
+    
+    /**
+     * ПРОСТАЯ версия получения спрайта из flipbook
+     * Backup метод с базовой логикой
+     * @param Flipbook Flipbook для извлечения
+     * @param FrameIndex Индекс кадра
+     * @return Спрайт или nullptr
+     */
+    UPaperSprite* GetFlipbookSpriteSimple(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
+    
+    /**
+     * УЛУЧШЕННАЯ версия получения случайного спрайта из flipbook
+     * @param Flipbook Flipbook для извлечения
+     * @param bExcludeFirstFrame Исключить первый кадр из выбора
+     * @return Случайный спрайт или nullptr
+     */
+    UPaperSprite* GetRandomFlipbookSpriteImproved(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame = false) const;
+    
+    /**
+     * УЛУЧШЕННАЯ версия получения количества кадров в flipbook
+     * Использует тестирование временных точек для UE 5.5
+     * @param Flipbook Flipbook для анализа
+     * @return Количество кадров
+     */
+    int32 GetFlipbookFrameCountImproved(UPaperFlipbook* Flipbook) const;
 
-    // === МЕТОДЫ ДЛЯ СОХРАНЕНИЯ И ВОССТАНОВЛЕНИЯ ИСХОДНЫХ СПРАЙТОВ ===
-    /** Сохранить исходный спрайт компонента */
+    /**
+     * Отладочный метод для анализа flipbook
+     * Выводит подробную информацию о содержимом flipbook
+     * @param Flipbook Flipbook для анализа
+     */
+    void DebugFlipbook(UPaperFlipbook* Flipbook) const;
+
+    // === УЛУЧШЕННЫЕ МЕТОДЫ СОХРАНЕНИЯ И ВОССТАНОВЛЕНИЯ СПРАЙТОВ ===
+    
+    /**
+     * Сохранить текущий спрайт компонента (не оригинальный!)
+     * @param Component Компонент для сохранения
+     * @param SavedSprite Переменная для сохранения спрайта
+     */
+    void SaveCurrentSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& SavedSprite);
+    
+    /**
+     * Восстановить сохраненный спрайт компонента
+     * @param Component Компонент для восстановления
+     * @param SavedSprite Сохраненный спрайт
+     */
+    void RestoreCurrentSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& SavedSprite);
+
+    // === УСТАРЕВШИЕ МЕТОДЫ (ДЛЯ СОВМЕСТИМОСТИ) ===
+    
+    /** @deprecated Используйте GetFlipbookSpriteImproved */
+    UPaperSprite* GetSpriteFromFlipbook(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
+    
+    /** @deprecated Используйте GetFlipbookFrameCountImproved */
+    int32 GetFlipbookFrameCount(UPaperFlipbook* Flipbook) const;
+    
+    /** @deprecated Используйте GetRandomFlipbookSpriteImproved */
+    UPaperSprite* GetRandomSpriteFromFlipbook(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame = false) const;
+    
+    /** @deprecated Используйте SaveCurrentSprite */
     void SaveOriginalSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& OriginalSprite);
-    /** Восстановить исходный спрайт компонента */
+    
+    /** @deprecated Используйте RestoreCurrentSprite */
     void RestoreOriginalSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& OriginalSprite);
+
+    /**
+ * Проверить, является ли спрайт частью анимации моргания
+ * @param Sprite Спрайт для проверки
+ * @return true если спрайт является кадром моргания
+ */
+    bool IsCurrentSpritePartOfBlinkAnimation(UPaperSprite* Sprite) const;
+
+    /**
+     * Проверить, является ли спрайт частью анимации разговора
+     * @param Sprite Спрайт для проверки
+     * @return true если спрайт является кадром разговора
+     */
+    bool IsCurrentSpritePartOfTalkAnimation(UPaperSprite* Sprite) const;
 };

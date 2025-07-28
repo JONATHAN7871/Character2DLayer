@@ -343,3 +343,78 @@ USkeletalMeshComponent* AVNCharacter::GetSkeletalComponentBySpriteTarget(E_Sprit
     default: return nullptr;
     }
 }
+
+void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
+{
+    if (!CharacterData)
+    {
+        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleAnimations: CharacterData is null"));
+        return;
+    }
+
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Останавливаем idle анимации ПЕРЕД применением DataAsset
+    if (IdleAnimationManager)
+    {
+        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Stopping idle animations before DataAsset application"));
+        IdleAnimationManager->StopAllIdleAnimations();
+    }
+
+    // Применяем обычный DataAsset
+    ApplyDataAsset(CharacterData, bAnimate, Duration);
+    
+    // ИСПРАВЛЕНИЕ: Применяем idle анимации ПОСЛЕ завершения основной анимации
+    if (IdleAnimationManager)
+    {
+        if (bAnimate && Duration > 0.0f)
+        {
+            // Запускаем idle анимации с задержкой после завершения основной анимации
+            FTimerHandle DelayedIdleTimer;
+            GetWorld()->GetTimerManager().SetTimer(
+                DelayedIdleTimer,
+                [this, CharacterData]()
+                {
+                    ApplyIdleAnimationsFromDataAsset(CharacterData);
+                },
+                Duration + 0.1f, // Небольшая задержка после основной анимации
+                false
+            );
+        }
+        else
+        {
+            // Мгновенное применение
+            ApplyIdleAnimationsFromDataAsset(CharacterData);
+        }
+    }
+}
+
+// Отдельный метод для применения idle анимаций из DataAsset
+void AVNCharacter::ApplyIdleAnimationsFromDataAsset(UVNCharacterDataAsset* CharacterData)
+{
+    if (!CharacterData || !IdleAnimationManager)
+    {
+        return;
+    }
+
+    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Applying idle animations config"));
+    
+    // Сохраняем текущие спрайты перед настройкой idle анимаций
+    if (IdleAnimationManager)
+    {
+        // Принудительно обновляем сохраненные спрайты для всех компонентов
+        IdleAnimationManager->UpdateSavedSprites();
+    }
+    
+    // Устанавливаем конфигурацию idle анимаций
+    IdleAnimationManager->SetIdleAnimationsConfig(CharacterData->IdleAnimationsConfig);
+    
+    // Автоматически запускаем idle анимации если включен флаг
+    if (CharacterData->bAutoStartIdleAnimations)
+    {
+        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Auto-starting idle animations"));
+        IdleAnimationManager->StartAllIdleAnimations();
+    }
+    else
+    {
+        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Idle animations config applied but not auto-started"));
+    }
+}

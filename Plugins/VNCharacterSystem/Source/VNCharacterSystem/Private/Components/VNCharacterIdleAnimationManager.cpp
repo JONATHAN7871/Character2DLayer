@@ -9,16 +9,13 @@
 
 UVNCharacterIdleAnimationManager::UVNCharacterIdleAnimationManager()
 {
-    // Включаем тик для обновления анимаций
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = true;
     PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
-    // Инициализация значений по умолчанию
     bDisableIdleAnimations = false;
     bVerboseLogging = false;
     
-    // Инициализация состояния анимаций
     bIsBlinkAnimationPlaying = false;
     bIsEyesRandomAnimationPlaying = false;
     CurrentBlinkState = EBlinkState::WaitingForBlink;
@@ -29,18 +26,15 @@ void UVNCharacterIdleAnimationManager::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Кэшируем ссылку на владельца
     OwnerCharacter = Cast<AVNCharacter>(GetOwner());
     
     if (!OwnerCharacter.IsValid())
     {
-        VN_LOG_ERROR(TEXT("VNCharacterIdleAnimationManager: Owner is not a VNCharacter! Component will not function properly."));
+        VN_LOG_ERROR(TEXT("VNCharacterIdleAnimationManager: Owner is not a VNCharacter!"));
         return;
     }
 
     LogIdleAnimation(TEXT("Idle Animation Manager initialized successfully"));
-
-    // Запускаем активные idle анимации
     StartAllIdleAnimations();
 }
 
@@ -48,13 +42,14 @@ void UVNCharacterIdleAnimationManager::TickComponent(float DeltaTime, ELevelTick
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    // В отличие от основных анимаций, idle анимации работают через таймеры
-    // Тик используется только для проверки состояния и отладки
+    // НОВАЯ ФУНКЦИЯ: Отслеживаем изменения спрайтов во время анимаций
+    CheckForSpriteChanges();
+
     if (bVerboseLogging)
     {
         static float LogTimer = 0.0f;
         LogTimer += DeltaTime;
-        if (LogTimer >= 2.0f) // Логируем каждые 2 секунды
+        if (LogTimer >= 2.0f)
         {
             LogIdleAnimation(FString::Printf(TEXT("Active idle animations: Blink=%s, Talk=%s, EyesRandom=%s"), 
                 IsBlinkActive() ? TEXT("ON") : TEXT("OFF"),
@@ -66,6 +61,133 @@ void UVNCharacterIdleAnimationManager::TickComponent(float DeltaTime, ELevelTick
 }
 
 // =====================================================
+// НОВАЯ СИСТЕМА ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ СПРАЙТОВ
+// =====================================================
+
+void UVNCharacterIdleAnimationManager::CheckForSpriteChanges()
+{
+    AVNCharacter* Character = GetVNCharacterOwner();
+    if (!Character) return;
+
+    // Проверяем изменения во время анимации моргания
+    if (bIsBlinkAnimationPlaying && Character->Eyelids_Sprite)
+    {
+        UPaperSprite* CurrentSprite = Character->Eyelids_Sprite->GetSprite();
+        if (CurrentSprite && CurrentSprite != GetCurrentAnimationSprite(Character->Eyelids_Sprite))
+        {
+            // Спрайт был изменен извне во время анимации
+            HandleExternalSpriteChange(Character->Eyelids_Sprite, CurrentSprite, TEXT("Eyelids"));
+        }
+    }
+
+    // Проверяем изменения во время анимации разговора
+    if (IdleAnimationsConfig.TalkConfig.bEnabled && Character->Mouth_Sprite)
+    {
+        UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
+        if (CurrentSprite && !IsAnimationSprite(Character->Mouth_Sprite, CurrentSprite))
+        {
+            // Спрайт был изменен извне во время анимации
+            HandleExternalSpriteChange(Character->Mouth_Sprite, CurrentSprite, TEXT("Mouth"));
+        }
+    }
+
+    // Проверяем изменения во время анимации глаз
+    if (bIsEyesRandomAnimationPlaying && Character->Eyes_Sprite)
+    {
+        UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
+        if (CurrentSprite && !IsAnimationSprite(Character->Eyes_Sprite, CurrentSprite))
+        {
+            // Спрайт был изменен извне во время анимации
+            HandleExternalSpriteChange(Character->Eyes_Sprite, CurrentSprite, TEXT("Eyes"));
+        }
+    }
+}
+
+void UVNCharacterIdleAnimationManager::HandleExternalSpriteChange(UPaperSpriteComponent* Component, UPaperSprite* NewSprite, const FString& ComponentName)
+{
+    VN_LOG_WARNING(TEXT("HandleExternalSpriteChange: %s sprite changed during idle animation"), *ComponentName);
+    
+    // Обновляем наш сохраненный оригинальный спрайт
+    if (Component == GetVNCharacterOwner()->Eyelids_Sprite)
+    {
+        OriginalEyelidsSprite = NewSprite;
+        LogIdleAnimation(FString::Printf(TEXT("Updated original eyelids sprite during animation")));
+    }
+    else if (Component == GetVNCharacterOwner()->Mouth_Sprite)
+    {
+        OriginalMouthSprite = NewSprite;
+        LogIdleAnimation(FString::Printf(TEXT("Updated original mouth sprite during animation")));
+    }
+    else if (Component == GetVNCharacterOwner()->Eyes_Sprite)
+    {
+        OriginalEyesSprite = NewSprite;
+        LogIdleAnimation(FString::Printf(TEXT("Updated original eyes sprite during animation")));
+    }
+}
+
+bool UVNCharacterIdleAnimationManager::IsAnimationSprite(UPaperSpriteComponent* Component, UPaperSprite* Sprite) const
+{
+    if (!Component || !Sprite) return false;
+
+    // Проверяем, является ли спрайт частью текущей анимации
+    if (Component == GetVNCharacterOwner()->Eyelids_Sprite && bIsBlinkAnimationPlaying)
+    {
+        UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
+        if (BlinkFlipbook)
+        {
+            return IsFlipbookSprite(BlinkFlipbook, Sprite);
+        }
+    }
+    else if (Component == GetVNCharacterOwner()->Mouth_Sprite && IdleAnimationsConfig.TalkConfig.bEnabled)
+    {
+        UPaperFlipbook* TalkFlipbook = IdleAnimationsConfig.TalkConfig.TalkFlipbook.LoadSynchronous();
+        if (TalkFlipbook)
+        {
+            return IsFlipbookSprite(TalkFlipbook, Sprite);
+        }
+    }
+    else if (Component == GetVNCharacterOwner()->Eyes_Sprite && bIsEyesRandomAnimationPlaying)
+    {
+        UPaperFlipbook* EyesFlipbook = IdleAnimationsConfig.EyesRandomConfig.EyesDirectionsFlipbook.LoadSynchronous();
+        if (EyesFlipbook)
+        {
+            return IsFlipbookSprite(EyesFlipbook, Sprite);
+        }
+    }
+
+    return false;
+}
+
+UPaperSprite* UVNCharacterIdleAnimationManager::GetCurrentAnimationSprite(UPaperSpriteComponent* Component) const
+{
+    if (!Component) return nullptr;
+    return Component->GetSprite();
+}
+
+bool UVNCharacterIdleAnimationManager::IsFlipbookSprite(UPaperFlipbook* Flipbook, UPaperSprite* Sprite) const
+{
+    if (!Flipbook || !Sprite) return false;
+
+    // Проверяем все кадры flipbook
+    float TotalDuration = Flipbook->GetTotalDuration();
+    if (TotalDuration <= 0.0f) return false;
+
+    // Проверяем несколько точек времени
+    const int32 CheckPoints = 10;
+    for (int32 i = 0; i < CheckPoints; ++i)
+    {
+        float TimePoint = (TotalDuration / CheckPoints) * i;
+        UPaperSprite* FlipbookSprite = Flipbook->GetSpriteAtTime(TimePoint);
+        if (FlipbookSprite == Sprite)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// =====================================================
 // ПУБЛИЧНЫЕ МЕТОДЫ
 // =====================================================
 
@@ -73,7 +195,7 @@ void UVNCharacterIdleAnimationManager::SetBlinkEnabled(bool bEnable)
 {
     if (IdleAnimationsConfig.BlinkConfig.bEnabled == bEnable)
     {
-        return; // Состояние не изменилось
+        return;
     }
 
     IdleAnimationsConfig.BlinkConfig.bEnabled = bEnable;
@@ -94,7 +216,7 @@ void UVNCharacterIdleAnimationManager::SetTalkEnabled(bool bEnable)
 {
     if (IdleAnimationsConfig.TalkConfig.bEnabled == bEnable)
     {
-        return; // Состояние не изменилось
+        return;
     }
 
     IdleAnimationsConfig.TalkConfig.bEnabled = bEnable;
@@ -115,7 +237,7 @@ void UVNCharacterIdleAnimationManager::SetEyesRandomEnabled(bool bEnable)
 {
     if (IdleAnimationsConfig.EyesRandomConfig.bEnabled == bEnable)
     {
-        return; // Состояние не изменилось
+        return;
     }
 
     IdleAnimationsConfig.EyesRandomConfig.bEnabled = bEnable;
@@ -134,15 +256,9 @@ void UVNCharacterIdleAnimationManager::SetEyesRandomEnabled(bool bEnable)
 
 void UVNCharacterIdleAnimationManager::SetIdleAnimationsConfig(const FVNIdleAnimationsConfig& NewConfig)
 {
-    // Останавливаем все текущие анимации
     StopAllIdleAnimations();
-    
-    // Устанавливаем новую конфигурацию
     IdleAnimationsConfig = NewConfig;
-    
     LogIdleAnimation(TEXT("Idle animations config updated"));
-    
-    // Запускаем анимации согласно новой конфигурации
     StartAllIdleAnimations();
 }
 
@@ -182,7 +298,7 @@ void UVNCharacterIdleAnimationManager::StartAllIdleAnimations()
 }
 
 // =====================================================
-// МЕТОДЫ ДЛЯ АНИМАЦИИ МОРГАНИЯ
+// МЕТОДЫ ДЛЯ АНИМАЦИИ МОРГАНИЯ (ИСПРАВЛЕННЫЕ)
 // =====================================================
 
 void UVNCharacterIdleAnimationManager::StartBlinkAnimation()
@@ -206,12 +322,11 @@ void UVNCharacterIdleAnimationManager::StartBlinkAnimation()
         return;
     }
 
-    // Сохраняем исходный спрайт век
-    SaveOriginalSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+    // ИСПРАВЛЕНИЕ: Сохраняем текущий спрайт век, а не оригинальный
+    SaveCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
     
     LogIdleAnimation(TEXT("Blink animation started"));
 
-    // Сбрасываем состояние и запланируем первое моргание
     CurrentBlinkState = EBlinkState::WaitingForBlink;
     ScheduleNextBlink();
 }
@@ -220,19 +335,16 @@ void UVNCharacterIdleAnimationManager::StopBlinkAnimation()
 {
     if (!bIsBlinkAnimationPlaying && !GetWorld()->GetTimerManager().IsTimerActive(BlinkTimerHandle))
     {
-        return; // Анимация уже остановлена
+        return;
     }
 
-    // Очищаем таймер
     GetWorld()->GetTimerManager().ClearTimer(BlinkTimerHandle);
     
-    // Завершаем текущую анимацию моргания если она выполняется
     if (bIsBlinkAnimationPlaying)
     {
         FinishBlinkAnimation();
     }
     
-    // Сбрасываем состояние
     CurrentBlinkState = EBlinkState::WaitingForBlink;
     bPendingDoubleBlink = false;
     
@@ -241,60 +353,79 @@ void UVNCharacterIdleAnimationManager::StopBlinkAnimation()
 
 void UVNCharacterIdleAnimationManager::ExecuteBlink()
 {
-    UE_LOG(LogTemp, Warning, TEXT("=== ExecuteBlink CALLED ==="));
+    VN_LOG_WARNING(TEXT("=== ExecuteBlink CALLED ==="));
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (!Character || !Character->Eyelids_Sprite)
     {
-        UE_LOG(LogTemp, Error, TEXT("ExecuteBlink: Invalid character or eyelids component"));
+        VN_LOG_ERROR(TEXT("ExecuteBlink: Invalid character or eyelids component"));
         return;
     }
 
     UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
     if (!BlinkFlipbook)
     {
-        UE_LOG(LogTemp, Error, TEXT("ExecuteBlink: Invalid flipbook"));
+        VN_LOG_ERROR(TEXT("ExecuteBlink: Invalid flipbook"));
         return;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Flipbook loaded successfully: %s"), *BlinkFlipbook->GetName());
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Flipbook duration: %.3f"), BlinkFlipbook->GetTotalDuration());
+    VN_LOG_WARNING(TEXT("ExecuteBlink: Flipbook loaded successfully: %s"), *BlinkFlipbook->GetName());
 
-    // Проверяем наличие спрайтов
-    UPaperSprite* Sprite0 = GetSpriteFromFlipbook(BlinkFlipbook, 0);
-    UPaperSprite* Sprite1 = GetSpriteFromFlipbook(BlinkFlipbook, 1);
+    UPaperSprite* HalfClosedSprite = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
+    UPaperSprite* ClosedSprite = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
     
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Sprite 0: %s"), Sprite0 ? *Sprite0->GetName() : TEXT("NULL"));
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Sprite 1: %s"), Sprite1 ? *Sprite1->GetName() : TEXT("NULL"));
+    VN_LOG_WARNING(TEXT("ExecuteBlink: HalfClosed: %s"), HalfClosedSprite ? *HalfClosedSprite->GetName() : TEXT("NULL"));
+    VN_LOG_WARNING(TEXT("ExecuteBlink: Closed: %s"), ClosedSprite ? *ClosedSprite->GetName() : TEXT("NULL"));
     
-    if (!Sprite0 || !Sprite1)
+    if (!HalfClosedSprite || !ClosedSprite)
     {
-        UE_LOG(LogTemp, Error, TEXT("ExecuteBlink: Cannot get sprites from flipbook!"));
+        VN_LOG_ERROR(TEXT("ExecuteBlink: Cannot get sprites from flipbook!"));
         return;
     }
 
-    // Определяем, будет ли двойное моргание
-    bPendingDoubleBlink = IdleAnimationsConfig.BlinkConfig.ShouldDoubleBlink();
+    // УЛУЧШЕНИЕ: Динамическая вероятность двойного моргания
+    static int32 ConsecutiveSingleBlinks = 0;
     
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Double blink: %s"), bPendingDoubleBlink ? TEXT("YES") : TEXT("NO"));
+    float DoubleBlinkChance = IdleAnimationsConfig.BlinkConfig.DoubleBlinkChance;
+    
+    // Увеличиваем шанс двойного моргания после серии одиночных
+    if (ConsecutiveSingleBlinks >= 3)
+    {
+        DoubleBlinkChance *= 2.0f; // Удваиваем шанс
+        ConsecutiveSingleBlinks = 0;
+    }
+    
+    bPendingDoubleBlink = FMath::RandRange(0.0f, 1.0f) <= DoubleBlinkChance;
+    
+    if (bPendingDoubleBlink)
+    {
+        ConsecutiveSingleBlinks = 0;
+        VN_LOG_WARNING(TEXT("ExecuteBlink: Double blink: YES (enhanced chance)"));
+    }
+    else
+    {
+        ConsecutiveSingleBlinks++;
+        VN_LOG_WARNING(TEXT("ExecuteBlink: Single blink: %d consecutive"), ConsecutiveSingleBlinks);
+    }
+
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем ТЕКУЩИЙ спрайт перед анимацией
+    SaveCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
 
     bIsBlinkAnimationPlaying = true;
     CurrentBlinkState = EBlinkState::FirstBlinkHalf;
     
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Starting blink animation"));
-    
-    // Запускаем первую фазу моргания
+    VN_LOG_WARNING(TEXT("ExecuteBlink: Starting blink animation"));
     UpdateBlinkState();
 }
 
 void UVNCharacterIdleAnimationManager::UpdateBlinkState()
 {
-    UE_LOG(LogTemp, Warning, TEXT("=== UpdateBlinkState: State = %d ==="), (int32)CurrentBlinkState);
+    VN_LOG_WARNING(TEXT("=== UpdateBlinkState: State = %d ==="), (int32)CurrentBlinkState);
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (!Character || !Character->Eyelids_Sprite)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateBlinkState: Invalid character or eyelids"));
+        VN_LOG_ERROR(TEXT("UpdateBlinkState: Invalid character or eyelids"));
         FinishBlinkAnimation();
         return;
     }
@@ -302,33 +433,34 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
     UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
     if (!BlinkFlipbook)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateBlinkState: Invalid flipbook"));
+        VN_LOG_ERROR(TEXT("UpdateBlinkState: Invalid flipbook"));
         FinishBlinkAnimation();
         return;
     }
 
-    // Получаем спрайты из flipbook
-    UPaperSprite* HalfClosedSprite = GetSpriteFromFlipbook(BlinkFlipbook, 0); // Полузакрытые глаза
-    UPaperSprite* ClosedSprite = GetSpriteFromFlipbook(BlinkFlipbook, 1);     // Закрытые глаза
+    UPaperSprite* HalfClosedSprite = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
+    UPaperSprite* ClosedSprite = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
     
     if (!HalfClosedSprite || !ClosedSprite)
     {
-        UE_LOG(LogTemp, Error, TEXT("UpdateBlinkState: Cannot get sprites from flipbook"));
+        VN_LOG_ERROR(TEXT("UpdateBlinkState: Cannot get sprites from flipbook"));
         FinishBlinkAnimation();
         return;
     }
 
-    float BlinkDuration = IdleAnimationsConfig.BlinkConfig.BlinkDuration;
+    // УЛУЧШЕНИЕ: Вариативная длительность моргания для живости
+    float BaseDuration = IdleAnimationsConfig.BlinkConfig.BlinkDuration;
+    float VariableDuration = BaseDuration * FMath::RandRange(0.8f, 1.2f); // ±20% вариации
     float DoubleBlinkPause = IdleAnimationsConfig.BlinkConfig.DoubleBlinkPause;
     
-    UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: BlinkDuration=%.3f, DoubleBlinkPause=%.3f"), 
-        BlinkDuration, DoubleBlinkPause);
+    VN_LOG_WARNING(TEXT("UpdateBlinkState: BaseDuration=%.3f, VariableDuration=%.3f, DoubleBlinkPause=%.3f"), 
+        BaseDuration, VariableDuration, DoubleBlinkPause);
 
     switch (CurrentBlinkState)
     {
         case EBlinkState::FirstBlinkHalf:
         {
-            UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Setting half-closed sprite"));
+            VN_LOG_WARNING(TEXT("UpdateBlinkState: Setting half-closed sprite"));
             Character->Eyelids_Sprite->SetSprite(HalfClosedSprite);
             CurrentBlinkState = EBlinkState::FirstBlinkFull;
             
@@ -336,7 +468,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                BlinkDuration * 0.5f,
+                VariableDuration * 0.4f, // Быстрее до полного закрытия
                 false
             );
             break;
@@ -344,48 +476,50 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
         
         case EBlinkState::FirstBlinkFull:
         {
-            UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Setting closed sprite"));
+            VN_LOG_WARNING(TEXT("UpdateBlinkState: Setting closed sprite"));
             Character->Eyelids_Sprite->SetSprite(ClosedSprite);
             
             if (bPendingDoubleBlink)
             {
                 CurrentBlinkState = EBlinkState::BetweenBlinks;
-                UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Preparing for double blink"));
+                VN_LOG_WARNING(TEXT("UpdateBlinkState: Preparing for double blink"));
+                
+                GetWorld()->GetTimerManager().SetTimer(
+                    BlinkTimerHandle,
+                    this,
+                    &UVNCharacterIdleAnimationManager::UpdateBlinkState,
+                    VariableDuration * 0.6f, // Дольше в закрытом состоянии
+                    false
+                );
             }
             else
             {
-                UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Single blink, finishing"));
+                VN_LOG_WARNING(TEXT("UpdateBlinkState: Single blink, finishing"));
                 GetWorld()->GetTimerManager().SetTimer(
                     BlinkTimerHandle,
                     this,
                     &UVNCharacterIdleAnimationManager::FinishBlinkAnimation,
-                    BlinkDuration * 0.5f,
+                    VariableDuration * 0.6f, // Дольше в закрытом состоянии
                     false
                 );
-                return;
             }
-            
-            GetWorld()->GetTimerManager().SetTimer(
-                BlinkTimerHandle,
-                this,
-                &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                BlinkDuration * 0.5f,
-                false
-            );
             break;
         }
         
         case EBlinkState::BetweenBlinks:
         {
-            UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Returning to original between blinks"));
-            RestoreOriginalSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+            VN_LOG_WARNING(TEXT("UpdateBlinkState: Returning to original between blinks"));
+            RestoreCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
             CurrentBlinkState = EBlinkState::SecondBlinkHalf;
+            
+            // УЛУЧШЕНИЕ: Вариативная пауза между двойными морганиями
+            float VariablePause = DoubleBlinkPause * FMath::RandRange(0.5f, 1.5f);
             
             GetWorld()->GetTimerManager().SetTimer(
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                DoubleBlinkPause,
+                VariablePause,
                 false
             );
             break;
@@ -393,7 +527,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
         
         case EBlinkState::SecondBlinkHalf:
         {
-            UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Second blink - half closed"));
+            VN_LOG_WARNING(TEXT("UpdateBlinkState: Second blink - half closed"));
             Character->Eyelids_Sprite->SetSprite(HalfClosedSprite);
             CurrentBlinkState = EBlinkState::SecondBlinkFull;
             
@@ -401,7 +535,7 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::UpdateBlinkState,
-                BlinkDuration * 0.5f,
+                VariableDuration * 0.3f, // Быстрее второе моргание
                 false
             );
             break;
@@ -409,21 +543,21 @@ void UVNCharacterIdleAnimationManager::UpdateBlinkState()
         
         case EBlinkState::SecondBlinkFull:
         {
-            UE_LOG(LogTemp, Warning, TEXT("UpdateBlinkState: Second blink - fully closed"));
+            VN_LOG_WARNING(TEXT("UpdateBlinkState: Second blink - fully closed"));
             Character->Eyelids_Sprite->SetSprite(ClosedSprite);
             
             GetWorld()->GetTimerManager().SetTimer(
                 BlinkTimerHandle,
                 this,
                 &UVNCharacterIdleAnimationManager::FinishBlinkAnimation,
-                BlinkDuration * 0.5f,
+                VariableDuration * 0.4f, // Короче второе закрытие
                 false
             );
             break;
         }
         
         default:
-            UE_LOG(LogTemp, Error, TEXT("UpdateBlinkState: Unknown state"));
+            VN_LOG_ERROR(TEXT("UpdateBlinkState: Unknown state"));
             FinishBlinkAnimation();
             break;
     }
@@ -434,8 +568,27 @@ void UVNCharacterIdleAnimationManager::FinishBlinkAnimation()
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyelids_Sprite)
     {
-        // Возвращаем исходный спрайт
-        RestoreOriginalSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем, изменился ли спрайт во время анимации
+        UPaperSprite* CurrentEyelidsSprite = Character->Eyelids_Sprite->GetSprite();
+        UPaperSprite* SavedSprite = OriginalEyelidsSprite.LoadSynchronous();
+        
+        // Логируем состояние для отладки
+        VN_LOG_WARNING(TEXT("FinishBlinkAnimation: Current: %s, Saved: %s"), 
+            CurrentEyelidsSprite ? *CurrentEyelidsSprite->GetName() : TEXT("NULL"),
+            SavedSprite ? *SavedSprite->GetName() : TEXT("NULL"));
+        
+        // Восстанавливаем ТОЛЬКО если текущий спрайт является частью анимации моргания
+        if (IsCurrentSpritePartOfBlinkAnimation(CurrentEyelidsSprite))
+        {
+            RestoreCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: Restored original eyelids sprite"));
+        }
+        else
+        {
+            // Спрайт был изменен извне - сохраняем как новый оригинальный
+            OriginalEyelidsSprite = CurrentEyelidsSprite;
+            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: Keeping externally changed sprite"));
+        }
     }
 
     bIsBlinkAnimationPlaying = false;
@@ -444,36 +597,74 @@ void UVNCharacterIdleAnimationManager::FinishBlinkAnimation()
     
     LogIdleAnimation(TEXT("Blink animation finished"));
     
-    // Планируем следующее моргание если анимация все еще включена
     if (IdleAnimationsConfig.BlinkConfig.bEnabled)
     {
         ScheduleNextBlink();
     }
 }
 
+bool UVNCharacterIdleAnimationManager::IsCurrentSpritePartOfBlinkAnimation(UPaperSprite* Sprite) const
+{
+    if (!Sprite) return false;
+    
+    UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
+    if (!BlinkFlipbook) return false;
+    
+    // Проверяем, является ли это одним из спрайтов моргания
+    UPaperSprite* HalfClosed = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
+    UPaperSprite* Closed = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
+    
+    return (Sprite == HalfClosed || Sprite == Closed);
+}
+
 void UVNCharacterIdleAnimationManager::ScheduleNextBlink()
 {
     if (!IdleAnimationsConfig.BlinkConfig.bEnabled)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ScheduleNextBlink: Blink disabled, not scheduling"));
+        VN_LOG_WARNING(TEXT("ScheduleNextBlink: Blink disabled, not scheduling"));
         return;
     }
 
-    float NextBlinkDelay = IdleAnimationsConfig.BlinkConfig.GetRandomBlinkInterval();
+    // УЛУЧШЕНИЕ: Более сложная логика интервалов для живости
+    float BaseInterval = IdleAnimationsConfig.BlinkConfig.GetRandomBlinkInterval();
     
-    UE_LOG(LogTemp, Warning, TEXT("ScheduleNextBlink: Next blink in %.2f seconds"), NextBlinkDelay);
+    // Добавляем вариативность на основе "эмоционального состояния"
+    static int32 BlinkCounter = 0;
+    BlinkCounter++;
+    
+    float EmotionalMultiplier = 1.0f;
+    
+    // Каждое 4-5 моргание делаем с разной частотой для живости
+    if (BlinkCounter % 4 == 0)
+    {
+        EmotionalMultiplier = 0.3f; // Быстрое моргание (нервность)
+    }
+    else if (BlinkCounter % 7 == 0)
+    {
+        EmotionalMultiplier = 2.0f; // Долгая пауза (расслабленность)
+    }
+    else if (BlinkCounter % 11 == 0)
+    {
+        EmotionalMultiplier = 0.5f; // Средне-быстрое моргание
+    }
+    
+    float FinalInterval = BaseInterval * EmotionalMultiplier;
+    FinalInterval = FMath::Clamp(FinalInterval, 0.5f, 8.0f); // Разумные пределы
+    
+    VN_LOG_WARNING(TEXT("ScheduleNextBlink: Next blink in %.2f seconds (base: %.2f, multiplier: %.2f, counter: %d)"), 
+        FinalInterval, BaseInterval, EmotionalMultiplier, BlinkCounter);
     
     GetWorld()->GetTimerManager().SetTimer(
         BlinkTimerHandle,
         this,
         &UVNCharacterIdleAnimationManager::ExecuteBlink,
-        NextBlinkDelay,
+        FinalInterval,
         false
     );
 }
 
 // =====================================================
-// МЕТОДЫ ДЛЯ АНИМАЦИИ РАЗГОВОРА
+// МЕТОДЫ ДЛЯ АНИМАЦИИ РАЗГОВОРА (ИСПРАВЛЕННЫЕ)
 // =====================================================
 
 void UVNCharacterIdleAnimationManager::StartTalkAnimation()
@@ -491,35 +682,56 @@ void UVNCharacterIdleAnimationManager::StartTalkAnimation()
         return;
     }
 
-    // Сохраняем исходный спрайт рта
-    SaveOriginalSprite(Character->Mouth_Sprite, OriginalMouthSprite);
+    // ИСПРАВЛЕНИЕ: Сохраняем текущий спрайт рта
+    SaveCurrentSprite(Character->Mouth_Sprite, OriginalMouthSprite);
     
     LogIdleAnimation(TEXT("Talk animation started"));
 
-    // Запускаем периодическое обновление
     float FrameInterval = IdleAnimationsConfig.TalkConfig.GetFrameInterval();
     GetWorld()->GetTimerManager().SetTimer(
         TalkTimerHandle,
         this,
         &UVNCharacterIdleAnimationManager::UpdateTalkFrame,
         FrameInterval,
-        true // Повторять
+        true
     );
 }
 
 void UVNCharacterIdleAnimationManager::StopTalkAnimation()
 {
-    // Очищаем таймер
     GetWorld()->GetTimerManager().ClearTimer(TalkTimerHandle);
     
-    // Восстанавливаем исходный спрайт рта
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Mouth_Sprite)
     {
-        RestoreOriginalSprite(Character->Mouth_Sprite, OriginalMouthSprite);
+        // ИСПРАВЛЕНИЕ: Проверяем, является ли текущий спрайт частью Talk анимации
+        UPaperSprite* CurrentMouthSprite = Character->Mouth_Sprite->GetSprite();
+        
+        if (IsCurrentSpritePartOfTalkAnimation(CurrentMouthSprite))
+        {
+            // Восстанавливаем сохраненный спрайт
+            RestoreCurrentSprite(Character->Mouth_Sprite, OriginalMouthSprite);
+            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Restored original mouth sprite"));
+        }
+        else
+        {
+            // Спрайт был изменен извне - оставляем как есть
+            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Keeping externally changed mouth sprite"));
+        }
     }
     
     LogIdleAnimation(TEXT("Talk animation stopped"));
+}
+
+// Проверка, является ли спрайт частью Talk анимации
+bool UVNCharacterIdleAnimationManager::IsCurrentSpritePartOfTalkAnimation(UPaperSprite* Sprite) const
+{
+    if (!Sprite) return false;
+    
+    UPaperFlipbook* TalkFlipbook = IdleAnimationsConfig.TalkConfig.TalkFlipbook.LoadSynchronous();
+    if (!TalkFlipbook) return false;
+    
+    return IsFlipbookSprite(TalkFlipbook, Sprite);
 }
 
 void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
@@ -538,8 +750,8 @@ void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
         return;
     }
 
-    // Получаем случайный кадр из flipbook
-    UPaperSprite* RandomSprite = GetRandomSpriteFromFlipbook(TalkFlipbook, false);
+    // ИСПРАВЛЕНИЕ: Используем улучшенный метод получения спрайтов
+    UPaperSprite* RandomSprite = GetRandomFlipbookSpriteImproved(TalkFlipbook, false);
     if (RandomSprite)
     {
         Character->Mouth_Sprite->SetSprite(RandomSprite);
@@ -548,7 +760,7 @@ void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
 }
 
 // =====================================================
-// МЕТОДЫ ДЛЯ АНИМАЦИИ СЛУЧАЙНЫХ ДВИЖЕНИЙ ГЛАЗ
+// МЕТОДЫ ДЛЯ АНИМАЦИИ СЛУЧАЙНЫХ ДВИЖЕНИЙ ГЛАЗ (ИСПРАВЛЕННЫЕ)
 // =====================================================
 
 void UVNCharacterIdleAnimationManager::StartEyesRandomAnimation()
@@ -566,12 +778,10 @@ void UVNCharacterIdleAnimationManager::StartEyesRandomAnimation()
         return;
     }
 
-    // Сохраняем исходный спрайт глаз
-    SaveOriginalSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+    // ИСПРАВЛЕНИЕ: Сохраняем текущий спрайт глаз
+    SaveCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
     
     LogIdleAnimation(TEXT("Eyes random animation started"));
-
-    // Запланируем первое движение глаз
     ScheduleNextEyesMovement();
 }
 
@@ -579,17 +789,16 @@ void UVNCharacterIdleAnimationManager::StopEyesRandomAnimation()
 {
     if (!bIsEyesRandomAnimationPlaying && !GetWorld()->GetTimerManager().IsTimerActive(EyesRandomTimerHandle))
     {
-        return; // Анимация уже остановлена
+        return;
     }
 
-    // Очищаем таймер
     GetWorld()->GetTimerManager().ClearTimer(EyesRandomTimerHandle);
     
-    // Восстанавливаем исходный спрайт глаз
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyes_Sprite)
     {
-        RestoreOriginalSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+        // ИСПРАВЛЕНИЕ: Восстанавливаем актуальный спрайт глаз
+        RestoreCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
     }
 
     bIsEyesRandomAnimationPlaying = false;
@@ -611,8 +820,8 @@ void UVNCharacterIdleAnimationManager::ExecuteRandomEyesMovement()
         return;
     }
 
-    // Получаем любой случайный кадр из flipbook (включая кадр 0)
-    UPaperSprite* RandomDirection = GetRandomSpriteFromFlipbook(EyesFlipbook, false);
+    // ИСПРАВЛЕНИЕ: Используем улучшенный метод
+    UPaperSprite* RandomDirection = GetRandomFlipbookSpriteImproved(EyesFlipbook, false);
     if (RandomDirection)
     {
         Character->Eyes_Sprite->SetSprite(RandomDirection);
@@ -620,7 +829,6 @@ void UVNCharacterIdleAnimationManager::ExecuteRandomEyesMovement()
         
         LogIdleAnimation(TEXT("Eyes direction changed to random sprite"));
         
-        // Планируем возврат к исходному взгляду
         float LookDuration = IdleAnimationsConfig.EyesRandomConfig.GetRandomLookDuration();
         GetWorld()->GetTimerManager().SetTimer(
             EyesRandomTimerHandle,
@@ -637,14 +845,13 @@ void UVNCharacterIdleAnimationManager::ReturnEyesToOriginal()
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyes_Sprite)
     {
-        // Возвращаем исходный взгляд
-        RestoreOriginalSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+        // ИСПРАВЛЕНИЕ: Восстанавливаем актуальный спрайт
+        RestoreCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
         LogIdleAnimation(TEXT("Eyes returned to original position"));
     }
 
     bIsEyesRandomAnimationPlaying = false;
     
-    // Планируем следующее движение глаз если анимация все еще включена
     if (IdleAnimationsConfig.EyesRandomConfig.bEnabled)
     {
         ScheduleNextEyesMovement();
@@ -672,78 +879,99 @@ void UVNCharacterIdleAnimationManager::ScheduleNextEyesMovement()
 }
 
 // =====================================================
-// УТИЛИТЫ ДЛЯ РАБОТЫ С FLIPBOOK
+// УЛУЧШЕННЫЕ УТИЛИТЫ ДЛЯ РАБОТЫ С FLIPBOOK
 // =====================================================
 
-UPaperSprite* UVNCharacterIdleAnimationManager::GetSpriteFromFlipbook(UPaperFlipbook* Flipbook, int32 FrameIndex) const
+UPaperSprite* UVNCharacterIdleAnimationManager::GetFlipbookSpriteImproved(UPaperFlipbook* Flipbook, int32 FrameIndex) const
 {
     if (!Flipbook)
     {
+        VN_LOG_ERROR(TEXT("GetFlipbookSpriteImproved: Flipbook is null"));
         return nullptr;
     }
 
-    // ИСПРАВЛЕНИЕ: Используем другой подход для получения спрайтов
-    // Проверяем, есть ли у flipbook метод GetSpriteKeyFrames (может отличаться в разных версиях UE)
+    // ИСПРАВЛЕНИЕ ДЛЯ UE 5.5: Упрощенный подход без сложной рефлексии
+    // Используем только временные точки с улучшенной логикой
     
-    // Попробуем получить спрайт по времени (для UE 5.5)
     float TotalDuration = Flipbook->GetTotalDuration();
     if (TotalDuration <= 0.0f)
     {
-        LogIdleAnimation(TEXT("GetSpriteFromFlipbook: Flipbook has zero duration"), true);
+        VN_LOG_WARNING(TEXT("GetFlipbookSpriteImproved: Flipbook has zero duration"));
         return nullptr;
     }
     
-    // Для моргания нам нужно только 2 кадра, поэтому упростим логику
+    UPaperSprite* ResultSprite = nullptr;
+    
     if (FrameIndex == 0)
     {
-        // Первый кадр - в начале flipbook
-        return Flipbook->GetSpriteAtTime(0.0f);
+        // Первый кадр - в самом начале
+        ResultSprite = Flipbook->GetSpriteAtTime(0.0f);
+        VN_LOG_DEBUG(TEXT("GetFlipbookSpriteImproved: Frame 0 at time 0.0"));
     }
     else if (FrameIndex == 1)
     {
-        // Второй кадр - в середине или в конце flipbook
-        float MidTime = TotalDuration * 0.5f;
-        UPaperSprite* MidSprite = Flipbook->GetSpriteAtTime(MidTime);
-        if (!MidSprite)
+        // Второй кадр - пробуем несколько позиций
+        float TestTimes[] = { 
+            TotalDuration * 0.3f,   // 30% от общего времени
+            TotalDuration * 0.5f,   // 50% от общего времени  
+            TotalDuration * 0.7f,   // 70% от общего времени
+            TotalDuration - 0.001f  // Почти в конце
+        };
+        
+        for (float TestTime : TestTimes)
         {
-            // Если нет спрайта в середине, попробуем в конце
-            return Flipbook->GetSpriteAtTime(TotalDuration - 0.01f);
+            UPaperSprite* TestSprite = Flipbook->GetSpriteAtTime(TestTime);
+            if (TestSprite)
+            {
+                // Проверяем, отличается ли этот спрайт от первого кадра
+                UPaperSprite* FirstSprite = Flipbook->GetSpriteAtTime(0.0f);
+                if (TestSprite != FirstSprite)
+                {
+                    ResultSprite = TestSprite;
+                    VN_LOG_DEBUG(TEXT("GetFlipbookSpriteImproved: Frame 1 found at time %.3f"), TestTime);
+                    break;
+                }
+            }
         }
-        return MidSprite;
+        
+        // Если не нашли отличающийся спрайт, берем средний по времени
+        if (!ResultSprite)
+        {
+            ResultSprite = Flipbook->GetSpriteAtTime(TotalDuration * 0.5f);
+            VN_LOG_DEBUG(TEXT("GetFlipbookSpriteImproved: Frame 1 fallback at mid time"));
+        }
+    }
+    else
+    {
+        // Остальные кадры - равномерно распределяем по времени
+        float FrameTime = (TotalDuration / FMath::Max(4.0f, (float)(FrameIndex + 1))) * FrameIndex;
+        if (FrameTime >= TotalDuration)
+        {
+            FrameTime = TotalDuration - 0.001f;
+        }
+        ResultSprite = Flipbook->GetSpriteAtTime(FrameTime);
+        VN_LOG_DEBUG(TEXT("GetFlipbookSpriteImproved: Frame %d at time %.3f"), FrameIndex, FrameTime);
     }
     
-    // Для остальных кадров
-    float FrameTime = (TotalDuration / 4.0f) * FrameIndex; // Предполагаем 4 кадра максимум
-    return Flipbook->GetSpriteAtTime(FrameTime);
-}
-
-int32 UVNCharacterIdleAnimationManager::GetFlipbookFrameCount(UPaperFlipbook* Flipbook) const
-{
-    if (!Flipbook)
+    if (!ResultSprite)
     {
-        return 0;
-    }
-
-    // Оцениваем количество кадров на основе длительности
-    float TotalDuration = Flipbook->GetTotalDuration();
-    if (TotalDuration <= 0.0f)
-    {
-        return 0;
+        VN_LOG_WARNING(TEXT("GetFlipbookSpriteImproved: Could not get sprite for frame %d"), FrameIndex);
+        // Fallback - возвращаем первый кадр
+        ResultSprite = Flipbook->GetSpriteAtTime(0.0f);
     }
     
-    // Предполагаем стандартную частоту кадров
-    float FrameRate = 12.0f;
-    return FMath::CeilToInt(TotalDuration * FrameRate);
+    return ResultSprite;
 }
 
-UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomSpriteFromFlipbook(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame) const
+UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomFlipbookSpriteImproved(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame) const
 {
     if (!Flipbook)
     {
         return nullptr;
     }
 
-    int32 TotalFrames = GetFlipbookFrameCount(Flipbook);
+    // Попробуем получить точное количество кадров
+    int32 TotalFrames = GetFlipbookFrameCountImproved(Flipbook);
     if (TotalFrames <= 0)
     {
         return nullptr;
@@ -754,59 +982,139 @@ UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomSpriteFromFlipbook(UPap
     
     if (StartIndex > MaxIndex)
     {
-        return nullptr; // Нет доступных кадров
+        return nullptr;
     }
 
     int32 RandomIndex = FMath::RandRange(StartIndex, MaxIndex);
-    return GetSpriteFromFlipbook(Flipbook, RandomIndex);
+    return GetFlipbookSpriteImproved(Flipbook, RandomIndex);
+}
+
+int32 UVNCharacterIdleAnimationManager::GetFlipbookFrameCountImproved(UPaperFlipbook* Flipbook) const
+{
+    if (!Flipbook)
+    {
+        return 0;
+    }
+
+    // УПРОЩЕННЫЙ ПОДХОД: Оценка на основе длительности и тестирования
+    float TotalDuration = Flipbook->GetTotalDuration();
+    if (TotalDuration <= 0.0f)
+    {
+        return 0;
+    }
+    
+    // Тестируем несколько временных точек, чтобы найти уникальные спрайты
+    TSet<UPaperSprite*> UniqueSprites;
+    
+    const int32 TestPoints = 20; // Проверяем 20 точек по времени
+    for (int32 i = 0; i < TestPoints; ++i)
+    {
+        float TestTime = (TotalDuration / TestPoints) * i;
+        if (UPaperSprite* TestSprite = Flipbook->GetSpriteAtTime(TestTime))
+        {
+            UniqueSprites.Add(TestSprite);
+        }
+    }
+    
+    // Добавляем последний кадр
+    if (UPaperSprite* LastSprite = Flipbook->GetSpriteAtTime(TotalDuration - 0.001f))
+    {
+        UniqueSprites.Add(LastSprite);
+    }
+    
+    int32 FrameCount = FMath::Max(2, UniqueSprites.Num()); // Минимум 2 кадра
+    VN_LOG_DEBUG(TEXT("GetFlipbookFrameCountImproved: Found %d unique sprites"), FrameCount);
+    return FrameCount;
 }
 
 // =====================================================
-// МЕТОДЫ ДЛЯ СОХРАНЕНИЯ И ВОССТАНОВЛЕНИЯ ИСХОДНЫХ СПРАЙТОВ
+// УЛУЧШЕННЫЕ МЕТОДЫ СОХРАНЕНИЯ И ВОССТАНОВЛЕНИЯ СПРАЙТОВ
 // =====================================================
 
-void UVNCharacterIdleAnimationManager::SaveOriginalSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& OriginalSprite)
+void UVNCharacterIdleAnimationManager::SaveCurrentSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& SavedSprite)
 {
     if (!Component)
     {
+        VN_LOG_WARNING(TEXT("SaveCurrentSprite: Component is null"));
         return;
     }
 
     UPaperSprite* CurrentSprite = Component->GetSprite();
     if (CurrentSprite)
     {
-        OriginalSprite = CurrentSprite;
-        LogIdleAnimation(FString::Printf(TEXT("Saved original sprite for %s"), *Component->GetName()), false);
+        SavedSprite = CurrentSprite;
+        LogIdleAnimation(FString::Printf(TEXT("Saved current sprite for %s: %s"), 
+            *Component->GetName(), *CurrentSprite->GetName()), false);
     }
     else
     {
-        OriginalSprite = nullptr;
-        LogIdleAnimation(FString::Printf(TEXT("No original sprite to save for %s"), *Component->GetName()), false);
+        SavedSprite = nullptr;
+        LogIdleAnimation(FString::Printf(TEXT("No current sprite to save for %s"), *Component->GetName()), false);
     }
 }
 
-void UVNCharacterIdleAnimationManager::RestoreOriginalSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& OriginalSprite)
+void UVNCharacterIdleAnimationManager::RestoreCurrentSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& SavedSprite)
 {
     if (!Component)
     {
+        VN_LOG_WARNING(TEXT("RestoreCurrentSprite: Component is null"));
         return;
     }
 
-    if (!OriginalSprite.IsNull())
+    if (!SavedSprite.IsNull())
     {
-        UPaperSprite* LoadedSprite = OriginalSprite.LoadSynchronous();
+        UPaperSprite* LoadedSprite = SavedSprite.LoadSynchronous();
         if (LoadedSprite)
         {
             Component->SetSprite(LoadedSprite);
-            LogIdleAnimation(FString::Printf(TEXT("Restored original sprite for %s"), *Component->GetName()), false);
+            LogIdleAnimation(FString::Printf(TEXT("Restored sprite for %s: %s"), 
+                *Component->GetName(), *LoadedSprite->GetName()), false);
+        }
+        else
+        {
+            VN_LOG_WARNING(TEXT("RestoreCurrentSprite: Failed to load saved sprite for %s"), *Component->GetName());
         }
     }
     else
     {
-        // Исходного спрайта не было, очищаем компонент
+        // Сохраненного спрайта не было, очищаем компонент
         Component->SetSprite(nullptr);
-        LogIdleAnimation(FString::Printf(TEXT("Cleared sprite for %s (no original)"), *Component->GetName()), false);
+        LogIdleAnimation(FString::Printf(TEXT("Cleared sprite for %s (no saved sprite)"), *Component->GetName()), false);
     }
+}
+
+// =====================================================
+// УСТАРЕВШИЕ МЕТОДЫ (СОВМЕСТИМОСТЬ)
+// =====================================================
+
+UPaperSprite* UVNCharacterIdleAnimationManager::GetSpriteFromFlipbook(UPaperFlipbook* Flipbook, int32 FrameIndex) const
+{
+    // Перенаправляем на улучшенную версию
+    return GetFlipbookSpriteImproved(Flipbook, FrameIndex);
+}
+
+int32 UVNCharacterIdleAnimationManager::GetFlipbookFrameCount(UPaperFlipbook* Flipbook) const
+{
+    // Перенаправляем на улучшенную версию
+    return GetFlipbookFrameCountImproved(Flipbook);
+}
+
+UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomSpriteFromFlipbook(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame) const
+{
+    // Перенаправляем на улучшенную версию
+    return GetRandomFlipbookSpriteImproved(Flipbook, bExcludeFirstFrame);
+}
+
+void UVNCharacterIdleAnimationManager::SaveOriginalSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& OriginalSprite)
+{
+    // Перенаправляем на улучшенную версию
+    SaveCurrentSprite(Component, OriginalSprite);
+}
+
+void UVNCharacterIdleAnimationManager::RestoreOriginalSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& OriginalSprite)
+{
+    // Перенаправляем на улучшенную версию
+    RestoreCurrentSprite(Component, OriginalSprite);
 }
 
 // =====================================================
@@ -825,5 +1133,35 @@ void UVNCharacterIdleAnimationManager::LogIdleAnimation(const FString& Message, 
         VN_LOG_DEBUG(TEXT("IdleAnimManager [%s]: %s"), 
             OwnerCharacter.IsValid() ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
             *Message);
+    }
+}
+
+void UVNCharacterIdleAnimationManager::UpdateSavedSprites()
+{
+    AVNCharacter* Character = GetVNCharacterOwner();
+    if (!Character)
+    {
+        return;
+    }
+
+    VN_LOG_DEBUG(TEXT("UpdateSavedSprites: Updating all saved sprites to current state"));
+
+    // Обновляем сохраненные спрайты для всех компонентов
+    if (Character->Eyelids_Sprite)
+    {
+        SaveCurrentSprite(Character->Eyelids_Sprite, OriginalEyelidsSprite);
+        VN_LOG_DEBUG(TEXT("UpdateSavedSprites: Updated eyelids sprite"));
+    }
+
+    if (Character->Mouth_Sprite)
+    {
+        SaveCurrentSprite(Character->Mouth_Sprite, OriginalMouthSprite);
+        VN_LOG_DEBUG(TEXT("UpdateSavedSprites: Updated mouth sprite"));
+    }
+
+    if (Character->Eyes_Sprite)
+    {
+        SaveCurrentSprite(Character->Eyes_Sprite, OriginalEyesSprite);
+        VN_LOG_DEBUG(TEXT("UpdateSavedSprites: Updated eyes sprite"));
     }
 }

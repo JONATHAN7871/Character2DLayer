@@ -116,3 +116,18 @@ enum class EVNVisibilityState : uint8
     Appearing       UMETA(DisplayName = "Appearing"),
     Disappearing    UMETA(DisplayName = "Disappearing")
 };
+
+/**
+ * Эмоциональные состояния для idle анимаций
+ * Влияют на частоту и характер анимаций
+ */
+UENUM(BlueprintType)
+enum class EIdleEmotionalState : uint8
+{
+    Calm        UMETA(DisplayName = "Calm"),           // Спокойное состояние
+    Nervous     UMETA(DisplayName = "Nervous"),        // Нервное состояние (быстрое моргание)
+    Sleepy      UMETA(DisplayName = "Sleepy"),         // Сонное состояние (медленное моргание)
+    Excited     UMETA(DisplayName = "Excited"),        // Возбужденное состояние (частое моргание)
+    Focused     UMETA(DisplayName = "Focused"),        // Сосредоточенное состояние (редкое моргание)
+    Tired       UMETA(DisplayName = "Tired")           // Усталое состояние (неравномерное моргание)
+};

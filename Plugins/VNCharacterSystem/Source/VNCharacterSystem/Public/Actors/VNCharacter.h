@@ -208,7 +208,16 @@ bool IsTalkActive() const;
 UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Idle Animations")
 bool IsEyesRandomActive() const;
 	
-	
+	/**
+ * Применить DataAsset с корректной обработкой idle анимаций
+ * Исправляет конфликты между DataAsset и idle анимациями
+ * @param CharacterData DataAsset для применения
+ * @param bAnimate Анимировать переход
+ * @param Duration Длительность анимации
+ */
+	UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
+	void ApplyDataAssetWithIdleAnimations(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VN Character") FString CharacterName = TEXT("Unnamed Character");
@@ -286,6 +295,12 @@ private:
 	UFUNCTION() void OnAnimationStarted(EVNAnimationType AnimationType);
 	UFUNCTION() void OnAnimationFinished(EVNAnimationType AnimationType);
 	UFUNCTION() void OnAnimationProgress(EVNAnimationType AnimationType, float Progress);
+	
+	/**
+ * Применить idle анимации из DataAsset после основной анимации
+ * @param CharacterData DataAsset с конфигурацией idle анимаций
+ */
+	void ApplyIdleAnimationsFromDataAsset(class UVNCharacterDataAsset* CharacterData);
 	
 public:
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterFocusChanged OnCharacterFocusChanged;
