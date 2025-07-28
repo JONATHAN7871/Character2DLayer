@@ -325,14 +325,6 @@ public:
 	);
 	
 /**
- * Применить DataAsset для idle анимаций (новый отдельный DataAsset)
- * @param IdleAnimationData DataAsset с настройками idle анимаций
- * @param bRestartAnimations Перезапустить анимации после применения
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
-void ApplyIdleAnimationDataAsset(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bRestartAnimations = true);
-
-/**
  * Применить DataAsset для idle анимаций с плавным переходом
  * @param IdleAnimationData DataAsset с настройками idle анимаций  
  * @param DelayBeforeRestart Задержка перед перезапуском анимаций
@@ -340,62 +332,34 @@ void ApplyIdleAnimationDataAsset(class UVNCharacterIdleAnimationDataAsset* IdleA
 UFUNCTION(BlueprintCallable, Category = "VN Character|Idle Animations")
 void ApplyIdleAnimationDataAssetSmooth(class UVNCharacterIdleAnimationDataAsset* IdleAnimationData, float DelayBeforeRestart = 0.5f);
 
-/**
- * Настроить анимацию моргания по отдельности
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Individual Settings")
-void SetBlinkAnimationSettings(
-    UPaperFlipbook* BlinkFlipbook,
-    bool bEnabled = true,
-    float MinInterval = 2.0f,
-    float MaxInterval = 5.0f,
-    float Duration = 0.15f,
-    float DoubleBlinkChance = 0.3f
-);
 
-/**
- * Настроить анимацию разговора по отдельности
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Individual Settings")
-void SetTalkAnimationSettings(
-    UPaperFlipbook* TalkFlipbook,
-    bool bEnabled = true,
-    float TalkSpeed = 3.0f
-);
 
-/**
- * Настроить анимацию движений глаз по отдельности
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Individual Settings")  
-void SetEyesAnimationSettings(
-    UPaperFlipbook* EyesFlipbook,
-    bool bEnabled = true,
-    float MinLookDuration = 0.2f,
-    float MaxLookDuration = 0.8f,
-    float MinWaitDuration = 0.3f,
-    float MaxWaitDuration = 2.0f
-);
+	// ДОБАВИТЬ ✅
+	// === IDLE ANIMATION INTEGRATION ===
+	void ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleData, bool bRestartAnimations = true);
+	void ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
 
-/**
- * Применить обычный DataAsset с исправлениями спрайтов
- * @param CharacterData DataAsset с спрайтами и мешами (БЕЗ idle анимаций)
- * @param bAnimate Анимировать переход
- * @param Duration Длительность анимации
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Data Asset")
-void ApplyDataAssetFixed(class UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+	// === ANIMATION CONFIGURATION ===
+	void ConfigureBlinkAnimation(UPaperFlipbook* BlinkFlipbook, bool bEnabled, float MinInterval, float MaxInterval, float Duration, float DoubleBlinkChance);
+	void ConfigureTalkAnimation(UPaperFlipbook* TalkFlipbook, bool bEnabled, float TalkSpeed);
+	void ConfigureEyesAnimation(UPaperFlipbook* EyesFlipbook, bool bEnabled, float MinLookDuration, float MaxLookDuration, float MinWaitDuration, float MaxWaitDuration);
 
-/**
- * Экстренное исправление пропавших спрайтов
- */
-UFUNCTION(BlueprintCallable, Category = "VN Character|Debug")
-void FixMissingSprites();
+	// === STATE MANAGEMENT ===
+	void RestoreComponentStates();
+	bool ValidateComponentStates() const;
+	FString GetComponentStatusReport() const;
 
-/**
- * Проверить, есть ли пропавшие спрайты
- */
-UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Debug")
-bool HasMissingSprites() const;
+	// === PRIVATE HELPERS ===
+private:
+	void SynchronizeIdleAnimationStates();
+	void ApplyFocusStateImmediate();
+	void ApplyVisibilityStateImmediate(bool bShouldBeVisible);
+
+
+
+
+
+
 
 /**
  * Получить отчет о состоянии спрайтов

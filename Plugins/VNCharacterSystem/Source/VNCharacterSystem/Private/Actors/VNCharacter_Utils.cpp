@@ -1,5 +1,6 @@
 #include "Actors/VNCharacter.h"
 #include "Components/VNCharacterAnimationManager.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"

@@ -113,7 +113,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "VN Idle Animations")
     void UpdateSavedSprites();
     
-protected:
+public:
     // =====================================================
     // НАСТРОЙКИ КОМПОНЕНТА
     // =====================================================

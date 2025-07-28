@@ -1,13 +1,14 @@
-// VNCharacter_SpriteFix.cpp - Исправление проблемы с исчезающими глазами
+// VNCharacter_IdleAnimationIntegration.cpp - Интеграция с системой idle-анимаций
 
 #include "Actors/VNCharacter.h"
 #include "Components/VNCharacterIdleAnimationManager.h"
 #include "Data/VNCharacterIdleAnimationDataAsset.h"
+#include "Data/VNCharacterDataAsset.h"  // ДОБАВЛЕНО: для корректной компиляции
 #include "VNCharacterSystemModule.h"
 #include "Engine/World.h"
 
 // =====================================================
-// НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С IDLE ANIMATION DATAASSET
+// ИНТЕГРАЦИЯ С IDLE ANIMATION DATAASSET
 // =====================================================
 
 void AVNCharacter::ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bRestartAnimations)
@@ -26,11 +27,9 @@ void AVNCharacter::ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsse
 
     VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAsset: Applying %s"), *IdleAnimationData->GetName());
 
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Останавливаем анимации и СОХРАНЯЕМ текущие спрайты
+    // Останавливаем текущие анимации и синхронизируем состояния
     IdleAnimationManager->StopAllIdleAnimations();
-    
-    // ИСПРАВЛЕНИЕ ГЛАЗ: Принудительно обновляем все сохраненные спрайты до применения
-    IdleAnimationManager->UpdateSavedSprites();
+    SynchronizeIdleAnimationStates();
 
     // Применяем новую конфигурацию
     FVNIdleAnimationsConfig NewConfig = IdleAnimationData->GetIdleAnimationsConfig();
@@ -53,9 +52,7 @@ void AVNCharacter::ApplyIdleAnimationDataAssetSmooth(UVNCharacterIdleAnimationDa
 
     // Останавливаем текущие анимации
     IdleAnimationManager->StopAllIdleAnimations();
-    
-    // ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
-    IdleAnimationManager->UpdateSavedSprites();
+    SynchronizeIdleAnimationStates();
 
     // Применяем конфигурацию с задержкой
     FTimerHandle DelayedTimer;
@@ -75,15 +72,17 @@ void AVNCharacter::ApplyIdleAnimationDataAssetSmooth(UVNCharacterIdleAnimationDa
     );
 }
 
-void AVNCharacter::SetBlinkAnimationSettings(UPaperFlipbook* BlinkFlipbook, bool bEnabled, float MinInterval, float MaxInterval, float Duration, float DoubleBlinkChance)
+// =====================================================
+// КОНФИГУРАЦИЯ ОТДЕЛЬНЫХ АНИМАЦИЙ
+// =====================================================
+
+void AVNCharacter::ConfigureBlinkAnimation(UPaperFlipbook* BlinkFlipbook, bool bEnabled, float MinInterval, float MaxInterval, float Duration, float DoubleBlinkChance)
 {
     if (!IdleAnimationManager) return;
 
-    // Останавливаем моргание
+    // Останавливаем текущее моргание
     IdleAnimationManager->SetBlinkEnabled(false);
-    
-    // ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
-    IdleAnimationManager->UpdateSavedSprites();
+    SynchronizeIdleAnimationStates();
 
     // Получаем текущую конфигурацию и обновляем только моргание
     FVNIdleAnimationsConfig CurrentConfig = IdleAnimationManager->GetIdleAnimationsConfig();
@@ -98,18 +97,16 @@ void AVNCharacter::SetBlinkAnimationSettings(UPaperFlipbook* BlinkFlipbook, bool
     // Применяем обновленную конфигурацию
     IdleAnimationManager->SetIdleAnimationsConfig(CurrentConfig);
 
-    VN_LOG_DEBUG(TEXT("SetBlinkAnimationSettings: Updated blink settings"));
+    VN_LOG_DEBUG(TEXT("ConfigureBlinkAnimation: Updated blink settings"));
 }
 
-void AVNCharacter::SetTalkAnimationSettings(UPaperFlipbook* TalkFlipbook, bool bEnabled, float TalkSpeed)
+void AVNCharacter::ConfigureTalkAnimation(UPaperFlipbook* TalkFlipbook, bool bEnabled, float TalkSpeed)
 {
     if (!IdleAnimationManager) return;
 
-    // Останавливаем разговор
+    // Останавливаем текущий разговор
     IdleAnimationManager->SetTalkEnabled(false);
-    
-    // ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
-    IdleAnimationManager->UpdateSavedSprites();
+    SynchronizeIdleAnimationStates();
 
     // Обновляем только настройки разговора
     FVNIdleAnimationsConfig CurrentConfig = IdleAnimationManager->GetIdleAnimationsConfig();
@@ -121,18 +118,16 @@ void AVNCharacter::SetTalkAnimationSettings(UPaperFlipbook* TalkFlipbook, bool b
     // Применяем обновленную конфигурацию
     IdleAnimationManager->SetIdleAnimationsConfig(CurrentConfig);
 
-    VN_LOG_DEBUG(TEXT("SetTalkAnimationSettings: Updated talk settings"));
+    VN_LOG_DEBUG(TEXT("ConfigureTalkAnimation: Updated talk settings"));
 }
 
-void AVNCharacter::SetEyesAnimationSettings(UPaperFlipbook* EyesFlipbook, bool bEnabled, float MinLookDuration, float MaxLookDuration, float MinWaitDuration, float MaxWaitDuration)
+void AVNCharacter::ConfigureEyesAnimation(UPaperFlipbook* EyesFlipbook, bool bEnabled, float MinLookDuration, float MaxLookDuration, float MinWaitDuration, float MaxWaitDuration)
 {
     if (!IdleAnimationManager) return;
 
     // Останавливаем движения глаз
     IdleAnimationManager->SetEyesRandomEnabled(false);
-    
-    // ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
-    IdleAnimationManager->UpdateSavedSprites();
+    SynchronizeIdleAnimationStates();
 
     // Обновляем только настройки глаз
     FVNIdleAnimationsConfig CurrentConfig = IdleAnimationManager->GetIdleAnimationsConfig();
@@ -147,46 +142,46 @@ void AVNCharacter::SetEyesAnimationSettings(UPaperFlipbook* EyesFlipbook, bool b
     // Применяем обновленную конфигурацию
     IdleAnimationManager->SetIdleAnimationsConfig(CurrentConfig);
 
-    VN_LOG_DEBUG(TEXT("SetEyesAnimationSettings: Updated eyes settings"));
+    VN_LOG_DEBUG(TEXT("ConfigureEyesAnimation: Updated eyes settings"));
 }
 
 // =====================================================
-// ИСПРАВЛЕНИЕ DATAASSET БЕЗ IDLE АНИМАЦИЙ
+// УЛУЧШЕННАЯ ИНТЕГРАЦИЯ С DATAASSET
 // =====================================================
 
-void AVNCharacter::ApplyDataAssetFixed(UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
+void AVNCharacter::ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* CharacterData, bool bAnimate, float Duration)
 {
     if (!CharacterData)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAssetFixed: CharacterData is null"));
+        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleSupport: CharacterData is null"));
         return;
     }
 
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем текущие спрайты ПЕРЕД применением DataAsset
+    // Синхронизируем состояния ПЕРЕД применением DataAsset
     if (IdleAnimationManager)
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAssetFixed: Updating saved sprites before DataAsset application"));
-        IdleAnimationManager->UpdateSavedSprites();
+        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: Synchronizing states before DataAsset application"));
+        SynchronizeIdleAnimationStates();
     }
 
-    // Применяем обычный DataAsset (теперь БЕЗ idle анимаций)
+    // Применяем DataAsset (который теперь содержит только спрайты и мешы)
     ApplyDataAsset(CharacterData, bAnimate, Duration);
 
-    // ИСПРАВЛЕНИЕ ГЛАЗ: После применения DataAsset обновляем сохраненные спрайты снова
+    // После применения DataAsset синхронизируем состояния снова
     if (IdleAnimationManager)
     {
         if (bAnimate && Duration > 0.0f)
         {
-            // Ждем завершения анимации и обновляем сохраненные спрайты
-            FTimerHandle FixTimer;
+            // Ждем завершения анимации и синхронизируем состояния
+            FTimerHandle SyncTimer;
             GetWorld()->GetTimerManager().SetTimer(
-                FixTimer,
+                SyncTimer,
                 [this]()
                 {
                     if (IdleAnimationManager)
                     {
-                        IdleAnimationManager->UpdateSavedSprites();
-                        VN_LOG_DEBUG(TEXT("ApplyDataAssetFixed: Updated saved sprites after animation"));
+                        SynchronizeIdleAnimationStates();
+                        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized after animation"));
                     }
                 },
                 Duration + 0.1f,
@@ -195,46 +190,60 @@ void AVNCharacter::ApplyDataAssetFixed(UVNCharacterDataAsset* CharacterData, boo
         }
         else
         {
-            // Мгновенное обновление
-            IdleAnimationManager->UpdateSavedSprites();
+            // Мгновенная синхронизация
+            SynchronizeIdleAnimationStates();
         }
     }
 }
 
+void AVNCharacter::ApplyIdleAnimationsFromDataAsset(UVNCharacterDataAsset* CharacterData)
+{
+    // УСТАРЕЛО: Этот метод больше не нужен, так как idle анимации 
+    // теперь в отдельном UVNCharacterIdleAnimationDataAsset
+    
+    VN_LOG_WARNING(TEXT("ApplyIdleAnimationsFromDataAsset: This method is deprecated. Use ApplyIdleAnimationDataAsset with UVNCharacterIdleAnimationDataAsset instead."));
+    
+    // Просто синхронизируем состояния
+    if (IdleAnimationManager)
+    {
+        SynchronizeIdleAnimationStates();
+    }
+}
+
 // =====================================================
-// ЭКСТРЕННОЕ ИСПРАВЛЕНИЕ ПРОПАВШИХ СПРАЙТОВ
+// СИСТЕМА ВАЛИДАЦИИ И ВОССТАНОВЛЕНИЯ СОСТОЯНИЙ
 // =====================================================
 
-void AVNCharacter::FixMissingSprites()
+void AVNCharacter::RestoreComponentStates()
 {
-    VN_LOG_WARNING(TEXT("FixMissingSprites: Emergency sprite restoration"));
+    VN_LOG_WARNING(TEXT("RestoreComponentStates: Restoring component states"));
     
-    // Проверяем и исправляем основные компоненты лица
-    bool bNeedsSpriteUpdate = false;
+    // Проверяем и восстанавливаем основные компоненты лица
+    bool bNeedsStateSync = false;
 
     if (Eyes_Sprite && !Eyes_Sprite->GetSprite())
     {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyes sprite missing"));
-        bNeedsSpriteUpdate = true;
+        VN_LOG_WARNING(TEXT("RestoreComponentStates: Eyes sprite missing"));
+        bNeedsStateSync = true;
     }
 
     if (Mouth_Sprite && !Mouth_Sprite->GetSprite())
     {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Mouth sprite missing"));
-        bNeedsSpriteUpdate = true;
+        VN_LOG_WARNING(TEXT("RestoreComponentStates: Mouth sprite missing"));
+        bNeedsStateSync = true;
     }
     
     if (Eyebrow_Sprite && !Eyebrow_Sprite->GetSprite())
     {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyebrow sprite missing"));
-        bNeedsSpriteUpdate = true;
+        VN_LOG_WARNING(TEXT("RestoreComponentStates: Eyebrow sprite missing"));
+        bNeedsStateSync = true;
     }
 
-    // Если IdleAnimationManager есть и обнаружены проблемы - обновляем
-    if (bNeedsSpriteUpdate && IdleAnimationManager)
+    // Если IdleAnimationManager есть и обнаружены проблемы - синхронизируем
+    if (bNeedsStateSync && IdleAnimationManager)
     {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Updating saved sprites in IdleAnimationManager"));
-        IdleAnimationManager->UpdateSavedSprites();
+        VN_LOG_WARNING(TEXT("RestoreComponentStates: Synchronizing states in IdleAnimationManager"));
+        SynchronizeIdleAnimationStates();
     }
     
     // Принудительно показываем все основные компоненты
@@ -248,24 +257,20 @@ void AVNCharacter::FixMissingSprites()
         }
     }
 
-    VN_LOG_DEBUG(TEXT("FixMissingSprites: Emergency fix completed"));
+    VN_LOG_DEBUG(TEXT("RestoreComponentStates: Component state restoration completed"));
 }
 
-// =====================================================
-// УТИЛИТЫ ДЛЯ ПРОВЕРКИ СОСТОЯНИЯ
-// =====================================================
-
-bool AVNCharacter::HasMissingSprites() const
+bool AVNCharacter::ValidateComponentStates() const
 {
     // Проверяем основные компоненты лица
-    if (Eyes_Sprite && !Eyes_Sprite->GetSprite()) return true;
-    if (Mouth_Sprite && !Mouth_Sprite->GetSprite()) return true;
-    if (Eyebrow_Sprite && !Eyebrow_Sprite->GetSprite()) return true;
+    if (Eyes_Sprite && !Eyes_Sprite->GetSprite()) return false;
+    if (Mouth_Sprite && !Mouth_Sprite->GetSprite()) return false;
+    if (Eyebrow_Sprite && !Eyebrow_Sprite->GetSprite()) return false;
     
-    return false;
+    return true;
 }
 
-FString AVNCharacter::GetSpritesStatusReport() const
+FString AVNCharacter::GetComponentStatusReport() const
 {
     TArray<FString> StatusLines;
     
@@ -282,4 +287,18 @@ FString AVNCharacter::GetSpritesStatusReport() const
         (Eyelids_Sprite && Eyelids_Sprite->GetSprite()) ? *Eyelids_Sprite->GetSprite()->GetName() : TEXT("MISSING")));
 
     return FString::Join(StatusLines, TEXT("\n"));
+}
+
+// =====================================================
+// ВНУТРЕННИЕ ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+// =====================================================
+
+void AVNCharacter::SynchronizeIdleAnimationStates()
+{
+    if (!IdleAnimationManager) return;
+
+    // Обновляем все сохраненные спрайты до текущего состояния
+    IdleAnimationManager->UpdateSavedSprites();
+    
+    VN_LOG_DEBUG(TEXT("SynchronizeIdleAnimationStates: Idle animation states synchronized"));
 }

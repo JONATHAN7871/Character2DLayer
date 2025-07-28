@@ -124,30 +124,6 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
         HideAllFadeComponents();
     }
 
-    // --- ПРИМЕНЕНИЕ IDLE АНИМАЦИЙ ---
-    if (IdleAnimationManager)
-    {
-        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Applying idle animations config"));
-        
-        // Устанавливаем конфигурацию idle анимаций
-        IdleAnimationManager->SetIdleAnimationsConfig(CharacterData->IdleAnimationsConfig);
-        
-        // Автоматически запускаем idle анимации если включен флаг
-        if (CharacterData->bAutoStartIdleAnimations)
-        {
-            VN_LOG_DEBUG(TEXT("ApplyDataAsset: Auto-starting idle animations"));
-            IdleAnimationManager->StartAllIdleAnimations();
-        }
-        else
-        {
-            VN_LOG_DEBUG(TEXT("ApplyDataAsset: Idle animations config applied but not auto-started"));
-        }
-    }
-    else
-    {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: IdleAnimationManager is null, skipping idle animations"));
-    }
-
     VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed application of DataAsset %s"), *CharacterData->GetName());
 }
 
@@ -383,62 +359,6 @@ void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* Chara
         {
             // Мгновенное применение
             ApplyIdleAnimationsFromDataAsset(CharacterData);
-        }
-    }
-}
-
-void AVNCharacter::ApplyIdleAnimationsFromDataAsset(UVNCharacterDataAsset* CharacterData)
-{
-    if (!CharacterData || !IdleAnimationManager) return;
-
-    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Applying config"));
-    
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
-    IdleAnimationManager->UpdateSavedSprites();
-    
-    // Устанавливаем новую конфигурацию
-    IdleAnimationManager->SetIdleAnimationsConfig(CharacterData->IdleAnimationsConfig);
-    
-    // Автозапуск если включен
-    if (CharacterData->bAutoStartIdleAnimations)
-    {
-        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Auto-starting animations"));
-        IdleAnimationManager->StartAllIdleAnimations();
-    }
-}
-
-void AVNCharacter::FixMissingSprites()
-{
-    VN_LOG_WARNING(TEXT("FixMissingSprites: Emergency sprite restoration"));
-    
-    // Проверяем основные компоненты лица
-    if (Mouth_Sprite && !Mouth_Sprite->GetSprite())
-    {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Mouth sprite missing"));
-        if (IdleAnimationManager)
-        {
-            IdleAnimationManager->UpdateSavedSprites();
-        }
-    }
-    
-    if (Eyes_Sprite && !Eyes_Sprite->GetSprite())
-    {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyes sprite missing"));
-    }
-    
-    if (Eyebrow_Sprite && !Eyebrow_Sprite->GetSprite())
-    {
-        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyebrow sprite missing"));
-    }
-    
-    // Принудительно показываем все основные компоненты
-    TArray<USceneComponent*> AllMainComponents = GetAllMainComponents();
-    for (USceneComponent* Component : AllMainComponents)
-    {
-        if (Component && Component != BodyShadow_Sprite)
-        {
-            Component->SetHiddenInGame(false);
-            Component->SetVisibility(true);
         }
     }
 }
