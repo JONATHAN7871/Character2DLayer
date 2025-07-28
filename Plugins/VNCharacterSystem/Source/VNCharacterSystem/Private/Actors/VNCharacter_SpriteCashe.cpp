@@ -63,26 +63,31 @@ void AVNCharacter::UpdateSpriteCache()
 {
     VN_LOG_DEBUG(TEXT("UpdateSpriteCache: Updating all cached sprites to current component state"));
     
+    // ИСПРАВЛЕНО: Добавлено кэширование всех нужных компонентов
     if (Eyes_Sprite)
     {
         CachedEyesSprite = Eyes_Sprite->GetSprite();
-        VN_LOG_DEBUG(TEXT("UpdateSpriteCache: Eyebrow updated to: %s"), 
-            CachedEyebrowSprite.IsNull() ? TEXT("NULL") : *CachedEyebrowSprite.ToString());
     }
-    
+    if (Mouth_Sprite)
+    {
+        CachedMouthSprite = Mouth_Sprite->GetSprite();
+    }
+    if (Eyebrow_Sprite)
+    {
+        CachedEyebrowSprite = Eyebrow_Sprite->GetSprite();
+    }
     if (Eyelids_Sprite)
     {
         CachedEyelidsSprite = Eyelids_Sprite->GetSprite();
-        VN_LOG_DEBUG(TEXT("UpdateSpriteCache: Eyelids updated to: %s"), 
-            CachedEyelidsSprite.IsNull() ? TEXT("NULL") : *CachedEyelidsSprite.ToString());
     }
-    
     if (Wink_Sprite)
     {
         CachedWinkSprite = Wink_Sprite->GetSprite();
-        VN_LOG_DEBUG(TEXT("UpdateSpriteCache: Wink updated to: %s"), 
-            CachedWinkSprite.IsNull() ? TEXT("NULL") : *CachedWinkSprite.ToString());
     }
+    
+    // Логирование для отладки
+    VN_LOG_DEBUG(TEXT("UpdateSpriteCache: Eyelids updated to: %s"), 
+        CachedEyelidsSprite.IsNull() ? TEXT("NULL") : *CachedEyelidsSprite.ToString());
 }
 
 void AVNCharacter::RestoreSpriteFromCache(E_VN_ComponentID_Sprite ComponentID)
