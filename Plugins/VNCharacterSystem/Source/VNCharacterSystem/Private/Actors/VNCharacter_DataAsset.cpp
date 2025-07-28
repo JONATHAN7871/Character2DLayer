@@ -355,7 +355,7 @@ void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* Chara
     // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Останавливаем idle анимации ПЕРЕД применением DataAsset
     if (IdleAnimationManager)
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Stopping idle animations before DataAsset application"));
+        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Stopping idle animations"));
         IdleAnimationManager->StopAllIdleAnimations();
     }
 
@@ -367,7 +367,7 @@ void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* Chara
     {
         if (bAnimate && Duration > 0.0f)
         {
-            // Запускаем idle анимации с задержкой после завершения основной анимации
+            // Запускаем idle анимации с задержкой
             FTimerHandle DelayedIdleTimer;
             GetWorld()->GetTimerManager().SetTimer(
                 DelayedIdleTimer,
@@ -375,7 +375,7 @@ void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* Chara
                 {
                     ApplyIdleAnimationsFromDataAsset(CharacterData);
                 },
-                Duration + 0.1f, // Небольшая задержка после основной анимации
+                Duration + 0.1f, // Небольшая задержка
                 false
             );
         }
@@ -387,34 +387,58 @@ void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterDataAsset* Chara
     }
 }
 
-// Отдельный метод для применения idle анимаций из DataAsset
 void AVNCharacter::ApplyIdleAnimationsFromDataAsset(UVNCharacterDataAsset* CharacterData)
 {
-    if (!CharacterData || !IdleAnimationManager)
-    {
-        return;
-    }
+    if (!CharacterData || !IdleAnimationManager) return;
 
-    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Applying idle animations config"));
+    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Applying config"));
     
-    // Сохраняем текущие спрайты перед настройкой idle анимаций
-    if (IdleAnimationManager)
-    {
-        // Принудительно обновляем сохраненные спрайты для всех компонентов
-        IdleAnimationManager->UpdateSavedSprites();
-    }
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем сохраненные спрайты
+    IdleAnimationManager->UpdateSavedSprites();
     
-    // Устанавливаем конфигурацию idle анимаций
+    // Устанавливаем новую конфигурацию
     IdleAnimationManager->SetIdleAnimationsConfig(CharacterData->IdleAnimationsConfig);
     
-    // Автоматически запускаем idle анимации если включен флаг
+    // Автозапуск если включен
     if (CharacterData->bAutoStartIdleAnimations)
     {
-        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Auto-starting idle animations"));
+        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Auto-starting animations"));
         IdleAnimationManager->StartAllIdleAnimations();
     }
-    else
+}
+
+void AVNCharacter::FixMissingSprites()
+{
+    VN_LOG_WARNING(TEXT("FixMissingSprites: Emergency sprite restoration"));
+    
+    // Проверяем основные компоненты лица
+    if (Mouth_Sprite && !Mouth_Sprite->GetSprite())
     {
-        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationsFromDataAsset: Idle animations config applied but not auto-started"));
+        VN_LOG_WARNING(TEXT("FixMissingSprites: Mouth sprite missing"));
+        if (IdleAnimationManager)
+        {
+            IdleAnimationManager->UpdateSavedSprites();
+        }
+    }
+    
+    if (Eyes_Sprite && !Eyes_Sprite->GetSprite())
+    {
+        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyes sprite missing"));
+    }
+    
+    if (Eyebrow_Sprite && !Eyebrow_Sprite->GetSprite())
+    {
+        VN_LOG_WARNING(TEXT("FixMissingSprites: Eyebrow sprite missing"));
+    }
+    
+    // Принудительно показываем все основные компоненты
+    TArray<USceneComponent*> AllMainComponents = GetAllMainComponents();
+    for (USceneComponent* Component : AllMainComponents)
+    {
+        if (Component && Component != BodyShadow_Sprite)
+        {
+            Component->SetHiddenInGame(false);
+            Component->SetVisibility(true);
+        }
     }
 }

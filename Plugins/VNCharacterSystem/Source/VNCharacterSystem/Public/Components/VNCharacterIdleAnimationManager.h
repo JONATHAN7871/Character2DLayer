@@ -109,7 +109,6 @@ public:
 
     /**
      * Обновить все сохраненные спрайты до текущего состояния
-     * Используется при применении DataAsset для синхронизации
      */
     UFUNCTION(BlueprintCallable, Category = "VN Idle Animations")
     void UpdateSavedSprites();
@@ -301,6 +300,7 @@ private:
      * Выводит подробную информацию о содержимом flipbook
      * @param Flipbook Flipbook для анализа
      */
+    UFUNCTION(BlueprintCallable, Category = "VN Idle Animations")
     void DebugFlipbook(UPaperFlipbook* Flipbook) const;
 
     // === УЛУЧШЕННЫЕ МЕТОДЫ СОХРАНЕНИЯ И ВОССТАНОВЛЕНИЯ СПРАЙТОВ ===
