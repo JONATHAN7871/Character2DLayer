@@ -13,7 +13,7 @@ void AVNCharacter::CreateComponents()
 	AnimationManager = CreateDefaultSubobject<UVNCharacterAnimationManager>(TEXT("AnimationManager"));
 	IdleAnimationManager = CreateDefaultSubobject<UVNCharacterIdleAnimationManager>(TEXT("IdleAnimationManager"));
 	CharacterRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CharacterRoot"));
-
+	
 	Body_Skeletal = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body_Skeletal"));
 	Arms_Skeletal = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Arms_Skeletal"));
 	Head_Skeletal = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Head_Skeletal"));

@@ -8,82 +8,120 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "VNCharacterSystemModule.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/AssetManager.h"
 
-void AVNCharacter::CharacterSpawn(bool bIsNarrator, UVNCharacterDataAsset* InCharacterData, UVNCharacterIdleAnimationDataAsset* InIdleData, bool bAnimate, float Duration)
+void AVNCharacter::RequestSpawn(const FString& NewName, bool bIsNarrator, TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
+                                bool bAnimateAsset, float AssetDuration, bool bShouldAppear, float AppearDuration)
 {
-    VN_LOG_DEBUG(TEXT("CharacterSpawn: Initializing character '%s'. Narrator: %s"), 
-        *CharacterName, bIsNarrator ? TEXT("true") : TEXT("false"));
+    // 1. Сохраняем все параметры запроса в структуру
+    CurrentSpawnRequest.CharacterName = NewName;
+    CurrentSpawnRequest.bIsNarrator = bIsNarrator;
+    CurrentSpawnRequest.CharacterDataPtr = InCharacterData;
+    CurrentSpawnRequest.IdleDataPtr = InIdleData;
+    CurrentSpawnRequest.bAnimateAsset = bAnimateAsset;
+    CurrentSpawnRequest.AssetDuration = AssetDuration;
+    CurrentSpawnRequest.bShouldAppear = bShouldAppear;
+    CurrentSpawnRequest.AppearDuration = AppearDuration;
 
-    // Останавливаем все текущие анимации, чтобы избежать конфликтов
-    if (AnimationManager)
+    // 2. Собираем список ассетов, которые нужно загрузить
+    TArray<FSoftObjectPath> AssetsToLoad;
+    if (!CurrentSpawnRequest.CharacterDataPtr.IsNull())
     {
-        AnimationManager->ClearAnimationQueue();
+        AssetsToLoad.Add(CurrentSpawnRequest.CharacterDataPtr.ToSoftObjectPath());
     }
-    if (IdleAnimationManager)
+    if (!CurrentSpawnRequest.IdleDataPtr.IsNull())
     {
-        IdleAnimationManager->StopAllIdleAnimations();
+        AssetsToLoad.Add(CurrentSpawnRequest.IdleDataPtr.ToSoftObjectPath());
     }
 
-    // --- ОБРАБОТКА СЛУЧАЯ "РАССКАЗЧИК" ---
+    // 3. Если ассеты есть, запускаем асинхронную загрузку. Если нет - сразу выполняем логику.
+    if (AssetsToLoad.Num() > 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("RequestSpawn: Starting async load for character '%s'"), *NewName);
+        FStreamableManager& StreamableManager = UAssetManager::Get().GetStreamableManager();
+        StreamableManager.RequestAsyncLoad(AssetsToLoad, FStreamableDelegate::CreateUObject(this, &AVNCharacter::OnAssetsLoadedForSpawn));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("RequestSpawn: No assets to load for '%s'. Executing spawn logic immediately."), *NewName);
+        OnAssetsLoadedForSpawn();
+    }
+}
+
+void AVNCharacter::OnAssetsLoadedForSpawn()
+{
+    // Используем данные из сохраненного запроса
+    const FString& NewName = CurrentSpawnRequest.CharacterName;
+    const bool bIsNarrator = CurrentSpawnRequest.bIsNarrator;
+    UVNCharacterDataAsset* InCharacterData = CurrentSpawnRequest.CharacterDataPtr.Get();
+    UVNCharacterIdleAnimationDataAsset* InIdleData = CurrentSpawnRequest.IdleDataPtr.Get();
+    const bool bAnimateAsset = CurrentSpawnRequest.bAnimateAsset;
+    const float AssetDuration = CurrentSpawnRequest.AssetDuration;
+    const bool bShouldAppear = CurrentSpawnRequest.bShouldAppear;
+    const float AppearDuration = CurrentSpawnRequest.AppearDuration;
+
+    SetCharacterName(NewName);
+    VN_LOG_DEBUG(TEXT("OnAssetsLoadedForSpawn: Assets loaded. Initializing character '%s'."), *NewName);
+
+    if (AnimationManager) AnimationManager->ClearAnimationQueue();
+    if (IdleAnimationManager) IdleAnimationManager->StopAllIdleAnimations();
+    SetActorHiddenInGame(false);
+
     if (bIsNarrator)
     {
-        VN_LOG_DEBUG(TEXT("CharacterSpawn: Configuring as Narrator. Clearing all visuals."));
-        ClearAllSettings(); // Очищает все спрайты, меши и кэши
-        SetActorHiddenInGame(true); // Скрываем самого актора
-        PrimaryActorTick.SetTickFunctionEnable(false); // Отключаем Tick за ненадобностью
+        ClearAllSettings();
+        SetActorHiddenInGame(true);
+        PrimaryActorTick.SetTickFunctionEnable(false);
         return;
     }
 
-    // --- СТАНДАРТНАЯ ИНИЦИАЛИЗАЦИЯ ПЕРСОНАЖА ---
-    
-    // Убеждаемся, что актор видим
-    SetActorHiddenInGame(false);
-    PrimaryActorTick.SetTickFunctionEnable(true); // Включаем Tick, если он был выключен
+    PrimaryActorTick.SetTickFunctionEnable(true);
+    SetActorHiddenInGame(true);
 
-    // Применяем Character DataAsset, если он указан
     if (InCharacterData)
     {
-        VN_LOG_DEBUG(TEXT("CharacterSpawn: Applying Character DataAsset '%s'"), *InCharacterData->GetName());
-        ApplyDataAsset(InCharacterData, bAnimate, Duration);
+        ApplyDataAsset(InCharacterData, bAnimateAsset, AssetDuration);
     }
     else
     {
-        VN_LOG_WARNING(TEXT("CharacterSpawn: Character DataAsset is not provided. Character may be empty."));
-        // Если DataAsset не указан, все равно очищаем персонажа, чтобы не осталось старых частей
         ClearAllSettings();
     }
 
-    // Применяем Idle Animation DataAsset, если он указан
     if (InIdleData)
     {
-        VN_LOG_DEBUG(TEXT("CharacterSpawn: Applying Idle DataAsset '%s'"), *InIdleData->GetName());
-
-        // Если спавн анимированный, ждем завершения основной анимации
-        if (bAnimate && Duration > 0.f)
+        float IdleApplyDelay = (bAnimateAsset && AssetDuration > 0.f) ? AssetDuration + 0.1f : 0.f;
+        if (IdleApplyDelay > 0.f)
         {
             FTimerHandle IdleApplyTimer;
-            GetWorld()->GetTimerManager().SetTimer(
-                IdleApplyTimer,
-                [this, InIdleData]() 
-                {
-                    if (this && InIdleData) 
-                    {
-                        // Применяем Idle DataAsset с перезапуском анимаций
-                        this->ApplyIdleAnimationDataAsset(InIdleData, true);
-                        VN_LOG_DEBUG(TEXT("CharacterSpawn: Idle animations applied after delay."));
-                    }
-                }, 
-                Duration + 0.1f, // Небольшая задержка после завершения основной анимации
-                false);
+            GetWorld()->GetTimerManager().SetTimer(IdleApplyTimer, [this, InIdleData]() {
+                if (this && InIdleData) this->ApplyIdleAnimationDataAsset(InIdleData, true);
+            }, IdleApplyDelay, false);
         }
         else
         {
-            // Применяем немедленно
             ApplyIdleAnimationDataAsset(InIdleData, true);
+        }
+    }
+
+    if (bShouldAppear)
+    {
+        float AppearDelay = (bAnimateAsset && AssetDuration > 0.f) ? AssetDuration : 0.f;
+        if (AppearDelay > 0.f)
+        {
+            FTimerHandle AppearTimer;
+            GetWorld()->GetTimerManager().SetTimer(AppearTimer, [this, AppearDuration]() {
+                if (this) this->Appear(AppearDuration);
+            }, AppearDelay, false);
+        }
+        else
+        {
+            this->Appear(AppearDuration);
         }
     }
     else
     {
-        VN_LOG_DEBUG(TEXT("CharacterSpawn: Idle DataAsset is not provided. No idle animations will be set."));
+        SetActorHiddenInGame(false);
+        ApplyVisibilityStateImmediate(true);
     }
 }

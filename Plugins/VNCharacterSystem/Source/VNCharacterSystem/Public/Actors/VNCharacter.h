@@ -24,6 +24,33 @@ class UVNCharacterAnimInstance;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
+/**
+ * Структура для хранения параметров запроса на спавн, 
+ * пока ассеты асинхронно загружаются.
+ */
+USTRUCT()
+struct FVNCharacterSpawnRequestPayload
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString CharacterName;
+	UPROPERTY()
+	bool bIsNarrator = false;
+	UPROPERTY()
+	TSoftObjectPtr<UVNCharacterDataAsset> CharacterDataPtr;
+	UPROPERTY()
+	TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> IdleDataPtr;
+	UPROPERTY()
+	bool bAnimateAsset = false;
+	UPROPERTY()
+	float AssetDuration = 1.0f;
+	UPROPERTY()
+	bool bShouldAppear = true;
+	UPROPERTY()
+	float AppearDuration = 1.0f;
+};
+
 // =====================================================
 // СОБЫТИЯ И ДЕЛЕГАТЫ
 // =====================================================
@@ -234,6 +261,9 @@ private:
 	// === АВТОИНИЦИАЛИЗАЦИЯ ===
 	FTimerHandle AutoInitTimerHandle;
 
+	/** Хранит данные для текущего асинхронного запроса на спавн. */
+	FVNCharacterSpawnRequestPayload CurrentSpawnRequest;
+
 	// =====================================================
 	// НАСТРОЙКИ ПЕРСОНАЖА (PROTECTED)
 	// =====================================================
@@ -272,6 +302,12 @@ protected:
 	float GlobalSpriteScale = 1.0f;
 
 	// === АВТОМАТИЧЕСКАЯ ИНИЦИАЛИЗАЦИЯ ===
+
+	/**
+	 * Вызывается, когда все ассеты для спавна были успешно загружены.
+	 */
+	void OnAssetsLoadedForSpawn();
+	
 	/** DataAsset для автоматической инициализации персонажа */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Initialize", 
 		meta = (DisplayName = "Character DataAsset"))
@@ -304,6 +340,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Initialize")
 	bool bAutoStartIdleAnimations = true;
 
+	
 	// =====================================================
 	// ПУБЛИЧНОЕ API - ОСНОВНЫЕ МЕТОДЫ УПРАВЛЕНИЯ
 	// =====================================================
@@ -311,17 +348,11 @@ protected:
 public:
     // === НОВАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ===
     
-    /** 
-     * Инициализирует или "спавнит" персонажа с заданными параметрами.
-     * @param bIsNarrator Если true, персонаж будет сконфигурирован как невидимый рассказчик без визуальных компонентов.
-     * @param InCharacterData DataAsset с визуальной конфигурацией.
-     * @param InIdleData DataAsset с конфигурацией idle-анимаций.
-     * @param bAnimate Применить ли изменения с анимацией (fade).
-     * @param Duration Длительность анимации.
-     */
-    UFUNCTION(BlueprintCallable, Category = "VN Character | Initialization")
-    void CharacterSpawn(bool bIsNarrator, UVNCharacterDataAsset* InCharacterData, UVNCharacterIdleAnimationDataAsset* InIdleData, bool bAnimate = false, float Duration = 1.0f);
-
+	/**
+	 * Асинхронно запрашивает инициализацию персонажа. Запускает загрузку ассетов.
+	 */
+	void RequestSpawn(const FString& NewName, bool bIsNarrator, TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
+						bool bAnimateAsset, float AssetDuration, bool bShouldAppear, float AppearDuration);
 
 	// === ОСНОВНОЕ API - УСТАНОВКА КОНТЕНТА ===
 	
@@ -546,6 +577,14 @@ public:
 
 	// === ИНФОРМАЦИЯ О СОСТОЯНИИ ===
 	
+	/** Получить имя персонажа. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Status")
+	FString GetCharacterName() const { return CharacterName; }
+
+	/** Установить имя персонажа. Важно для спавна и последующего поиска. */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Status")
+	void SetCharacterName(const FString& NewName) { CharacterName = NewName; }
+
 	/** Проверить, выполняется ли анимация */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Status") 
 	bool IsAnimating() const;
