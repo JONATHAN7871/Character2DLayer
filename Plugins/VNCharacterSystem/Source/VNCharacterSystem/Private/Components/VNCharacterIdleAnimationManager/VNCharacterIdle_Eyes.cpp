@@ -47,24 +47,20 @@ void UVNCharacterIdleAnimationManager::StopEyesRandomAnimation()
         // ИСПРАВЛЕНИЕ: Проверяем кэш перед восстановлением
         TSoftObjectPtr<UPaperSprite> CachedEyes = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
         
-        if (CachedEyes.IsNull())
+        if (!CachedEyes.IsNull())
         {
-            VN_LOG_WARNING(TEXT("StopEyesRandomAnimation: Cached eyes is null! Current sprite: %s"), 
-                Character->Eyes_Sprite->GetSprite() ? *Character->Eyes_Sprite->GetSprite()->GetName() : TEXT("NULL"));
-            
-            // Если кэш пустой, но текущий спрайт не является частью анимации - сохраняем его
-            UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
-            if (CurrentSprite && !IsAnimationSprite(Character->Eyes_Sprite, CurrentSprite))
-            {
-                VN_LOG_WARNING(TEXT("StopEyesRandomAnimation: Saving current non-animation sprite to cache"));
-                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, CurrentSprite);
-            }
+            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
+            VN_LOG_DEBUG(TEXT("StopEyesRandomAnimation: Restored eyes from cache"));
         }
         else
         {
-            // Восстанавливаем из кэша
-            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
-            VN_LOG_DEBUG(TEXT("StopEyesRandomAnimation: Restored eyes from cache"));
+            VN_LOG_WARNING(TEXT("StopEyesRandomAnimation: Cache is empty, keeping current sprite"));
+            // Сохраняем текущий спрайт в кэш для будущих использований
+            UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
+            if (CurrentSprite)
+            {
+                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, CurrentSprite);
+            }
         }
     }
 

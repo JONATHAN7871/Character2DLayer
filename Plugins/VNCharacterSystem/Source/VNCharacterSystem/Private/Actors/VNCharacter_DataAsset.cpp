@@ -51,7 +51,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
         GlobalSpriteScale = CharacterData->GlobalSpriteScale;
     }
     
-    // --- STEP 5: СБОРКА ИЗМЕНЕНИЙ - ПРОХОД ПО ВСЕМ КОМПОНЕНТАМ ---
+    // --- STEP 5: ОБРАБОТКА ИЗМЕНЕНИЙ С УЛУЧШЕННЫМ КЭШИРОВАНИЕМ ---
     
     // === SKELETAL КОМПОНЕНТЫ ===
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig.SkeletalMesh, bAnimate);
@@ -61,7 +61,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config.SkeletalMesh, bAnimate);
 
-    // === SPRITE КОМПОНЕНТЫ ===
+    // === SPRITE КОМПОНЕНТЫ С ПРАВИЛЬНЫМ КЭШИРОВАНИЕМ ===
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig.Sprite, bAnimate);
@@ -70,7 +70,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig.Sprite, bAnimate);
     
-    // === FACIAL SPRITE КОМПОНЕНТЫ ===
+    // === КРИТИЧЕСКИ ВАЖНЫЕ FACIAL КОМПОНЕНТЫ ===
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig.Sprite, bAnimate);
@@ -128,7 +128,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
 }
 
 // =====================================================
-// НОВЫЕ HELPER ФУНКЦИИ ДЛЯ ОБРАБОТКИ ИЗМЕНЕНИЙ
+// ОБНОВЛЕННЫЕ HELPER ФУНКЦИИ ДЛЯ ОБРАБОТКИ ИЗМЕНЕНИЙ
 // =====================================================
 
 void AVNCharacter::ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal ID, TSoftObjectPtr<USkeletalMesh> NewMesh, bool bAnimate)
@@ -161,6 +161,9 @@ void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSof
     UPaperSpriteComponent* MainComp = GetSpriteComponent(ID);
     if (!MainComp) return;
     
+    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Всегда обновляем кэш при изменении в DataAsset ===
+    UpdateCacheForComponent(ID, NewSprite);
+    
     const UPaperSprite* CurrentSprite = MainComp->GetSprite();
     bool bAssetChanged = false;
     
@@ -179,6 +182,9 @@ void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSof
     {
         ValidateAndSetupSpriteComponent(MainComp, NewSprite);
     }
+    
+    // === НОВОЕ: Уведомляем IdleManager об изменении ===
+    NotifyIdleManagerAboutSpriteChange(ID, NewSprite);
 }
 
 // =====================================================
@@ -201,46 +207,6 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     }
     
     ResetComponentAttachmentToDefault(Comp);
-    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
-    FLinearColor ConfigColor = Config.Color;
-    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
-    SetComponentColor(Comp, FinalColor);
-    
-    if (!Config.SkeletalMesh.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-    }
-}
-
-void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config)
-{
-    USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
-    if (!Comp) return;
-    
-    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-    
-    for (const auto& MaterialOverride : Config.MaterialOverrides)
-    {
-        if (!MaterialOverride.Value.IsNull()) 
-        {
-            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
-        }
-    }
-    
-    if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
-    {
-        if (USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr)
-        {
-            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
-        }
-    }
-    else
-    {
-        ResetComponentAttachmentToDefault(Comp);
-    }
-    
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
     
     // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
@@ -317,5 +283,45 @@ USkeletalMeshComponent* AVNCharacter::GetSkeletalComponentBySpriteTarget(E_Sprit
     case E_SpriteAttachmentTarget::Custom02_Skeletal: return Custom02_Skeletal;
     case E_SpriteAttachmentTarget::Custom03_Skeletal: return Custom03_Skeletal;
     default: return nullptr;
+    }
+}
+
+void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, const F_VN_SkeletalConfig_Attachment& Config)
+{
+    USkeletalMeshComponent* Comp = GetSkeletalComponent(ID);
+    if (!Comp) return;
+    
+    if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
+    
+    for (const auto& MaterialOverride : Config.MaterialOverrides)
+    {
+        if (!MaterialOverride.Value.IsNull()) 
+        {
+            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
+        }
+    }
+    
+    if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
+    {
+        if (USkeletalMeshComponent* AttachTarget = (Config.AttachTo == E_SkeletalAttachmentTarget::Body) ? Body_Skeletal : nullptr)
+        {
+            Comp->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Config.SocketName);
+        }
+    }
+    else
+    {
+        ResetComponentAttachmentToDefault(Comp);
+    }
+    
+    UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
+    FLinearColor ConfigColor = Config.Color;
+    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
+    SetComponentColor(Comp, FinalColor);
+    
+    if (!Config.SkeletalMesh.IsNull())
+    {
+        Comp->SetVisibility(Config.bVisible);
     }
 }

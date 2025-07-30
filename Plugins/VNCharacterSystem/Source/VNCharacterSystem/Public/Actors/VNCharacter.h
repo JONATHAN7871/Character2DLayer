@@ -201,6 +201,30 @@ private:
 	FTimerHandle CommitTransitionTimerHandle;
 	float PendingTransitionDuration = 0.0f;
 	
+	// === НОВЫЕ МЕТОДЫ ДЛЯ УЛУЧШЕННОГО КЭШИРОВАНИЯ ===
+	
+	/**
+	 * Умное обновление кэша для компонента
+	 * Учитывает состояние idle анимаций при обновлении кэша
+	 * @param ComponentID ID компонента
+	 * @param NewSprite Новый спрайт для кэширования
+	 */
+	void UpdateCacheForComponent(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> NewSprite);
+	
+	/**
+	 * Проверить, участвует ли компонент в активной idle анимации
+	 * @param ComponentID ID компонента для проверки
+	 * @return true если компонент сейчас анимируется idle системой
+	 */
+	bool IsComponentInActiveIdleAnimation(E_VN_ComponentID_Sprite ComponentID) const;
+	
+	/**
+	 * Уведомить IdleAnimationManager об изменении спрайта
+	 * @param ComponentID ID изменившегося компонента
+	 * @param NewSprite Новый спрайт
+	 */
+	void NotifyIdleManagerAboutSpriteChange(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> NewSprite);
+	
 	// Вспомогательные методы
 	void CacheSpriteOnSet(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite);
 	void FinalizeCurrentTransition();

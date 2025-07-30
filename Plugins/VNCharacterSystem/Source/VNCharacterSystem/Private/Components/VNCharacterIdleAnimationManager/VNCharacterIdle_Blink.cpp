@@ -114,80 +114,6 @@ void UVNCharacterIdleAnimationManager::ExecuteBlink()
     UPaperSprite* HalfClosed = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
     UPaperSprite* Closed = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
     
-    VN_LOG_DEBUG(TEXT("ExecuteBlink: HalfClosed=%s, Closed=%s"), 
-        HalfClosed ? *HalfClosed->GetName() : TEXT("NULL"),
-        Closed ? *Closed->GetName() : TEXT("NULL"));
-    
-    // ИСПРАВЛЕНИЕ: Для 3-фазного режима нужны полузакрытые, для 2-фазного только закрытые
-    if (bHasInitialEyelidsSprite && !Closed)
-    {
-        VN_LOG_WARNING(TEXT("ExecuteBlink: 2-phase mode needs Closed sprite but it's missing!"));
-        return;
-    }
-    
-    if (!bHasInitialEyelidsSprite && (!HalfClosed || !Closed))
-    {
-        VN_LOG_WARNING(TEXT("ExecuteBlink: 3-phase mode needs both HalfClosed and Closed sprites!"));
-        return;
-    }
-
-    // Логика двойного моргания
-    static int32 ConsecutiveSingle = 0;
-    float DoubleChance = IdleAnimationsConfig.BlinkConfig.DoubleBlinkChance;
-    
-    if (ConsecutiveSingle >= 3)
-    {
-        DoubleChance *= 2.0f;
-        ConsecutiveSingle = 0;
-    }
-    
-    bPendingDoubleBlink = FMath::RandRange(0.0f, 1.0f) <= DoubleChance;
-    
-    if (!bPendingDoubleBlink)
-    {
-        ConsecutiveSingle++;
-    }
-
-    bIsBlinkAnimationPlaying = true;
-    
-    // АДАПТИВНЫЙ ВЫБОР НАЧАЛЬНОГО СОСТОЯНИЯ
-    if (bHasInitialEyelidsSprite)
-    {
-        // 2-фазное моргание: исходный -> закрытые -> исходный
-        CurrentBlinkState = EBlinkState::FirstBlinkFull;
-        VN_LOG_DEBUG(TEXT("ExecuteBlink: Starting 2-phase blink (skip half-closed)"));
-    }
-    else
-    {
-        // 3-фазное моргание: пусто -> полузакрытые -> закрытые -> пусто
-        CurrentBlinkState = EBlinkState::FirstBlinkHalf;
-        VN_LOG_DEBUG(TEXT("ExecuteBlink: Starting 3-phase blink (with half-closed)"));
-    }
-    
-    UpdateBlinkState();
-}
-
-void UVNCharacterIdleAnimationManager::UpdateBlinkState()
-{
-    AVNCharacter* Character = GetVNCharacterOwner();
-    if (!Character || !Character->Eyelids_Sprite)
-    {
-        VN_LOG_WARNING(TEXT("UpdateBlinkState: No character or eyelids sprite, finishing"));
-        FinishBlinkAnimation();
-        return;
-    }
-
-    UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
-    if (!BlinkFlipbook)
-    {
-        VN_LOG_WARNING(TEXT("UpdateBlinkState: No blink flipbook, finishing"));
-        FinishBlinkAnimation();
-        return;
-    }
-
-    UPaperSprite* HalfClosed = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
-    UPaperSprite* Closed = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
-    
     if (!Closed)
     {
         VN_LOG_WARNING(TEXT("UpdateBlinkState: No closed sprite, finishing"));
@@ -332,18 +258,23 @@ void UVNCharacterIdleAnimationManager::FinishBlinkAnimation()
         
         if (IsCurrentSpritePartOfBlinkAnimation(CurrentSprite))
         {
-            // Восстанавливаем исходное состояние
+            // ИСПРАВЛЕНИЕ: Всегда восстанавливаем из актуального кэша
             Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
-            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: Restored to %s"), 
-                bHasInitialEyelidsSprite ? TEXT("initial sprite") : TEXT("empty"));
+            
+            // Обновляем режим на основе кэша
+            TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyelids);
+            bHasInitialEyelidsSprite = !CachedSprite.IsNull();
+            
+            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: Restored from cache, mode now: %s"), 
+                bHasInitialEyelidsSprite ? TEXT("2-phase") : TEXT("3-phase"));
         }
         else
         {
-            // Спрайт был изменен извне - обновляем кэш и режим
+            // Спрайт был изменен извне во время анимации - кэш уже должен быть обновлен
             UPaperSprite* NewSprite = Character->Eyelids_Sprite->GetSprite();
             bHasInitialEyelidsSprite = (NewSprite != nullptr);
-            Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyelids, NewSprite);
-            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: Updated cache and mode to %s"), 
+            
+            VN_LOG_DEBUG(TEXT("FinishBlinkAnimation: External change detected, mode updated to: %s"), 
                 bHasInitialEyelidsSprite ? TEXT("2-phase") : TEXT("3-phase"));
         }
     }
@@ -369,4 +300,78 @@ bool UVNCharacterIdleAnimationManager::IsCurrentSpritePartOfBlinkAnimation(UPape
     UPaperSprite* Closed = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
     
     return (Sprite == HalfClosed || Sprite == Closed);
+}
+
+void UVNCharacterIdleAnimationManager::UpdateBlinkState()
+{
+    AVNCharacter* Character = GetVNCharacterOwner();
+    if (!Character || !Character->Eyelids_Sprite)
+    {
+        VN_LOG_WARNING(TEXT("UpdateBlinkState: No character or eyelids sprite, finishing"));
+        FinishBlinkAnimation();
+        return;
+    }
+
+    UPaperFlipbook* BlinkFlipbook = IdleAnimationsConfig.BlinkConfig.BlinkFlipbook.LoadSynchronous();
+    if (!BlinkFlipbook)
+    {
+        VN_LOG_WARNING(TEXT("UpdateBlinkState: No blink flipbook, finishing"));
+        FinishBlinkAnimation();
+        return;
+    }
+
+    UPaperSprite* HalfClosed = GetFlipbookSpriteImproved(BlinkFlipbook, 0);
+    UPaperSprite* Closed = GetFlipbookSpriteImproved(BlinkFlipbook, 1);
+    
+    VN_LOG_DEBUG(TEXT("ExecuteBlink: HalfClosed=%s, Closed=%s"), 
+        HalfClosed ? *HalfClosed->GetName() : TEXT("NULL"),
+        Closed ? *Closed->GetName() : TEXT("NULL"));
+    
+    // ИСПРАВЛЕНИЕ: Для 3-фазного режима нужны полузакрытые, для 2-фазного только закрытые
+    if (bHasInitialEyelidsSprite && !Closed)
+    {
+        VN_LOG_WARNING(TEXT("ExecuteBlink: 2-phase mode needs Closed sprite but it's missing!"));
+        return;
+    }
+    
+    if (!bHasInitialEyelidsSprite && (!HalfClosed || !Closed))
+    {
+        VN_LOG_WARNING(TEXT("ExecuteBlink: 3-phase mode needs both HalfClosed and Closed sprites!"));
+        return;
+    }
+
+    // Логика двойного моргания
+    static int32 ConsecutiveSingle = 0;
+    float DoubleChance = IdleAnimationsConfig.BlinkConfig.DoubleBlinkChance;
+    
+    if (ConsecutiveSingle >= 3)
+    {
+        DoubleChance *= 2.0f;
+        ConsecutiveSingle = 0;
+    }
+    
+    bPendingDoubleBlink = FMath::RandRange(0.0f, 1.0f) <= DoubleChance;
+    
+    if (!bPendingDoubleBlink)
+    {
+        ConsecutiveSingle++;
+    }
+
+    bIsBlinkAnimationPlaying = true;
+    
+    // АДАПТИВНЫЙ ВЫБОР НАЧАЛЬНОГО СОСТОЯНИЯ
+    if (bHasInitialEyelidsSprite)
+    {
+        // 2-фазное моргание: исходный -> закрытые -> исходный
+        CurrentBlinkState = EBlinkState::FirstBlinkFull;
+        VN_LOG_DEBUG(TEXT("ExecuteBlink: Starting 2-phase blink (skip half-closed)"));
+    }
+    else
+    {
+        // 3-фазное моргание: пусто -> полузакрытые -> закрытые -> пусто
+        CurrentBlinkState = EBlinkState::FirstBlinkHalf;
+        VN_LOG_DEBUG(TEXT("ExecuteBlink: Starting 3-phase blink (with half-closed)"));
+    }
+    
+    UpdateBlinkState();
 }

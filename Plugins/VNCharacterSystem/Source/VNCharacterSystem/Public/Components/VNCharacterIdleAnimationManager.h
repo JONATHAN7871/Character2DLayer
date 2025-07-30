@@ -6,6 +6,7 @@
 #include "PaperFlipbook.h"
 #include "PaperSprite.h"
 #include "Data/VNCharacterIdleAnimationStructs.h"
+#include "Data/VNCharacterEnums.h"
 #include "VNCharacterIdleAnimationManager.generated.h"
 
 // Forward declarations
@@ -112,6 +113,21 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "VN Idle Animations")
     void UpdateSavedSprites();
+
+    /**
+     * Обработать внешнее изменение спрайта (вызывается из VNCharacter)
+     * Умно обновляет кэш в зависимости от состояния анимации
+     * @param ComponentID ID компонента
+     * @param NewSprite Новый спрайт
+     */
+    void HandleExternalSpriteChange(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> NewSprite);
+    
+    /**
+     * Обновить режим моргания при изменении спрайта век
+     * Автоматически переключает между 2-phase и 3-phase режимами
+     * @param NewEyelidsSprite Новый спрайт век (может быть nullptr)
+     */
+    void UpdateBlinkModeForNewEyelidsState(TSoftObjectPtr<UPaperSprite> NewEyelidsSprite);
     
 public:
     // =====================================================
@@ -177,7 +193,7 @@ private:
     bool bIsEyesRandomAnimationPlaying = false;
 
     // =====================================================
-    // НОВАЯ СИСТЕМА ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ СПРАЙТОВ
+    // СИСТЕМА ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ СПРАЙТОВ
     // =====================================================
 
     /**
@@ -187,27 +203,12 @@ private:
     void CheckForSpriteChanges();
 
     /**
-     * Обработать изменение спрайта извне во время анимации
-     * @param Component Компонент, спрайт которого изменился
-     * @param NewSprite Новый спрайт
-     * @param ComponentName Имя компонента для логирования
-     */
-    void HandleExternalSpriteChange(UPaperSpriteComponent* Component, UPaperSprite* NewSprite, const FString& ComponentName);
-
-    /**
      * Проверить, является ли спрайт частью текущей анимации
      * @param Component Компонент для проверки
      * @param Sprite Спрайт для проверки
      * @return true если спрайт является частью flipbook анимации
      */
     bool IsAnimationSprite(UPaperSpriteComponent* Component, UPaperSprite* Sprite) const;
-
-    /**
-     * Получить текущий спрайт анимации для компонента
-     * @param Component Компонент
-     * @return Текущий спрайт или nullptr
-     */
-    UPaperSprite* GetCurrentAnimationSprite(UPaperSpriteComponent* Component) const;
 
     /**
      * Проверить, содержит ли flipbook данный спрайт
@@ -273,15 +274,6 @@ private:
     UPaperSprite* GetFlipbookSpriteImproved(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
     
     /**
-     * ПРОСТАЯ версия получения спрайта из flipbook
-     * Backup метод с базовой логикой
-     * @param Flipbook Flipbook для извлечения
-     * @param FrameIndex Индекс кадра
-     * @return Спрайт или nullptr
-     */
-    UPaperSprite* GetFlipbookSpriteSimple(UPaperFlipbook* Flipbook, int32 FrameIndex) const;
-    
-    /**
      * УЛУЧШЕННАЯ версия получения случайного спрайта из flipbook
      * @param Flipbook Flipbook для извлечения
      * @param bExcludeFirstFrame Исключить первый кадр из выбора
@@ -339,10 +331,10 @@ private:
     void RestoreOriginalSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& OriginalSprite);
 
     /**
- * Проверить, является ли спрайт частью анимации моргания
- * @param Sprite Спрайт для проверки
- * @return true если спрайт является кадром моргания
- */
+     * Проверить, является ли спрайт частью анимации моргания
+     * @param Sprite Спрайт для проверки
+     * @return true если спрайт является кадром моргания
+     */
     bool IsCurrentSpritePartOfBlinkAnimation(UPaperSprite* Sprite) const;
 
     /**
