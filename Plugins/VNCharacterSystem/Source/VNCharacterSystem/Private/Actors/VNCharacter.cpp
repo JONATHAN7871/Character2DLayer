@@ -4,6 +4,8 @@
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
+#include "Data/VNCharacterIdleAnimationDataAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 
@@ -17,6 +19,30 @@ AVNCharacter::AVNCharacter()
 
 	bIsInFocus = true;
 	DimColorMultiplier = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
+
+	// Настройка Tick для поддержки движения (по умолчанию выключен)
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
+
+	// Инициализация переменных движения
+	bIsMoving = false;
+	StartLocation = FVector::ZeroVector;
+	TargetLocation = FVector::ZeroVector;
+	StartScale = FVector::OneVector;
+	TargetScale = FVector::OneVector;
+	bShouldInterpolateScale = false;
+	MovementStartTime = 0.0f;
+	MovementDuration = 1.0f;
+
+	// Инициализация автоинициализации
+	AutoInitCharacterData = nullptr;
+	AutoInitIdleData = nullptr;
+	bAutoApplyOnBeginPlay = true;
+	bAutoInitWithAnimation = false;
+	AutoInitAnimationDuration = 1.0f;
+	AutoInitDelay = 0.0f;
+	bAutoStartIdleAnimations = true;
 }
 
 void AVNCharacter::BeginPlay()
@@ -31,15 +57,26 @@ void AVNCharacter::BeginPlay()
 	}
 
 	HideAllFadeComponents();
-}
 
-#if WITH_EDITOR
-void AVNCharacter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-	// Примечание: Для корректного обновления в редакторе при изменении Global transforms
-	// теперь рекомендуется повторно применить DataAsset, так как логика трансформации
-	// централизована и применяется при вызове ApplyDataAsset.
+	if (bAutoApplyOnBeginPlay && (AutoInitCharacterData || AutoInitIdleData))
+	{
+		if (AutoInitDelay > 0.0f)
+		{
+			// Запускаем с задержкой
+			GetWorld()->GetTimerManager().SetTimer(
+				AutoInitTimerHandle,
+				this,
+				&AVNCharacter::PerformAutoInitialization,
+				AutoInitDelay,
+				false
+			);
+            
+			VN_LOG_DEBUG(TEXT("BeginPlay: Auto-initialization scheduled with %.2f second delay"), AutoInitDelay);
+		}
+		else
+		{
+			// Выполняем немедленно
+			PerformAutoInitialization();
+		}
+	}
 }
-#endif

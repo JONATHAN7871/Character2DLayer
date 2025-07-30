@@ -36,8 +36,11 @@ void UVNCharacterIdleAnimationManager::StopTalkAnimation()
 {
     VN_LOG_DEBUG(TEXT("StopTalkAnimation: Stopping talk animation"));
     
-    // ИСПРАВЛЕНИЕ: Сначала очищаем таймер
-    GetWorld()->GetTimerManager().ClearTimer(TalkTimerHandle);
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        World->GetTimerManager().ClearTimer(TalkTimerHandle);
+    }
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Mouth_Sprite)

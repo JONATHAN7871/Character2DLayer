@@ -31,7 +31,16 @@ void UVNCharacterIdleAnimationManager::StartBlinkAnimation()
 
 void UVNCharacterIdleAnimationManager::StopBlinkAnimation()
 {
-    GetWorld()->GetTimerManager().ClearTimer(BlinkTimerHandle);
+    // ИСПРАВЛЕНИЕ: Проверяем World перед использованием
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        VN_LOG_DEBUG(TEXT("StopBlinkAnimation: No valid world, skipping timer clear"));
+        bIsBlinkAnimationPlaying = false;
+        return;
+    }
+
+    World->GetTimerManager().ClearTimer(BlinkTimerHandle);
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyelids_Sprite)
@@ -62,6 +71,13 @@ void UVNCharacterIdleAnimationManager::ScheduleNextBlink()
 {
     if (!IdleAnimationsConfig.BlinkConfig.bEnabled) return;
 
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        VN_LOG_DEBUG(TEXT("ScheduleNextBlink: No valid world, skipping"));
+        return;
+    }
+    
     // ИНТЕГРАЦИЯ С ЭМОЦИОНАЛЬНЫМИ СОСТОЯНИЯМИ
     float BaseInterval = IdleAnimationsConfig.BlinkConfig.GetRandomBlinkInterval();
     

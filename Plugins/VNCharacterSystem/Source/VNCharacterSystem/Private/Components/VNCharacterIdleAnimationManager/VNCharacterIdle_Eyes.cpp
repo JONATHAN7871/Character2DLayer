@@ -39,7 +39,11 @@ void UVNCharacterIdleAnimationManager::StopEyesRandomAnimation()
 {
     VN_LOG_DEBUG(TEXT("StopEyesRandomAnimation: Stopping eyes animation"));
     
-    GetWorld()->GetTimerManager().ClearTimer(EyesRandomTimerHandle);
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        World->GetTimerManager().ClearTimer(EyesRandomTimerHandle);
+    }
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character && Character->Eyes_Sprite)

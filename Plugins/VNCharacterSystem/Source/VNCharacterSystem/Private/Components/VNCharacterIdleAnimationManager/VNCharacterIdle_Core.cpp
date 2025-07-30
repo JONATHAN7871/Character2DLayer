@@ -265,7 +265,17 @@ void UVNCharacterIdleAnimationManager::SetIdleAnimationsConfig(const FVNIdleAnim
 {
     VN_LOG_DEBUG(TEXT("SetIdleAnimationsConfig: Updating configuration"));
     
-    StopAllIdleAnimations();
+    // ИСПРАВЛЕНИЕ: Безопасная остановка только если World доступен
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        StopAllIdleAnimations();
+    }
+    else
+    {
+        // В редакторе просто обновляем конфиг без остановки анимаций
+        VN_LOG_DEBUG(TEXT("SetIdleAnimationsConfig: No World context, updating config only"));
+    }
     
     AVNCharacter* Character = GetVNCharacterOwner();
     if (Character)
@@ -275,7 +285,13 @@ void UVNCharacterIdleAnimationManager::SetIdleAnimationsConfig(const FVNIdleAnim
     }
     
     IdleAnimationsConfig = NewConfig;
-    StartAllIdleAnimations();
+    
+    // Запускаем анимации только если World доступен
+    if (World)
+    {
+        StartAllIdleAnimations();
+    }
+    
     LogIdleAnimation(TEXT("Config updated"));
 }
 
