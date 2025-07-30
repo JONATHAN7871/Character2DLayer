@@ -3,6 +3,7 @@
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
 
 void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftObjectPtr<USkeletalMesh> SkeletalMesh, bool bAnimate, float Duration)
 {
@@ -70,8 +71,36 @@ void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr
 		return;
 	}
 
-	// Автоматическое кэширование спрайта
+	// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Автоматическое кэширование спрайта ВСЕГДА
 	CacheSpriteOnSet(ComponentID, Sprite);
+	
+	// ДОПОЛНИТЕЛЬНОЕ ИСПРАВЛЕНИЕ: Если idle анимации активны - обновляем их кэш тоже
+	if (IdleAnimationManager)
+	{
+		// Проверяем, какие анимации активны и обновляем их состояние
+		const FVNIdleAnimationsConfig& Config = IdleAnimationManager->GetIdleAnimationsConfig();
+		
+		// Если меняем спрайт рта во время Talk анимации
+		if (ComponentID == E_VN_ComponentID_Sprite::Mouth && Config.TalkConfig.bEnabled)
+		{
+			VN_LOG_DEBUG(TEXT("SetSprite: Mouth sprite changed during Talk animation - updating cache"));
+			IdleAnimationManager->UpdateSavedSprites();
+		}
+		
+		// Если меняем спрайт глаз во время Eyes анимации
+		if (ComponentID == E_VN_ComponentID_Sprite::Eyes && Config.EyesRandomConfig.bEnabled)
+		{
+			VN_LOG_DEBUG(TEXT("SetSprite: Eyes sprite changed during Eyes animation - updating cache"));
+			IdleAnimationManager->UpdateSavedSprites();
+		}
+		
+		// Если меняем спрайт век во время Blink анимации
+		if (ComponentID == E_VN_ComponentID_Sprite::Eyelids && Config.BlinkConfig.bEnabled)
+		{
+			VN_LOG_DEBUG(TEXT("SetSprite: Eyelids sprite changed during Blink animation - updating cache"));
+			IdleAnimationManager->UpdateSavedSprites();
+		}
+	}
 
 	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
 	{

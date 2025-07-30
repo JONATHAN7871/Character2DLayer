@@ -13,6 +13,7 @@ UVNCharacterIdleAnimationManager::UVNCharacterIdleAnimationManager()
     bVerboseLogging = false;
     bIsBlinkAnimationPlaying = false;
     bIsEyesRandomAnimationPlaying = false;
+    bHasInitialEyelidsSprite = false;
     CurrentBlinkState = EBlinkState::WaitingForBlink;
     bPendingDoubleBlink = false;
 }
@@ -30,7 +31,7 @@ void UVNCharacterIdleAnimationManager::BeginPlay()
 
     LogIdleAnimation(TEXT("Idle Animation Manager initialized"));
     
-    // ИСПРАВЛЕНИЕ: Обновляем кэш ПЕРЕД запуском анимаций
+    // Обновляем кэш ПЕРЕД запуском анимаций
     if (OwnerCharacter.IsValid())
     {
         OwnerCharacter->UpdateSpriteCache();
@@ -62,14 +63,15 @@ void UVNCharacterIdleAnimationManager::CheckForSpriteChanges()
         }
     }
 
-    // Проверяем рот во время разговора
+    // ИСПРАВЛЕНИЕ: Проверяем рот - ОБНОВЛЯЕМ КЭШ при внешних изменениях
     if (IdleAnimationsConfig.TalkConfig.bEnabled && Character->Mouth_Sprite)
     {
         UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
         if (CurrentSprite && !IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
         {
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем кэш при внешнем изменении спрайта рта
             Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
-            VN_LOG_DEBUG(TEXT("External mouth change detected during talk"));
+            VN_LOG_DEBUG(TEXT("External mouth change detected during talk - CACHE UPDATED"));
         }
     }
 
@@ -134,7 +136,6 @@ void UVNCharacterIdleAnimationManager::SetBlinkEnabled(bool bEnable)
 {
     VN_LOG_DEBUG(TEXT("SetBlinkEnabled called: %s"), bEnable ? TEXT("true") : TEXT("false"));
     
-    // ИСПРАВЛЕНИЕ: Сначала останавливаем, потом меняем флаг
     if (!bEnable && IdleAnimationsConfig.BlinkConfig.bEnabled)
     {
         StopBlinkAnimation();
@@ -142,7 +143,6 @@ void UVNCharacterIdleAnimationManager::SetBlinkEnabled(bool bEnable)
     
     IdleAnimationsConfig.BlinkConfig.bEnabled = bEnable;
     
-    // Запускаем только если включили
     if (bEnable)
     {
         StartBlinkAnimation();
@@ -155,15 +155,27 @@ void UVNCharacterIdleAnimationManager::SetTalkEnabled(bool bEnable)
 {
     VN_LOG_DEBUG(TEXT("SetTalkEnabled called: %s"), bEnable ? TEXT("true") : TEXT("false"));
     
-    // ИСПРАВЛЕНИЕ: Сначала останавливаем, потом меняем флаг
+    // ИСПРАВЛЕНИЕ: Если выключаем Talk, сначала синхронизируем кэш
     if (!bEnable && IdleAnimationsConfig.TalkConfig.bEnabled)
     {
+        AVNCharacter* Character = GetVNCharacterOwner();
+        if (Character && Character->Mouth_Sprite)
+        {
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем кэш рта ПЕРЕД остановкой анимации
+            UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
+            if (CurrentSprite && !IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
+            {
+                // Если текущий спрайт НЕ из анимации - это новый исходный спрайт
+                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
+                VN_LOG_DEBUG(TEXT("SetTalkEnabled: Updated mouth cache with external sprite before stopping"));
+            }
+        }
+        
         StopTalkAnimation();
     }
     
     IdleAnimationsConfig.TalkConfig.bEnabled = bEnable;
     
-    // Запускаем только если включили
     if (bEnable)
     {
         StartTalkAnimation();
@@ -176,7 +188,6 @@ void UVNCharacterIdleAnimationManager::SetEyesRandomEnabled(bool bEnable)
 {
     VN_LOG_DEBUG(TEXT("SetEyesRandomEnabled called: %s"), bEnable ? TEXT("true") : TEXT("false"));
     
-    // ИСПРАВЛЕНИЕ: Сначала останавливаем, потом меняем флаг
     if (!bEnable && IdleAnimationsConfig.EyesRandomConfig.bEnabled)
     {
         StopEyesRandomAnimation();
@@ -184,7 +195,6 @@ void UVNCharacterIdleAnimationManager::SetEyesRandomEnabled(bool bEnable)
     
     IdleAnimationsConfig.EyesRandomConfig.bEnabled = bEnable;
     
-    // Запускаем только если включили
     if (bEnable)
     {
         StartEyesRandomAnimation();
@@ -197,7 +207,6 @@ void UVNCharacterIdleAnimationManager::SetIdleAnimationsConfig(const FVNIdleAnim
 {
     VN_LOG_DEBUG(TEXT("SetIdleAnimationsConfig: Updating configuration"));
     
-    // ИСПРАВЛЕНИЕ: Останавливаем все, обновляем кэш, применяем конфиг, запускаем нужные
     StopAllIdleAnimations();
     
     AVNCharacter* Character = GetVNCharacterOwner();
@@ -257,7 +266,7 @@ void UVNCharacterIdleAnimationManager::UpdateSavedSprites()
     VN_LOG_DEBUG(TEXT("UpdateSavedSprites: Updating cache"));
     Character->UpdateSpriteCache();
     
-    // ИСПРАВЛЕНИЕ: Дополнительная проверка кэша глаз
+    // Дополнительная проверка критичных компонентов
     TSoftObjectPtr<UPaperSprite> CachedEyes = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
     if (CachedEyes.IsNull() && Character->Eyes_Sprite && Character->Eyes_Sprite->GetSprite())
     {

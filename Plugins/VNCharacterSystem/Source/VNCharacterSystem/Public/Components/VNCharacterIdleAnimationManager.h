@@ -146,6 +146,8 @@ private:
     TSoftObjectPtr<UPaperSprite> OriginalEyelidsSprite;
     /** Выполняется ли анимация моргания */
     bool bIsBlinkAnimationPlaying = false;
+    /** Есть ли исходный спрайт век (определяет режим моргания) */
+    bool bHasInitialEyelidsSprite = false;
     /** Состояние моргания для двойного моргания */
     enum class EBlinkState
     {
