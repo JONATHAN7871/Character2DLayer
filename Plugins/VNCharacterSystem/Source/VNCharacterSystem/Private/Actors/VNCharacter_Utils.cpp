@@ -262,36 +262,25 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 {
 	if (!Component) return;
 	
-	// ИСПРАВЛЕНИЕ: Принудительно сбрасываем состояние перед изменениями
-	Component->SetHiddenInGame(false);
-	Component->SetVisibility(true);
-	
 	if (!SkeletalMesh.IsNull())
 	{
-		USkeletalMesh* LoadedMesh = SkeletalMesh.LoadSynchronous();
-		if (LoadedMesh)
+		if (USkeletalMesh* LoadedMesh = SkeletalMesh.LoadSynchronous())
 		{
 			Component->SetSkeletalMesh(LoadedMesh);
-			
-			// ИСПРАВЛЕНИЕ: Применяем цвет с учетом фокуса
-			SetComponentColor(Component, GetTargetColorForComponent(Component));
-			
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Set mesh for %s with focus-aware color"), *Component->GetName());
+			Component->SetVisibility(true);
+			// === ИСПРАВЛЕНИЕ: ПРИМЕНЯЕМ ЦВЕТ ИЗ КЭША ===
+			ApplyComponentColorWithFocus(Component);
 		}
 		else
 		{
 			Component->SetSkeletalMesh(nullptr);
-			Component->SetAnimInstanceClass(nullptr);
 			Component->SetVisibility(false);
-			VN_LOG_WARNING(TEXT("ValidateAndSetupSkeletalComponent: Failed to load mesh for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
 		Component->SetSkeletalMesh(nullptr);
-		Component->SetAnimInstanceClass(nullptr);
 		Component->SetVisibility(false);
-		VN_LOG_DEBUG(TEXT("ValidateAndSetupSkeletalComponent: Cleared mesh for %s"), *Component->GetName());
 	}
 }
 
@@ -299,30 +288,25 @@ void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Compon
 {
 	if (!Component) return;
     
-	// ПРОВЕРЬТЕ ЭТОТ МЕТОД: возможно здесь тоже нужно заменить
-	Component->SetHiddenInGame(false);  // Вместо SetVisibility(true)
-    
 	if (!Sprite.IsNull())
 	{
-		UPaperSprite* LoadedSprite = Sprite.LoadSynchronous();
-		if (LoadedSprite)
+		if (UPaperSprite* LoadedSprite = Sprite.LoadSynchronous())
 		{
 			Component->SetSprite(LoadedSprite);
-			Component->SetSpriteColor(GetTargetColorForComponent(Component));
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
+			Component->SetVisibility(true);
+			// === ИСПРАВЛЕНИЕ: ПРИМЕНЯЕМ ЦВЕТ ИЗ КЭША ===
+			ApplyComponentColorWithFocus(Component);
 		}
 		else
 		{
 			Component->SetSprite(nullptr);
-			Component->SetHiddenInGame(true);  // Вместо SetVisibility(false)
-			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
+			Component->SetVisibility(false);
 		}
 	}
 	else
 	{
 		Component->SetSprite(nullptr);
-		Component->SetHiddenInGame(true);  // Вместо SetVisibility(false)
-		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
+		Component->SetVisibility(false);
 	}
 }
 
@@ -378,12 +362,8 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 {
 	if (!Source || !Target) return;
 	
-	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
-	
 	Target->SetSkeletalMesh(Source->GetSkeletalMeshAsset());
 	Target->SetAnimInstanceClass(Source->GetAnimClass());
-	
-	Target->SetHiddenInGame(false);
 	Target->SetVisibility(true);
 	
 	for (int32 i = 0; i < Source->GetNumMaterials(); ++i)
@@ -391,55 +371,37 @@ void AVNCharacter::CopySkeletalComponentSettings(USkeletalMeshComponent* Source,
 		Target->SetMaterial(i, Source->GetMaterial(i));
 	}
 	
-	// ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет с учетом фокуса
-	SetComponentColor(Target, GetTargetColorForComponent(Target));
-	
-	Target->MarkRenderStateDirty();
-	Target->RecreateRenderState_Concurrent();
+	// === ИСПРАВЛЕНИЕ: Копируем кэшированный базовый цвет, а не текущий ===
+	CacheComponentBaseColor(Target, GetCachedBaseColor(Source));
+	ApplyComponentColorWithFocus(Target);
 	
 	if (Source->GetAttachParent())
 	{
 		Target->AttachToComponent(Source->GetAttachParent(), FAttachmentTransformRules::KeepWorldTransform, Source->GetAttachSocketName());
 		Target->SetRelativeTransform(Source->GetRelativeTransform());
 	}
-	else
-	{
-		Target->SetWorldTransform(Source->GetComponentTransform());
-	}
-	
-	UE_LOG(LogTemp, Warning, TEXT("CopySkeletalComponentSettings: Copy completed for %s with focus-aware color"), *Target->GetName());
 }
 
 void AVNCharacter::CopySpriteComponentSettings(UPaperSpriteComponent* Source, UPaperSpriteComponent* Target)
 {
 	if (!Source || !Target) return;
 	
-	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: Copying from %s to %s"), *Source->GetName(), *Target->GetName());
-	
 	Target->SetSprite(Source->GetSprite());
-	
-	Target->SetHiddenInGame(false);
 	Target->SetVisibility(true);
 	
-	// ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет с учетом фокуса, но с альфой 1.0 для fade компонента
-	FLinearColor TargetColor = GetTargetColorForComponent(Target);
-	TargetColor.A = 1.0f; // Fade компонент начинает с полной видимости
-	Target->SetSpriteColor(TargetColor);
-	
-	Target->MarkRenderStateDirty();
-	Target->RecreateRenderState_Concurrent();
+	// === ИСПРАВЛЕНИЕ: Копируем кэшированный базовый цвет, а не текущий ===
+	CacheComponentBaseColor(Target, GetCachedBaseColor(Source));
+	// Применяем цвет с учетом фокуса, но с полной альфой, т.к. это fade-компонент,
+	// который будет анимироваться от 1.0 до 0.0
+	FLinearColor FadeColor = ApplyFocusToColor(GetCachedBaseColor(Target));
+	FadeColor.A = 1.0f;
+	Target->SetSpriteColor(FadeColor);
 	
 	if (Source->GetAttachParent())
 	{
 		Target->AttachToComponent(Source->GetAttachParent(), FAttachmentTransformRules::KeepWorldTransform, Source->GetAttachSocketName());
 		Target->SetRelativeTransform(Source->GetRelativeTransform());
 	}
-	else
-	{
-		Target->SetWorldTransform(Source->GetComponentTransform());
-	}
-	
-	UE_LOG(LogTemp, Warning, TEXT("CopySpriteComponentSettings: Copy completed for %s with focus-aware color"), *Target->GetName());
 }
 
 // =====================================================
@@ -892,4 +854,92 @@ FString AVNCharacter::GetSpritesStatusReport() const
 		FilledSprites, TotalSprites, TotalSprites > 0 ? (float)FilledSprites / TotalSprites * 100.0f : 0.0f));
 
 	return FString::Join(StatusLines, TEXT("\n"));
+}
+
+void AVNCharacter::CacheComponentBaseColor(USceneComponent* Component, const FLinearColor& BaseColor)
+{
+	if (!Component) return;
+	CachedBaseColors.Add(Component, BaseColor);
+}
+
+FLinearColor AVNCharacter::GetCachedBaseColor(USceneComponent* Component) const
+{
+	if (!Component) return FLinearColor::White;
+	if (const FLinearColor* CachedColor = CachedBaseColors.Find(Component))
+	{
+		return *CachedColor;
+	}
+	return FLinearColor::White;
+}
+
+void AVNCharacter::ApplyComponentColorWithFocus(USceneComponent* Component, bool bForceRefresh)
+{
+	if (!Component) return;
+	FLinearColor BaseColor = GetCachedBaseColor(Component);
+	FLinearColor FinalColor = ApplyFocusToColor(BaseColor);
+	SetComponentColor(Component, FinalColor);
+}
+
+FLinearColor AVNCharacter::ApplyFocusToColor(const FLinearColor& BaseColor) const
+{
+	if (bIsInFocus)
+	{
+		return BaseColor;
+	}
+	else
+	{
+		FLinearColor DimmedColor = BaseColor * DimColorMultiplier;
+		DimmedColor.A = BaseColor.A; // Сохраняем оригинальную альфу
+		return DimmedColor;
+	}
+}
+
+void AVNCharacter::RefreshAllComponentColors()
+{
+	TArray<USceneComponent*> AllComponents = GetAllMainComponents();
+	for (USceneComponent* Component : AllComponents)
+	{
+		if (Component && Component->IsVisible())
+		{
+			ApplyComponentColorWithFocus(Component, true);
+		}
+	}
+}
+
+void AVNCharacter::SetComponentCustomColor(E_VN_ComponentID_Sprite ComponentID, const FLinearColor& CustomColor)
+{
+	if (UPaperSpriteComponent* Component = GetSpriteComponent(ComponentID))
+	{
+		CacheComponentBaseColor(Component, CustomColor);
+		ApplyComponentColorWithFocus(Component);
+	}
+}
+
+void AVNCharacter::SetSkeletalComponentCustomColor(E_VN_ComponentID_Skeletal ComponentID, const FLinearColor& CustomColor)
+{
+	if (USkeletalMeshComponent* Component = GetSkeletalComponent(ComponentID))
+	{
+		CacheComponentBaseColor(Component, CustomColor);
+		ApplyComponentColorWithFocus(Component);
+	}
+}
+
+FLinearColor AVNCharacter::GetComponentBaseColor(E_VN_ComponentID_Sprite ComponentID) const
+{
+	return GetCachedBaseColor(GetSpriteComponent(ComponentID));
+}
+
+FLinearColor AVNCharacter::GetSkeletalComponentBaseColor(E_VN_ComponentID_Skeletal ComponentID) const
+{
+	return GetCachedBaseColor(GetSkeletalComponent(ComponentID));
+}
+
+void AVNCharacter::ResetComponentColor(E_VN_ComponentID_Sprite ComponentID)
+{
+	SetComponentCustomColor(ComponentID, FLinearColor::White);
+}
+
+void AVNCharacter::ResetSkeletalComponentColor(E_VN_ComponentID_Skeletal ComponentID)
+{
+	SetSkeletalComponentCustomColor(ComponentID, FLinearColor::White);
 }

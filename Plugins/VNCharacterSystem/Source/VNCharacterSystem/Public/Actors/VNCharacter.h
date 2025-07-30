@@ -277,4 +277,88 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") FOnVNCharacterComponentChanged OnCharacterComponentChanged;
 
 	friend class UVNCharacterAnimationManager;
+
+
+	// В protected секции добавить:
+protected:
+    // === СИСТЕМА КЭШИРОВАНИЯ ЦВЕТОВ ===
+    
+    /** Кэшированные базовые цвета для каждого компонента */
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<USceneComponent>, FLinearColor> CachedBaseColors;
+    
+    /** Кэшированные конфигурационные цвета для каждого компонента */
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<USceneComponent>, FLinearColor> CachedConfigColors;
+
+// В private секции добавить новые методы:
+private:
+    // === НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С ЦВЕТАМИ ===
+    
+    /**
+     * Кэшировать базовый цвет компонента
+     * @param Component Компонент для кэширования
+     * @param BaseColor Базовый цвет из конфигурации
+     */
+    void CacheComponentBaseColor(USceneComponent* Component, const FLinearColor& BaseColor);
+    
+    /**
+     * Получить кэшированный базовый цвет компонента
+     * @param Component Компонент
+     * @return Кэшированный базовый цвет или белый если не найден
+     */
+    FLinearColor GetCachedBaseColor(USceneComponent* Component) const;
+    
+    /**
+     * Применить цвет к компоненту с учетом фокуса и кэша
+     * @param Component Компонент
+     * @param bForceRefresh Принудительно обновить из кэша
+     */
+    void ApplyComponentColorWithFocus(USceneComponent* Component, bool bForceRefresh = false);
+    
+    /**
+     * Обновить цвета всех компонентов с учетом текущего фокуса
+     */
+    void RefreshAllComponentColors();
+    
+    /**
+     * Получить финальный цвет с учетом фокуса
+     * @param BaseColor Базовый цвет
+     * @return Цвет с примененным димом если нужно
+     */
+    FLinearColor ApplyFocusToColor(const FLinearColor& BaseColor) const;
+
+// В public секции добавить:
+public:
+    /**
+     * Установить кастомный базовый цвет для компонента
+     * @param ComponentID ID компонента
+     * @param CustomColor Кастомный цвет
+     */
+    UFUNCTION(BlueprintCallable, Category = "VN Character|Colors")
+    void SetComponentCustomColor(E_VN_ComponentID_Sprite ComponentID, const FLinearColor& CustomColor);
+    
+    UFUNCTION(BlueprintCallable, Category = "VN Character|Colors")
+    void SetSkeletalComponentCustomColor(E_VN_ComponentID_Skeletal ComponentID, const FLinearColor& CustomColor);
+    
+    /**
+     * Получить текущий базовый цвет компонента
+     * @param ComponentID ID компонента
+     * @return Базовый цвет компонента
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Colors")
+    FLinearColor GetComponentBaseColor(E_VN_ComponentID_Sprite ComponentID) const;
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character|Colors")
+    FLinearColor GetSkeletalComponentBaseColor(E_VN_ComponentID_Skeletal ComponentID) const;
+    
+    /**
+     * Сбросить цвет компонента к белому
+     * @param ComponentID ID компонента
+     */
+    UFUNCTION(BlueprintCallable, Category = "VN Character|Colors")
+    void ResetComponentColor(E_VN_ComponentID_Sprite ComponentID);
+    
+    UFUNCTION(BlueprintCallable, Category = "VN Character|Colors")
+    void ResetSkeletalComponentColor(E_VN_ComponentID_Skeletal ComponentID);
 };

@@ -321,11 +321,19 @@ bool AVNCharacter::IsAnimating() const
 
 FLinearColor AVNCharacter::GetTargetColorForComponent(USceneComponent* Component) const
 {
-	FLinearColor BaseColor = GetBaseColorForComponent(Component);
-	return bIsInFocus ? BaseColor : BaseColor * DimColorMultiplier;
+	if (!Component) return FLinearColor::White;
+    
+	// Получаем базовый цвет из кэша
+	FLinearColor BaseColor = GetCachedBaseColor(Component);
+    
+	// Применяем эффект фокуса
+	return ApplyFocusToColor(BaseColor);
 }
 
 FLinearColor AVNCharacter::GetBaseColorForComponent(USceneComponent* Component) const
 {
-	return FLinearColor::White;
+	if (!Component) return FLinearColor::White;
+    
+	// Возвращаем кэшированный базовый цвет
+	return GetCachedBaseColor(Component);
 }

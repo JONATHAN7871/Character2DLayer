@@ -197,27 +197,19 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     if (!Comp) return;
     
     if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-    
     for (const auto& MaterialOverride : Config.MaterialOverrides)
     {
-        if (!MaterialOverride.Value.IsNull()) 
-        {
-            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
-        }
+        if (!MaterialOverride.Value.IsNull()) Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
     }
     
-    ResetComponentAttachmentToDefault(Comp);
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
     
-    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
-    FLinearColor ConfigColor = Config.Color;
-    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
-    SetComponentColor(Comp, FinalColor);
+    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
+    CacheComponentBaseColor(Comp, Config.Color);
+    // Применяем цвет с учетом фокуса
+    ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.SkeletalMesh.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-    }
+    if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
 }
 
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Attachment& Config)
@@ -239,15 +231,12 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
     
-    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
-    FLinearColor ConfigColor = Config.Color;
-    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
-    Comp->SetSpriteColor(FinalColor);
+    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
+    CacheComponentBaseColor(Comp, Config.Color);
+    // Применяем цвет с учетом фокуса
+    ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.Sprite.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-    }
+    if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
 }
 
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config)
@@ -257,15 +246,12 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
     
-    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
-    FLinearColor ConfigColor = Config.Color;
-    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
-    Comp->SetSpriteColor(FinalColor);
+    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
+    CacheComponentBaseColor(Comp, Config.Color);
+    // Применяем цвет с учетом фокуса
+    ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.Sprite.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-    }
+    if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
 }
 
 // =====================================================
@@ -292,13 +278,9 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     if (!Comp) return;
     
     if (Config.AnimInstanceClass) Comp->SetAnimInstanceClass(Config.AnimInstanceClass);
-    
     for (const auto& MaterialOverride : Config.MaterialOverrides)
     {
-        if (!MaterialOverride.Value.IsNull()) 
-        {
-            Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
-        }
+        if (!MaterialOverride.Value.IsNull()) Comp->SetMaterial(MaterialOverride.Key, MaterialOverride.Value.LoadSynchronous());
     }
     
     if (Config.AttachTo != E_SkeletalAttachmentTarget::None)
@@ -315,13 +297,10 @@ void AVNCharacter::ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal ID, c
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
     
-    // ИСПРАВЛЕНИЕ ФОКУСА: Применяем цвет из конфига, но с учетом фокуса
-    FLinearColor ConfigColor = Config.Color;
-    FLinearColor FinalColor = bIsInFocus ? ConfigColor : ConfigColor * DimColorMultiplier;
-    SetComponentColor(Comp, FinalColor);
+    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
+    CacheComponentBaseColor(Comp, Config.Color);
+    // Применяем цвет с учетом фокуса
+    ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.SkeletalMesh.IsNull())
-    {
-        Comp->SetVisibility(Config.bVisible);
-    }
+    if (!Config.SkeletalMesh.IsNull()) Comp->SetVisibility(Config.bVisible);
 }

@@ -40,32 +40,33 @@ void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 	
 	switch (AnimationType)
 	{
-		case EVNAnimationType::Transition:
+	case EVNAnimationType::Transition:
 		{
 			// Завершаем переход с правильной очисткой состояний
 			FinalizeCurrentTransition();
 			break;
 		}
 		
-		case EVNAnimationType::SpawnDespawn:
+	case EVNAnimationType::SpawnDespawn:
 		{
-			VN_LOG_DEBUG(TEXT("OnAnimationFinished: SpawnDespawn animation finished. Character visible: %s"), 
-				IsVisible() ? TEXT("true") : TEXT("false"));
+			// ИСПРАВЛЕНИЕ: После завершения анимации появления/исчезновения
+			// нужно убедиться, что все цвета соответствуют текущему состоянию фокуса.
+			RefreshAllComponentColors();
 			OnCharacterVisibilityChanged.Broadcast(IsVisible());
 			break;
 		}
 			
-		case EVNAnimationType::Focus:
+	case EVNAnimationType::Focus:
 		{
-			VN_LOG_DEBUG(TEXT("OnAnimationFinished: Focus animation finished. Character in focus: %s"), 
-				bIsInFocus ? TEXT("true") : TEXT("false"));
+			// ИСПРАВЛЕНИЕ: Состояние фокуса уже применено в конце анимации,
+			// но мы дополнительно вызовем событие.
 			OnCharacterFocusChanged.Broadcast(bIsInFocus);
 			break;
 		}
 
-		default:
-			VN_LOG_WARNING(TEXT("OnAnimationFinished: Unknown animation type: %d"), (int32)AnimationType);
-			break;
+	default:
+		VN_LOG_WARNING(TEXT("OnAnimationFinished: Unknown animation type: %d"), (int32)AnimationType);
+		break;
 	}
 }
 
@@ -104,30 +105,23 @@ void AVNCharacter::FinalizeCurrentTransition()
 		FadingInComponents.Num(), FadingOutComponents.Num());
 
 	// === ШАГ 1: Обработка компонентов FadingOut ===
+	// Здесь логика не меняется, так как компоненты просто исчезают.
 	for (TObjectPtr<USceneComponent>& Component : FadingOutComponents)
 	{
 		if (!Component || !IsValid(Component.Get()))
 		{
-			VN_LOG_WARNING(TEXT("FinalizeCurrentTransition: Invalid component in FadingOutComponents"));
 			continue;
 		}
 		
-		SetAnimationAlpha(Component.Get(), 0.0f);
 		Component->SetVisibility(false);
-		
 		if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component.Get()))
 		{
 			SkeletalComp->SetSkeletalMesh(nullptr);
-			SkeletalComp->SetAnimInstanceClass(nullptr);
-			SkeletalComp->SetLeaderPoseComponent(nullptr);
-			VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleared skeletal mesh for %s"), *Component->GetName());
 		}
 		else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(Component.Get()))
 		{
 			SpriteComp->SetSprite(nullptr);
-			VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Cleared sprite for %s"), *Component->GetName());
 		}
-		
 		ResetComponentAttachmentToDefault(Component.Get());
 	}
 	
@@ -136,18 +130,22 @@ void AVNCharacter::FinalizeCurrentTransition()
 	{
 		if (!Component || !IsValid(Component.Get()))
 		{
-			VN_LOG_WARNING(TEXT("FinalizeCurrentTransition: Invalid component in FadingInComponents"));
 			continue;
 		}
 		
 		float TargetAlpha = GetTargetAlpha(Component.Get());
-		SetAnimationAlpha(Component.Get(), TargetAlpha);
 		
-		// Применяем финальный цвет с учетом фокуса
-		SetComponentColor(Component.Get(), GetTargetColorForComponent(Component.Get()));
+		// === ИСПРАВЛЕНИЕ: Устанавливаем цвет из кэша с учетом фокуса ===
+		// Вместо прямого применения цвета, мы используем новую систему,
+		// которая возьмет базовый цвет из кэша и применит к нему эффект фокуса.
+		ApplyComponentColorWithFocus(Component.Get());
 		
-		VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Set final alpha %.2f and focus-aware color for %s"), 
-			TargetAlpha, *Component->GetName());
+		// Альфу все еще нужно установить, так как она может быть не 1.0
+		// Наша новая система цвета не управляет альфой напрямую в этом контексте.
+		SetComponentAlpha(Component.Get(), TargetAlpha);
+
+		VN_LOG_DEBUG(TEXT("FinalizeCurrentTransition: Set final state for %s with cached color and target alpha %.2f"), 
+			*Component->GetName(), TargetAlpha);
 		
 		bool bHasContent = false;
 		if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component.Get()))
@@ -159,27 +157,19 @@ void AVNCharacter::FinalizeCurrentTransition()
 			bHasContent = (SpriteComp->GetSprite() != nullptr);
 		}
 		
-		if (bHasContent && TargetAlpha > 0.01f)
-		{
-			Component->SetVisibility(true);
-		}
+		// Устанавливаем видимость в зависимости от наличия контента и альфы
+		Component->SetVisibility(bHasContent && TargetAlpha > 0.01f);
 	}
 	
 	// === ШАГ 3: Очистка анимационных данных ===
+	// Логика не меняется
 	for (TObjectPtr<USceneComponent>& Component : FadingInComponents)
 	{
-		if (Component && IsValid(Component.Get()))
-		{
-			ClearAnimationAlphas(Component.Get());
-		}
+		if (Component && IsValid(Component.Get())) ClearAnimationAlphas(Component.Get());
 	}
-	
 	for (TObjectPtr<USceneComponent>& Component : FadingOutComponents)
 	{
-		if (Component && IsValid(Component.Get()))
-		{
-			ClearAnimationAlphas(Component.Get());
-		}
+		if (Component && IsValid(Component.Get())) ClearAnimationAlphas(Component.Get());
 	}
 	
 	FadingInComponents.Empty();
@@ -194,32 +184,21 @@ void AVNCharacter::FinalizeCurrentTransition()
 
 void AVNCharacter::SetFocus(bool bInFocus, float Duration)
 {
-	if (bIsInFocus == bInFocus)
-	{
-		VN_LOG_DEBUG(TEXT("SetFocus: Focus state unchanged (%s)"), bInFocus ? TEXT("In Focus") : TEXT("Out of Focus"));
-		return;
-	}
+	if (bIsInFocus == bInFocus) return;
 
-	VN_LOG_DEBUG(TEXT("SetFocus: Changing focus to %s with duration %.2f"), 
-		bInFocus ? TEXT("In Focus") : TEXT("Out of Focus"), Duration);
-
-	// Если есть активная анимация фокуса, пропускаем её
 	if (AnimationManager && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Focus)
 	{
 		AnimationManager->SkipCurrentAnimation();
 	}
 
-	// Устанавливаем новое состояние фокуса
 	bIsInFocus = bInFocus;
 
-	// Запускаем анимацию
 	if (Duration > 0.0f && AnimationManager)
 	{
 		AnimationManager->PlayFocus(bInFocus, Duration);
 	}
 	else
 	{
-		// Мгновенное применение
 		ApplyFocusStateImmediate();
 	}
 }
@@ -238,18 +217,9 @@ void AVNCharacter::SkipFocusAnimation()
 
 void AVNCharacter::ApplyFocusStateImmediate()
 {
-	// Применяем цвета мгновенно ко всем основным компонентам
-	TArray<USceneComponent*> AllComponents = GetAllMainComponents();
-	for (USceneComponent* Component : AllComponents)
-	{
-		if (Component && Component->IsVisible())
-		{
-			FLinearColor TargetColor = GetTargetColorForComponent(Component);
-			SetComponentColor(Component, TargetColor);
-		}
-	}
-
-	// Уведомляем о смене фокуса
+	// === ИСПРАВЛЕНИЕ: Используем новую централизованную функцию ===
+	// Вместо ручного перебора компонентов, вызываем функцию, которая сделает это за нас.
+	RefreshAllComponentColors();
 	OnCharacterFocusChanged.Broadcast(bIsInFocus);
 }
 
@@ -259,47 +229,36 @@ void AVNCharacter::ApplyFocusStateImmediate()
 
 void AVNCharacter::Appear(float Duration)
 {
-	VN_LOG_DEBUG(TEXT("Appear: Starting appear animation with duration %.2f"), Duration);
-
-	// Если есть активная анимация появления/исчезновения, пропускаем её
 	if (AnimationManager && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::SpawnDespawn)
 	{
 		AnimationManager->SkipCurrentAnimation();
 	}
 
-	// Показываем актора
 	SetActorHiddenInGame(false);
 
-	// Запускаем анимацию появления
 	if (Duration > 0.0f && AnimationManager)
 	{
 		AnimationManager->PlaySpawnDespawn(true, Duration);
 	}
 	else
 	{
-		// Мгновенное появление
 		ApplyVisibilityStateImmediate(true);
 	}
 }
 
 void AVNCharacter::Disappear(float Duration)
 {
-	VN_LOG_DEBUG(TEXT("Disappear: Starting disappear animation with duration %.2f"), Duration);
-
-	// Если есть активная анимация появления/исчезновения, пропускаем её
 	if (AnimationManager && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::SpawnDespawn)
 	{
 		AnimationManager->SkipCurrentAnimation();
 	}
 
-	// Запускаем анимацию исчезновения
 	if (Duration > 0.0f && AnimationManager)
 	{
 		AnimationManager->PlaySpawnDespawn(false, Duration);
 	}
 	else
 	{
-		// Мгновенное исчезновение
 		ApplyVisibilityStateImmediate(false);
 	}
 }
@@ -312,9 +271,7 @@ void AVNCharacter::SkipSpawnDespawnAnimation()
 	}
 	else
 	{
-		// Мгновенное скрытие/показ в зависимости от текущего состояния
-		bool bShouldBeVisible = !IsHidden();
-		ApplyVisibilityStateImmediate(bShouldBeVisible);
+		ApplyVisibilityStateImmediate(!IsHidden());
 	}
 }
 
@@ -322,28 +279,36 @@ void AVNCharacter::ApplyVisibilityStateImmediate(bool bShouldBeVisible)
 {
 	if (bShouldBeVisible)
 	{
-		// Показываем все основные компоненты с правильными цветами
+		SetActorHiddenInGame(false);
 		TArray<USceneComponent*> AllComponents = GetAllMainComponents();
 		for (USceneComponent* Component : AllComponents)
 		{
 			if (Component && Component != BodyShadow_Sprite)
 			{
-				Component->SetVisibility(true);
-				FLinearColor TargetColor = GetTargetColorForComponent(Component);
-				SetComponentColor(Component, TargetColor);
+				bool bHasContent = (Cast<USkeletalMeshComponent>(Component) && Cast<USkeletalMeshComponent>(Component)->GetSkeletalMeshAsset()) || 
+								   (Cast<UPaperSpriteComponent>(Component) && Cast<UPaperSpriteComponent>(Component)->GetSprite());
+				if(bHasContent)
+				{
+					Component->SetVisibility(true);
+					// === ИСПРАВЛЕНИЕ: Применяем цвет из кэша с учетом фокуса ===
+					ApplyComponentColorWithFocus(Component);
+				}
+				else
+				{
+					Component->SetVisibility(false);
+				}
 			}
 		}
-		BodyShadow_Sprite->SetVisibility(false);
+		if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
 	}
 	else
 	{
-		// Скрываем актора
 		SetActorHiddenInGame(true);
 	}
 
-	// Уведомляем о смене видимости
 	OnCharacterVisibilityChanged.Broadcast(bShouldBeVisible);
 }
+
 
 bool AVNCharacter::IsVisible() const
 {
