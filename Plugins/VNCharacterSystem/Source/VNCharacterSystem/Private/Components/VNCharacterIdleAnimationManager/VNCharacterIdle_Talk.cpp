@@ -94,6 +94,23 @@ void UVNCharacterIdleAnimationManager::UpdateTalkFrame()
     if (RandomSprite)
     {
         Character->Mouth_Sprite->SetSprite(RandomSprite);
+        
+        // ИСПРАВЛЕНИЕ: Применяем цвет в зависимости от кэша
+        TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Mouth);
+        if (!CachedSprite.IsNull())
+        {
+            // В кэше есть спрайт - используем цвет из кэша
+            Character->ApplyComponentColorWithFocus(Character->Mouth_Sprite);
+        }
+        else
+        {
+            // В кэше NULL - используем цвет из конфигурации анимации или белый
+            FLinearColor AnimationColor = IdleAnimationsConfig.TalkConfig.bUseCustomTalkColor ? 
+                IdleAnimationsConfig.TalkConfig.TalkColor : FLinearColor::White;
+            
+            FLinearColor FinalColor = Character->ApplyFocusToColor(AnimationColor);
+            Character->SetComponentColor(Character->Mouth_Sprite, FinalColor);
+        }
     }
 }
 

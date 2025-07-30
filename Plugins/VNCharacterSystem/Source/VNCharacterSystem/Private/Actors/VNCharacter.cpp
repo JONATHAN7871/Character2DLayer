@@ -79,4 +79,6 @@ void AVNCharacter::BeginPlay()
 			PerformAutoInitialization();
 		}
 	}
+	
+	SetupAllComponentLayers();
 }

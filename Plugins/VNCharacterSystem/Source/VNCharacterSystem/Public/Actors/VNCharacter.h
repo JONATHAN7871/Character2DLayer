@@ -340,6 +340,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Auto Initialize")
 	bool bAutoStartIdleAnimations = true;
 
+	// === СЛОИ ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
+	int32 CharacterBaseLayer = 0;
 	
 	// =====================================================
 	// ПУБЛИЧНОЕ API - ОСНОВНЫЕ МЕТОДЫ УПРАВЛЕНИЯ
@@ -677,6 +680,15 @@ public:
 	friend class UVNCharacterAnimationManager;
 	friend class UVNCharacterIdleAnimationManager;
 
+	// === СЛОИ ===
+	/** Установить слой персонажа (0-9, где больше = ближе к камере) */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Rendering")
+	void SetCharacterLayer(int32 CharacterLayer);
+
+	/** Получить текущий слой персонажа */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Rendering")
+	int32 GetCharacterLayer() const;
+	
 	// =====================================================
 	// ВНУТРЕННИЕ МЕТОДЫ - НЕ ДЛЯ BLUEPRINT
 	// =====================================================
@@ -763,4 +775,7 @@ private:
 
 	// === АВТОИНИЦИАЛИЗАЦИЯ ===
 	void PerformAutoInitialization();
+
+	// === СЛОИ ===
+	void SetupAllComponentLayers();
 };

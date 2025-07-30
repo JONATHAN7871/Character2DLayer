@@ -120,6 +120,24 @@ void UVNCharacterIdleAnimationManager::ExecuteRandomEyesMovement()
     if (RandomDirection)
     {
         Character->Eyes_Sprite->SetSprite(RandomDirection);
+        
+        // ИСПРАВЛЕНИЕ: Применяем цвет в зависимости от кэша
+        TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyes);
+        if (!CachedSprite.IsNull())
+        {
+            // В кэше есть спрайт - используем цвет из кэша
+            Character->ApplyComponentColorWithFocus(Character->Eyes_Sprite);
+        }
+        else
+        {
+            // В кэше NULL - используем цвет из конфигурации анимации или белый
+            FLinearColor AnimationColor = IdleAnimationsConfig.EyesRandomConfig.bUseCustomEyesColor ? 
+                IdleAnimationsConfig.EyesRandomConfig.EyesColor : FLinearColor::White;
+            
+            FLinearColor FinalColor = Character->ApplyFocusToColor(AnimationColor);
+            Character->SetComponentColor(Character->Eyes_Sprite, FinalColor);
+        }
+        
         bIsEyesRandomAnimationPlaying = true;
         
         float LookDuration = IdleAnimationsConfig.EyesRandomConfig.GetRandomLookDuration();
@@ -146,11 +164,18 @@ void UVNCharacterIdleAnimationManager::ReturnEyesToOriginal()
         if (!CachedEyes.IsNull())
         {
             Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
-            VN_LOG_DEBUG(TEXT("ReturnEyesToOriginal: Restored from cache"));
+            Character->ApplyComponentColorWithFocus(Character->Eyes_Sprite);
+            VN_LOG_DEBUG(TEXT("ReturnEyesToOriginal: Restored from cache and applied cached color"));
         }
         else
         {
-            VN_LOG_WARNING(TEXT("ReturnEyesToOriginal: Cache is empty, keeping current sprite"));
+            VN_LOG_WARNING(TEXT("ReturnEyesToOriginal: Cache is empty, keeping current sprite and applying default color"));
+            
+            // Применяем цвет по умолчанию (белый) с учетом фокуса
+            FLinearColor DefaultColor = FLinearColor::White;
+            FLinearColor FinalColor = Character->ApplyFocusToColor(DefaultColor);
+            Character->SetComponentColor(Character->Eyes_Sprite, FinalColor);
+            
             // Сохраняем текущий спрайт в кэш для будущих использований
             UPaperSprite* CurrentSprite = Character->Eyes_Sprite->GetSprite();
             if (CurrentSprite)

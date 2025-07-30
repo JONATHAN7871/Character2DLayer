@@ -157,11 +157,29 @@ void UVNCharacterIdleAnimationManager::ExecuteBlink()
 
     UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Starting blink"));
 
-    // ИСПРАВЛЕНО: Используем SetHiddenInGame
-    Character->Eyelids_Sprite->SetHiddenInGame(false);  // Показываем компонент
+    // ИСПРАВЛЕНИЕ: Показываем компонент и устанавливаем спрайт
+    Character->Eyelids_Sprite->SetHiddenInGame(false);
     Character->Eyelids_Sprite->SetSprite(ClosedEyes);
     
-    UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Showed component (SetHiddenInGame(false)) and set closed eyes"));
+    // ИСПРАВЛЕНИЕ: Применяем цвет в зависимости от кэша
+    TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyelids);
+    if (!CachedSprite.IsNull())
+    {
+        // В кэше есть спрайт - используем цвет из кэша
+        Character->ApplyComponentColorWithFocus(Character->Eyelids_Sprite);
+        UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Applied cached color"));
+    }
+    else
+    {
+        // В кэше NULL - используем цвет из конфигурации анимации или белый
+        FLinearColor AnimationColor = IdleAnimationsConfig.BlinkConfig.bUseCustomBlinkColor ? 
+            IdleAnimationsConfig.BlinkConfig.BlinkColor : FLinearColor::White;
+        
+        // Применяем эффект фокуса к цвету анимации
+        FLinearColor FinalColor = Character->ApplyFocusToColor(AnimationColor);
+        Character->SetComponentColor(Character->Eyelids_Sprite, FinalColor);
+        UE_LOG(LogTemp, Warning, TEXT("ExecuteBlink: Applied animation color (cache empty)"));
+    }
     
     // Определяем параметры
     float BlinkDuration = IdleAnimationsConfig.BlinkConfig.BlinkDuration;
@@ -258,6 +276,20 @@ void UVNCharacterIdleAnimationManager::DoubleBlink_SecondClose()
     if (ClosedEyes)
     {
         Character->Eyelids_Sprite->SetSprite(ClosedEyes);
+        
+        // ИСПРАВЛЕНИЕ: Применяем цвет в зависимости от кэша
+        TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyelids);
+        if (!CachedSprite.IsNull())
+        {
+            Character->ApplyComponentColorWithFocus(Character->Eyelids_Sprite);
+        }
+        else
+        {
+            FLinearColor AnimationColor = IdleAnimationsConfig.BlinkConfig.bUseCustomBlinkColor ? 
+                IdleAnimationsConfig.BlinkConfig.BlinkColor : FLinearColor::White;
+            FLinearColor FinalColor = Character->ApplyFocusToColor(AnimationColor);
+            Character->SetComponentColor(Character->Eyelids_Sprite, FinalColor);
+        }
     }
     
     // Планируем финальное открытие
@@ -282,20 +314,21 @@ void UVNCharacterIdleAnimationManager::FinishBlinkAnimation()
         // Восстанавливаем спрайт из кэша
         Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
         
-        // ИСПРАВЛЕНО: Проверяем кэш и используем SetHiddenInGame
+        // ИСПРАВЛЕНИЕ: Проверяем кэш и используем SetHiddenInGame
         TSoftObjectPtr<UPaperSprite> CachedSprite = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Eyelids);
         
         if (CachedSprite.IsNull())
         {
             // В кэше NULL → скрываем компонент
             Character->Eyelids_Sprite->SetHiddenInGame(true);
-            UE_LOG(LogTemp, Warning, TEXT("FinishBlinkAnimation: Cache is NULL → HIDDEN component (SetHiddenInGame(true))"));
+            UE_LOG(LogTemp, Warning, TEXT("FinishBlinkAnimation: Cache is NULL → HIDDEN component"));
         }
         else
         {
-            // В кэше есть спрайт → показываем компонент
+            // В кэше есть спрайт → показываем компонент и применяем цвет из кэша
             Character->Eyelids_Sprite->SetHiddenInGame(false);
-            UE_LOG(LogTemp, Warning, TEXT("FinishBlinkAnimation: Cache has sprite → VISIBLE component (SetHiddenInGame(false))"));
+            Character->ApplyComponentColorWithFocus(Character->Eyelids_Sprite);
+            UE_LOG(LogTemp, Warning, TEXT("FinishBlinkAnimation: Cache has sprite → VISIBLE and applied cached color"));
         }
         
         UPaperSprite* FinalSprite = Character->Eyelids_Sprite->GetSprite();
