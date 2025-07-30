@@ -43,6 +43,14 @@ struct VNCHARACTERSYSTEM_API FVNBlinkAnimationConfig
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float DoubleBlinkChance = 0.3f;
 
+    /** Цвет для анимации моргания (применяется к векам) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Blink Animation")
+    FLinearColor BlinkColor = FLinearColor::White;
+
+    /** Применять ли кастомный цвет во время моргания */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Blink Animation")
+    bool bUseCustomBlinkColor = false;
+
     /** Активна ли анимация моргания */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Blink Animation")
     bool bEnabled = false;
@@ -55,6 +63,8 @@ struct VNCHARACTERSYSTEM_API FVNBlinkAnimationConfig
         BlinkDuration = 0.15f;
         DoubleBlinkPause = 0.1f;
         DoubleBlinkChance = 0.3f;
+        BlinkColor = FLinearColor::White;
+        bUseCustomBlinkColor = false;
         bEnabled = false;
     }
 
@@ -98,6 +108,14 @@ struct VNCHARACTERSYSTEM_API FVNTalkAnimationConfig
         meta = (ClampMin = "0.1", ClampMax = "10.0"))
     float TalkSpeed = 3.0f;
 
+    /** Цвет для анимации разговора (применяется к рту) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Talk Animation")
+    FLinearColor TalkColor = FLinearColor::White;
+
+    /** Применять ли кастомный цвет во время разговора */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Talk Animation")
+    bool bUseCustomTalkColor = false;
+
     /** Активна ли анимация разговора */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Talk Animation")
     bool bEnabled = false;
@@ -106,6 +124,8 @@ struct VNCHARACTERSYSTEM_API FVNTalkAnimationConfig
     {
         TalkFlipbook = nullptr;
         TalkSpeed = 3.0f;
+        TalkColor = FLinearColor::White;
+        bUseCustomTalkColor = false;
         bEnabled = false;
     }
 
@@ -155,6 +175,14 @@ struct VNCHARACTERSYSTEM_API FVNEyesRandomAnimationConfig
         meta = (ClampMin = "0.1", ClampMax = "15.0"))
     float MaxWaitDuration = 2.0f;
 
+    /** Цвет для анимации глаз (применяется к глазам) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eyes Random Animation")
+    FLinearColor EyesColor = FLinearColor::White;
+
+    /** Применять ли кастомный цвет во время анимации глаз */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eyes Random Animation")
+    bool bUseCustomEyesColor = false;
+
     /** Активна ли анимация случайных движений глаз */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Eyes Random Animation")
     bool bEnabled = false;
@@ -166,6 +194,8 @@ struct VNCHARACTERSYSTEM_API FVNEyesRandomAnimationConfig
         MaxLookDuration = 0.8f;
         MinWaitDuration = 0.3f;
         MaxWaitDuration = 2.0f;
+        EyesColor = FLinearColor::White;
+        bUseCustomEyesColor = false;
         bEnabled = false;
     }
 

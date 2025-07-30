@@ -1,3 +1,5 @@
+// --- START OF FILE VNCharacter.h ---
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -307,6 +309,20 @@ protected:
 	// =====================================================
 
 public:
+    // === НОВАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ===
+    
+    /** 
+     * Инициализирует или "спавнит" персонажа с заданными параметрами.
+     * @param bIsNarrator Если true, персонаж будет сконфигурирован как невидимый рассказчик без визуальных компонентов.
+     * @param InCharacterData DataAsset с визуальной конфигурацией.
+     * @param InIdleData DataAsset с конфигурацией idle-анимаций.
+     * @param bAnimate Применить ли изменения с анимацией (fade).
+     * @param Duration Длительность анимации.
+     */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Initialization")
+    void CharacterSpawn(bool bIsNarrator, UVNCharacterDataAsset* InCharacterData, UVNCharacterIdleAnimationDataAsset* InIdleData, bool bAnimate = false, float Duration = 1.0f);
+
+
 	// === ОСНОВНОЕ API - УСТАНОВКА КОНТЕНТА ===
 	
 	/** Установить Skeletal Mesh для компонента */
