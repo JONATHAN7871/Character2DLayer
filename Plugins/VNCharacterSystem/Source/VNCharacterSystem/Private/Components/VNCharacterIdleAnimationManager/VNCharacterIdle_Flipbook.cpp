@@ -12,12 +12,32 @@ UPaperSprite* UVNCharacterIdleAnimationManager::GetFlipbookSpriteImproved(UPaper
 {
     if (!Flipbook)
     {
-        VN_LOG_ERROR(TEXT("GetFlipbookSpriteImproved: Flipbook is null"));
+        UE_LOG(LogTemp, Error, TEXT("GetFlipbookSpriteImproved: Flipbook is null"));
         return nullptr;
     }
 
-    // ПРОСТОЕ РЕШЕНИЕ: Используем встроенный метод UE!
-    return Flipbook->GetSpriteAtFrame(FrameIndex);
+    // ПРОСТОЕ РЕШЕНИЕ: Используем GetSpriteAtFrame
+    UPaperSprite* Sprite = Flipbook->GetSpriteAtFrame(FrameIndex);
+    
+    if (!Sprite)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GetFlipbookSpriteImproved: No sprite at frame %d"), FrameIndex);
+        
+        // АЛЬТЕРНАТИВНЫЙ СПОСОБ: Попробуем через время
+        float TotalDuration = Flipbook->GetTotalDuration();
+        if (TotalDuration > 0.0f)
+        {
+            int32 NumFrames = Flipbook->GetNumFrames();
+            if (NumFrames > 0 && FrameIndex < NumFrames)
+            {
+                float TimePoint = (TotalDuration / NumFrames) * FrameIndex;
+                Sprite = Flipbook->GetSpriteAtTime(TimePoint);
+                UE_LOG(LogTemp, Warning, TEXT("GetFlipbookSpriteImproved: Got sprite via time method at %.3f"), TimePoint);
+            }
+        }
+    }
+    
+    return Sprite;
 }
 
 UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomFlipbookSpriteImproved(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame) const
@@ -108,33 +128,4 @@ void UVNCharacterIdleAnimationManager::DebugFlipbook(UPaperFlipbook* Flipbook) c
     }
     
     VN_LOG(Log, TEXT("=== END FLIPBOOK DEBUG ==="));
-}
-
-// =====================================================
-// УСТАРЕВШИЕ МЕТОДЫ (СОВМЕСТИМОСТЬ)
-// =====================================================
-
-UPaperSprite* UVNCharacterIdleAnimationManager::GetSpriteFromFlipbook(UPaperFlipbook* Flipbook, int32 FrameIndex) const
-{
-    return GetFlipbookSpriteImproved(Flipbook, FrameIndex);
-}
-
-int32 UVNCharacterIdleAnimationManager::GetFlipbookFrameCount(UPaperFlipbook* Flipbook) const
-{
-    return GetFlipbookFrameCountImproved(Flipbook);
-}
-
-UPaperSprite* UVNCharacterIdleAnimationManager::GetRandomSpriteFromFlipbook(UPaperFlipbook* Flipbook, bool bExcludeFirstFrame) const
-{
-    return GetRandomFlipbookSpriteImproved(Flipbook, bExcludeFirstFrame);
-}
-
-void UVNCharacterIdleAnimationManager::SaveOriginalSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& OriginalSprite)
-{
-    SaveCurrentSprite(Component, OriginalSprite);
-}
-
-void UVNCharacterIdleAnimationManager::RestoreOriginalSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& OriginalSprite)
-{
-    RestoreCurrentSprite(Component, OriginalSprite);
 }

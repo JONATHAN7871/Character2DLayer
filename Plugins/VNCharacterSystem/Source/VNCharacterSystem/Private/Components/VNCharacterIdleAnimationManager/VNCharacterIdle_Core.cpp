@@ -13,9 +13,6 @@ UVNCharacterIdleAnimationManager::UVNCharacterIdleAnimationManager()
     bVerboseLogging = false;
     bIsBlinkAnimationPlaying = false;
     bIsEyesRandomAnimationPlaying = false;
-    bHasInitialEyelidsSprite = false;
-    CurrentBlinkState = EBlinkState::WaitingForBlink;
-    bPendingDoubleBlink = false;
 }
 
 void UVNCharacterIdleAnimationManager::BeginPlay()
@@ -137,66 +134,44 @@ void UVNCharacterIdleAnimationManager::HandleExternalSpriteChange(E_VN_Component
     AVNCharacter* Character = GetVNCharacterOwner();
     if (!Character) return;
 
-    VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: Component %d changed to %s"), 
-        (int32)ComponentID, 
-        NewSprite.IsNull() ? TEXT("NULL") : *NewSprite.ToString());
-
     switch (ComponentID)
     {
-        case E_VN_ComponentID_Sprite::Eyelids:
+    case E_VN_ComponentID_Sprite::Eyelids:
         {
-            // Обновляем кэш и режим моргания
-            Character->SetCachedSprite(ComponentID, NewSprite);
-            
-            if (IdleAnimationsConfig.BlinkConfig.bEnabled)
-            {
-                UpdateBlinkModeForNewEyelidsState(NewSprite);
-            }
-            break;
-        }
-        
-        case E_VN_ComponentID_Sprite::Mouth:
-        {
-            // Если анимация разговора НЕ активна или спрайт не является частью анимации
             UPaperSprite* LoadedSprite = NewSprite.IsNull() ? nullptr : NewSprite.LoadSynchronous();
             
-            if (!IdleAnimationsConfig.TalkConfig.bEnabled || 
-                !IsCurrentSpritePartOfTalkAnimation(LoadedSprite))
+            if (!bIsBlinkAnimationPlaying || !IsCurrentSpritePartOfBlinkAnimation(LoadedSprite))
             {
                 Character->SetCachedSprite(ComponentID, NewSprite);
-                VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: Mouth cache updated (not part of talk animation)"));
-            }
-            else
-            {
-                VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: Mouth sprite is part of talk animation, cache not updated"));
             }
             break;
         }
         
-        case E_VN_ComponentID_Sprite::Eyes:
+    case E_VN_ComponentID_Sprite::Mouth:
         {
-            // Если анимация глаз НЕ активна или спрайт не является частью анимации
             UPaperSprite* LoadedSprite = NewSprite.IsNull() ? nullptr : NewSprite.LoadSynchronous();
             
-            if (!bIsEyesRandomAnimationPlaying || 
-                !IsAnimationSprite(Character->Eyes_Sprite, LoadedSprite))
+            if (!IdleAnimationsConfig.TalkConfig.bEnabled || !IsCurrentSpritePartOfTalkAnimation(LoadedSprite))
             {
                 Character->SetCachedSprite(ComponentID, NewSprite);
-                VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: Eyes cache updated (not part of eyes animation)"));
-            }
-            else
-            {
-                VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: Eyes sprite is part of animation, cache not updated"));
             }
             break;
         }
         
-        case E_VN_ComponentID_Sprite::Eyebrow:
-        case E_VN_ComponentID_Sprite::Wink:
+    case E_VN_ComponentID_Sprite::Eyes:
         {
-            // Эти компоненты пока не участвуют в idle анимациях, обновляем кэш всегда
+            UPaperSprite* LoadedSprite = NewSprite.IsNull() ? nullptr : NewSprite.LoadSynchronous();
+            
+            if (!bIsEyesRandomAnimationPlaying || !IsAnimationSprite(Character->Eyes_Sprite, LoadedSprite))
+            {
+                Character->SetCachedSprite(ComponentID, NewSprite);
+            }
+            break;
+        }
+        
+    default:
+        {
             Character->SetCachedSprite(ComponentID, NewSprite);
-            VN_LOG_DEBUG(TEXT("HandleExternalSpriteChange: %d cache updated (no idle animation)"), (int32)ComponentID);
             break;
         }
     }
@@ -205,34 +180,12 @@ void UVNCharacterIdleAnimationManager::HandleExternalSpriteChange(E_VN_Component
 void UVNCharacterIdleAnimationManager::UpdateBlinkModeForNewEyelidsState(TSoftObjectPtr<UPaperSprite> NewEyelidsSprite)
 {
     AVNCharacter* Character = GetVNCharacterOwner();
-    if (!Character || !Character->Eyelids_Sprite) return;
+    if (!Character) return;
 
-    // Определяем новый режим моргания
-    bool bNewHasInitialSprite = !NewEyelidsSprite.IsNull();
+    // Просто обновляем кэш - никаких сложных режимов
+    Character->SetCachedSprite(E_VN_ComponentID_Sprite::Eyelids, NewEyelidsSprite);
     
-    if (bHasInitialEyelidsSprite != bNewHasInitialSprite)
-    {
-        bHasInitialEyelidsSprite = bNewHasInitialSprite;
-        
-        VN_LOG_DEBUG(TEXT("UpdateBlinkModeForNewEyelidsState: Blink mode changed to %s"), 
-            bHasInitialEyelidsSprite ? TEXT("2-phase") : TEXT("3-phase"));
-        
-        // Если моргание сейчас не выполняется, можем безопасно обновить режим
-        if (!bIsBlinkAnimationPlaying)
-        {
-            VN_LOG_DEBUG(TEXT("UpdateBlinkModeForNewEyelidsState: Mode updated immediately (not blinking)"));
-        }
-        else
-        {
-            VN_LOG_DEBUG(TEXT("UpdateBlinkModeForNewEyelidsState: Mode will be applied after current blink finishes"));
-            // Режим обновится автоматически в FinishBlinkAnimation()
-        }
-    }
-    else
-    {
-        VN_LOG_DEBUG(TEXT("UpdateBlinkModeForNewEyelidsState: Blink mode unchanged (%s)"), 
-            bHasInitialEyelidsSprite ? TEXT("2-phase") : TEXT("3-phase"));
-    }
+    VN_LOG_DEBUG(TEXT("UpdateBlinkModeForNewEyelidsState: Cache updated"));
 }
 
 // =====================================================
@@ -262,19 +215,17 @@ void UVNCharacterIdleAnimationManager::SetTalkEnabled(bool bEnable)
 {
     VN_LOG_DEBUG(TEXT("SetTalkEnabled called: %s"), bEnable ? TEXT("true") : TEXT("false"));
     
-    // ИСПРАВЛЕНИЕ: Если выключаем Talk, сначала синхронизируем кэш
     if (!bEnable && IdleAnimationsConfig.TalkConfig.bEnabled)
     {
         AVNCharacter* Character = GetVNCharacterOwner();
         if (Character && Character->Mouth_Sprite)
         {
-            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем кэш рта ПЕРЕД остановкой анимации
+            // ИСПРАВЛЕНО: Используем кэширование VNCharacter напрямую
             UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
             if (CurrentSprite && !IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
             {
-                // Если текущий спрайт НЕ из анимации - это новый исходный спрайт
                 Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
-                VN_LOG_DEBUG(TEXT("SetTalkEnabled: Updated mouth cache with external sprite before stopping"));
+                VN_LOG_DEBUG(TEXT("SetTalkEnabled: Updated mouth cache before stopping"));
             }
         }
         
@@ -395,29 +346,5 @@ void UVNCharacterIdleAnimationManager::LogIdleAnimation(const FString& Message, 
         VN_LOG_DEBUG(TEXT("IdleAnimManager [%s]: %s"), 
             OwnerCharacter.IsValid() ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
             *Message);
-    }
-}
-
-void UVNCharacterIdleAnimationManager::SaveCurrentSprite(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite>& SavedSprite)
-{
-    if (!Component) return;
-    SavedSprite = Component->GetSprite();
-}
-
-void UVNCharacterIdleAnimationManager::RestoreCurrentSprite(UPaperSpriteComponent* Component, const TSoftObjectPtr<UPaperSprite>& SavedSprite)
-{
-    if (!Component) return;
-    
-    if (!SavedSprite.IsNull())
-    {
-        UPaperSprite* LoadedSprite = SavedSprite.LoadSynchronous();
-        if (LoadedSprite)
-        {
-            Component->SetSprite(LoadedSprite);
-        }
-    }
-    else
-    {
-        Component->SetSprite(nullptr);
     }
 }

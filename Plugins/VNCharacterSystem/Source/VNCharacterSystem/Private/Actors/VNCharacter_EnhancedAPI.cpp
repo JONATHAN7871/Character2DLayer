@@ -53,17 +53,6 @@ void AVNCharacter::SetIdleEmotionalState(EIdleEmotionalState EmotionState)
     TSoftObjectPtr<UPaperFlipbook> SavedTalkFlipbook = CurrentConfig.TalkConfig.TalkFlipbook;
     TSoftObjectPtr<UPaperFlipbook> SavedEyesFlipbook = CurrentConfig.EyesRandomConfig.EyesDirectionsFlipbook;
     
-    // Базовые значения для расчетов (средние значения)
-    float BaseMinInterval = 2.0f;
-    float BaseMaxInterval = 5.0f;
-    float BaseDuration = 0.15f;
-    float BaseDoubleChance = 0.3f;
-    float BaseTalkSpeed = 3.0f;
-    float BaseEyesMinLook = 0.2f;
-    float BaseEyesMaxLook = 0.8f;
-    float BaseEyesMinWait = 0.3f;
-    float BaseEyesMaxWait = 2.0f;
-    
     switch (EmotionState)
     {
         case EIdleEmotionalState::Calm:

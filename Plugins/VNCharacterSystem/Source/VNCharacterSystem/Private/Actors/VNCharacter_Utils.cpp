@@ -298,34 +298,30 @@ void AVNCharacter::ValidateAndSetupSkeletalComponent(USkeletalMeshComponent* Com
 void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Component, TSoftObjectPtr<UPaperSprite> Sprite)
 {
 	if (!Component) return;
-	
-	// ИСПРАВЛЕНИЕ: Принудительно сбрасываем состояние перед изменениями
-	Component->SetHiddenInGame(false);
-	Component->SetVisibility(true);
-	
+    
+	// ПРОВЕРЬТЕ ЭТОТ МЕТОД: возможно здесь тоже нужно заменить
+	Component->SetHiddenInGame(false);  // Вместо SetVisibility(true)
+    
 	if (!Sprite.IsNull())
 	{
 		UPaperSprite* LoadedSprite = Sprite.LoadSynchronous();
 		if (LoadedSprite)
 		{
 			Component->SetSprite(LoadedSprite);
-			
-			// ИСПРАВЛЕНИЕ: Применяем цвет с учетом фокуса
 			Component->SetSpriteColor(GetTargetColorForComponent(Component));
-			
-			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s with focus-aware color"), *Component->GetName());
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Set sprite for %s"), *Component->GetName());
 		}
 		else
 		{
 			Component->SetSprite(nullptr);
-			Component->SetVisibility(false);
+			Component->SetHiddenInGame(true);  // Вместо SetVisibility(false)
 			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
 		Component->SetSprite(nullptr);
-		Component->SetVisibility(false);
+		Component->SetHiddenInGame(true);  // Вместо SetVisibility(false)
 		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
 	}
 }

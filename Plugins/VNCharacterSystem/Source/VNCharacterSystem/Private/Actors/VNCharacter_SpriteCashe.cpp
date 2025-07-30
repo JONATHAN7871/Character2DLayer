@@ -114,7 +114,7 @@ void AVNCharacter::RestoreSpriteFromCache(E_VN_ComponentID_Sprite ComponentID)
         return;
     }
     
-    // ИСПРАВЛЕНИЕ: nullptr в кэше - это валидное состояние!
+    // ✅ КРИТИЧЕСКИ ВАЖНО: NULL в кэше - это валидное состояние!
     if (!CachedSprite.IsNull())
     {
         UPaperSprite* LoadedSprite = CachedSprite.LoadSynchronous();
@@ -124,7 +124,7 @@ void AVNCharacter::RestoreSpriteFromCache(E_VN_ComponentID_Sprite ComponentID)
     }
     else
     {
-        // Кэш содержит nullptr - это означает "компонент должен быть пустым"
+        // ✅ ИСПРАВЛЕНИЕ: Кэш содержит NULL - компонент должен быть пустым
         Component->SetSprite(nullptr);
         VN_LOG_DEBUG(TEXT("RestoreSpriteFromCache: Restored %d to NULL (cached empty state)"), (int32)ComponentID);
     }
