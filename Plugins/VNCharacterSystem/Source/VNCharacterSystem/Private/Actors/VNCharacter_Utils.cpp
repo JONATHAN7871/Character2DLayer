@@ -134,30 +134,49 @@ void AVNCharacter::CommitTransitions()
 
 void AVNCharacter::UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale)
 {
-    if (!Component) return;
+	if (!Component) return;
 
-    FVector FinalOffset = LocalOffset;
-    float FinalScale = LocalScale;
+	FVector FinalOffset = LocalOffset;
+	float FinalScale = LocalScale;
 
-    if (Component->GetAttachSocketName().IsNone())
-    {
-        if (Cast<USkeletalMeshComponent>(Component))
-        {
-            FinalOffset = GlobalSkeletalOffset + LocalOffset;
-            FinalScale = GlobalSkeletalScale * LocalScale;
-        }
-        else if (Cast<UPaperSpriteComponent>(Component))
-        {
-            if (!IsChildOfHeadSprite(Component))
-            {
-                FinalOffset = GlobalSpriteOffset + LocalOffset;
-                FinalScale = GlobalSpriteScale * LocalScale;
-            }
-        }
-    }
+	// ИСПРАВЛЕНИЕ: Добавляем специальную обработку для Shadow
+	bool bIsShadowComponent = (Component == BodyShadow_Sprite || Component == BodyShadow_Sprite_Fade);
+
+	// Применяем глобальные трансформации только если компонент не прикреплён к сокету
+	if (Component->GetAttachSocketName().IsNone())
+	{
+		if (Cast<USkeletalMeshComponent>(Component))
+		{
+			// Skeletal компоненты
+			FinalOffset = GlobalSkeletalOffset + LocalOffset;
+			FinalScale = GlobalSkeletalScale * LocalScale;
+		}
+		else if (Cast<UPaperSpriteComponent>(Component))
+		{
+			// ИСПРАВЛЕНИЕ: Shadow и обычные спрайты обрабатываются одинаково
+			if (bIsShadowComponent)
+			{
+				// Shadow получает полные глобальные трансформации
+				FinalOffset = GlobalSpriteOffset + LocalOffset;
+				FinalScale = GlobalSpriteScale * LocalScale;
+				VN_LOG_DEBUG(TEXT("UpdateComponentTransform: Shadow component - Global + Local offset/scale applied"));
+			}
+			else if (!IsChildOfHeadSprite(Component))
+			{
+				// Обычные спрайты (не дети головы)
+				FinalOffset = GlobalSpriteOffset + LocalOffset;
+				FinalScale = GlobalSpriteScale * LocalScale;
+			}
+			// Спрайты-дети головы получают только локальные трансформации
+		}
+	}
     
-    Component->SetRelativeLocation(FinalOffset);
-    Component->SetRelativeScale3D(FVector(FinalScale));
+	// Применяем финальные трансформации
+	Component->SetRelativeLocation(FinalOffset);
+	Component->SetRelativeScale3D(FVector(FinalScale));
+    
+	VN_LOG_DEBUG(TEXT("UpdateComponentTransform: %s - Offset: %s, Scale: %.2f"), 
+		*Component->GetName(), *FinalOffset.ToString(), FinalScale);
 }
 
 bool AVNCharacter::IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const
@@ -288,36 +307,47 @@ void AVNCharacter::ValidateAndSetupSpriteComponent(UPaperSpriteComponent* Compon
 {
 	if (!Component) return;
     
+	bool bIsShadowComponent = (Component == BodyShadow_Sprite);
+    
 	if (!Sprite.IsNull())
 	{
 		if (UPaperSprite* LoadedSprite = Sprite.LoadSynchronous())
 		{
 			Component->SetSprite(LoadedSprite);
-			
-			// === ИСПРАВЛЕНИЕ: ВСЕ КОМПОНЕНТЫ ПОКАЗЫВАЕМ ОДИНАКОВО ===
-			// Shadow управление только через SetBodyShadowVisible
-			Component->SetHiddenInGame(false);
-			
-			// Применяем цвет из кэша
+            
+			// ИСПРАВЛЕНИЕ: Для Shadow не меняем видимость автоматически
+			if (!bIsShadowComponent)
+			{
+				Component->SetHiddenInGame(false);
+			}
+            
+			// Применяем цвет из кэша с учетом фокуса
 			ApplyComponentColorWithFocus(Component);
+            
+			VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: %s sprite set successfully"), 
+				bIsShadowComponent ? TEXT("Shadow") : *Component->GetName());
 		}
 		else
 		{
 			Component->SetSprite(nullptr);
-			Component->SetHiddenInGame(true);
+			if (!bIsShadowComponent)
+			{
+				Component->SetHiddenInGame(true);
+			}
+			VN_LOG_WARNING(TEXT("ValidateAndSetupSpriteComponent: Failed to load sprite for %s"), *Component->GetName());
 		}
 	}
 	else
 	{
 		Component->SetSprite(nullptr);
-		
-		// === ИСПРАВЛЕНИЕ: SHADOW НЕ СКРЫВАЕМ АВТОМАТИЧЕСКИ ===
-		// Позволяем Shadow быть видимым даже без спрайта (для анимаций)
-		if (Component != BodyShadow_Sprite)
+        
+		// ИСПРАВЛЕНИЕ: Shadow видимость не меняем при очистке спрайта
+		if (!bIsShadowComponent)
 		{
 			Component->SetHiddenInGame(true);
 		}
-		// BodyShadow остается в текущем состоянии HiddenInGame
+        
+		VN_LOG_DEBUG(TEXT("ValidateAndSetupSpriteComponent: Cleared sprite for %s"), *Component->GetName());
 	}
 }
 
@@ -1003,4 +1033,121 @@ void AVNCharacter::SetBodyShadowAlpha(float Alpha)
 	SetComponentAlpha(BodyShadow_Sprite, Alpha);
 	
 	VN_LOG_DEBUG(TEXT("SetBodyShadowAlpha: BodyShadow alpha set to %.3f"), Alpha);
+}
+
+void AVNCharacter::SetShadowTransform(FVector Offset, float Scale)
+{
+    ApplyShadowTransform(Offset, Scale);
+}
+
+void AVNCharacter::SetShadowOffset(FVector Offset)
+{
+    if (!BodyShadow_Sprite) return;
+    
+    float CurrentScale = BodyShadow_Sprite->GetRelativeScale3D().X;
+    ApplyShadowTransform(Offset, CurrentScale);
+}
+
+void AVNCharacter::SetShadowScale(float Scale)
+{
+    if (!BodyShadow_Sprite) return;
+    
+    FVector CurrentOffset = BodyShadow_Sprite->GetRelativeLocation();
+    ApplyShadowTransform(CurrentOffset, Scale);
+}
+
+FVector AVNCharacter::GetShadowOffset() const
+{
+    FVector Offset;
+    float Scale;
+    GetShadowTransform(Offset, Scale);
+    return Offset;
+}
+
+float AVNCharacter::GetShadowScale() const
+{
+    FVector Offset;
+    float Scale;
+    GetShadowTransform(Offset, Scale);
+    return Scale;
+}
+
+void AVNCharacter::ApplyGlobalTransforms()
+{
+    VN_LOG_DEBUG(TEXT("ApplyGlobalTransforms: Applying global transforms to all components"));
+    
+    // Применяем к Skeletal компонентам
+    TArray<E_VN_ComponentID_Skeletal> SkeletalIDs = {
+        E_VN_ComponentID_Skeletal::Body,
+        E_VN_ComponentID_Skeletal::Arms,
+        E_VN_ComponentID_Skeletal::Head,
+        E_VN_ComponentID_Skeletal::Custom01,
+        E_VN_ComponentID_Skeletal::Custom02,
+        E_VN_ComponentID_Skeletal::Custom03
+    };
+
+    for (E_VN_ComponentID_Skeletal ID : SkeletalIDs)
+    {
+        if (USkeletalMeshComponent* Comp = GetSkeletalComponent(ID))
+        {
+            UpdateComponentTransform(Comp, FVector::ZeroVector, 1.0f);
+        }
+    }
+
+    // Применяем к Sprite компонентам
+    TArray<E_VN_ComponentID_Sprite> SpriteIDs = {
+        E_VN_ComponentID_Sprite::Body,
+        E_VN_ComponentID_Sprite::Arms,
+        E_VN_ComponentID_Sprite::Head,
+        E_VN_ComponentID_Sprite::Eyebrow,
+        E_VN_ComponentID_Sprite::Eyes,
+        E_VN_ComponentID_Sprite::Eyelids,
+        E_VN_ComponentID_Sprite::Wink,
+        E_VN_ComponentID_Sprite::Mouth,
+        E_VN_ComponentID_Sprite::BodyShadow, // ВАЖНО: Включаем Shadow!
+        E_VN_ComponentID_Sprite::EmotionHead_01,
+        E_VN_ComponentID_Sprite::EmotionHead_02,
+        E_VN_ComponentID_Sprite::EmotionHead_03,
+        E_VN_ComponentID_Sprite::EmotionBody_01,
+        E_VN_ComponentID_Sprite::EmotionBody_02,
+        E_VN_ComponentID_Sprite::EmotionBody_03
+    };
+
+    for (E_VN_ComponentID_Sprite ID : SpriteIDs)
+    {
+        if (UPaperSpriteComponent* Comp = GetSpriteComponent(ID))
+        {
+            UpdateComponentTransform(Comp, FVector::ZeroVector, 1.0f);
+        }
+    }
+
+    VN_LOG_DEBUG(TEXT("ApplyGlobalTransforms: Global transforms applied to all components"));
+}
+
+void AVNCharacter::SetGlobalSpriteOffset(FVector Offset)
+{
+    GlobalSpriteOffset = Offset;
+    ApplyGlobalTransforms();
+    VN_LOG_DEBUG(TEXT("SetGlobalSpriteOffset: Set to %s"), *Offset.ToString());
+}
+
+void AVNCharacter::SetGlobalSpriteScale(float Scale)
+{
+    GlobalSpriteScale = Scale;
+    ApplyGlobalTransforms();
+    VN_LOG_DEBUG(TEXT("SetGlobalSpriteScale: Set to %.2f"), Scale);
+}
+
+void AVNCharacter::SetGlobalSkeletalOffset(FVector Offset)
+{
+    GlobalSkeletalOffset = Offset;
+    ApplyGlobalTransforms();
+    VN_LOG_DEBUG(TEXT("SetGlobalSkeletalOffset: Set to %s"), *Offset.ToString());
+}
+
+void AVNCharacter::SetGlobalSkeletalScale(float Scale)
+{
+    GlobalSkeletalScale = Scale;
+    ApplyGlobalTransforms();
+    VN_LOG_DEBUG(TEXT("SetGlobalSkeletalScale: Set to %.2f"), Scale);
 }

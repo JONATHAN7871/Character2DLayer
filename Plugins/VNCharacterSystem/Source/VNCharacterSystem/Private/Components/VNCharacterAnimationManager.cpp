@@ -458,121 +458,128 @@ void UVNCharacterAnimationManager::UpdateTransitionAnimation(float Alpha)
 
 void UVNCharacterAnimationManager::UpdateSpawnDespawnAnimation(float Alpha)
 {
-	AVNCharacter* Character = GetVNCharacterOwner();
-	if (!Character) return;
+    AVNCharacter* Character = GetVNCharacterOwner();
+    if (!Character) return;
 
-	TArray<USceneComponent*> AllMainComponents = Character->GetAllMainComponents();
+    TArray<USceneComponent*> AllMainComponents = Character->GetAllMainComponents();
 
-	if (CurrentAnimation.bIsSpawnAnimation)
-	{
-		// === ПОЯВЛЕНИЕ (Appear) ===
-		Character->SetActorHiddenInGame(false);
+    if (CurrentAnimation.bIsSpawnAnimation)
+    {
+        // === ПОЯВЛЕНИЕ (Appear) ===
+        Character->SetActorHiddenInGame(false);
 
-		if (Alpha <= 0.5f)
-		{
-			// ФАЗА 1: Появляется тень
-			float PhaseAlpha = Alpha * 2.0f; // от 0 до 1
+        if (Alpha <= 0.5f)
+        {
+            // ФАЗА 1: Появляется тень
+            float PhaseAlpha = Alpha * 2.0f; // от 0 до 1
 
-			// Все основные компоненты скрыты
-			for (USceneComponent* Comp : AllMainComponents)
-			{
-				if(Comp) Comp->SetVisibility(false);
-			}
+            // Все основные компоненты скрыты
+            for (USceneComponent* Comp : AllMainComponents)
+            {
+                if(Comp) Comp->SetVisibility(false);
+            }
 
-			// Показываем и анимируем тень
-			if (Character->BodyShadow_Sprite)
-			{
-				Character->BodyShadow_Sprite->SetVisibility(true);
-				Character->SetComponentAlpha(Character->BodyShadow_Sprite, PhaseAlpha);
-			}
-		}
-		else
-		{
-			// ФАЗА 2: Тень исчезает, появляются основные компоненты
-			float PhaseAlpha = (Alpha - 0.5f) * 2.0f; // от 0 до 1
+            // ИСПРАВЛЕНИЕ: Shadow использует трансформации из DataAsset
+            if (Character->BodyShadow_Sprite)
+            {
+                Character->BodyShadow_Sprite->SetVisibility(true);
+                Character->SetComponentAlpha(Character->BodyShadow_Sprite, PhaseAlpha);
+                
+                // Трансформации Shadow уже применены через DataAsset в ApplySpriteConfigProperties
+                // Здесь только управляем видимостью и альфой
+            }
+        }
+        else
+        {
+            // ФАЗА 2: Тень исчезает, появляются основные компоненты
+            float PhaseAlpha = (Alpha - 0.5f) * 2.0f; // от 0 до 1
 
-			// Скрываем тень
-			if (Character->BodyShadow_Sprite)
-			{
-				Character->BodyShadow_Sprite->SetVisibility(false);
-			}
+            // Скрываем тень
+            if (Character->BodyShadow_Sprite)
+            {
+                Character->BodyShadow_Sprite->SetVisibility(false);
+            }
 
-			// Показываем основные компоненты и анимируем их цвет
-			for (USceneComponent* Comp : AllMainComponents)
-			{
-				if (!Comp) continue;
+            // Показываем основные компоненты с цветовой анимацией
+            for (USceneComponent* Comp : AllMainComponents)
+            {
+                if (!Comp) continue;
 
-				bool bHasContent = false;
-				if (auto* SkelComp = Cast<USkeletalMeshComponent>(Comp)) bHasContent = (SkelComp->GetSkeletalMeshAsset() != nullptr);
-				else if (auto* SpriteComp = Cast<UPaperSpriteComponent>(Comp)) bHasContent = (SpriteComp->GetSprite() != nullptr);
+                bool bHasContent = false;
+                if (auto* SkelComp = Cast<USkeletalMeshComponent>(Comp)) 
+                    bHasContent = (SkelComp->GetSkeletalMeshAsset() != nullptr);
+                else if (auto* SpriteComp = Cast<UPaperSpriteComponent>(Comp)) 
+                    bHasContent = (SpriteComp->GetSprite() != nullptr);
 
-				if (bHasContent)
-				{
-					Comp->SetVisibility(true);
-					
-					FLinearColor TargetColor = Character->GetTargetColorForComponent(Comp);
-					FLinearColor BlackColor = FLinearColor::Black;
-					BlackColor.A = TargetColor.A;
-					
-					FLinearColor CurrentColor = FMath::Lerp(BlackColor, TargetColor, PhaseAlpha);
-					Character->SetComponentColor(Comp, CurrentColor);
-				}
-			}
-		}
-	}
-	else
-	{
-		// === ИСЧЕЗНОВЕНИЕ (Disappear) ===
-		if (Alpha <= 0.5f)
-		{
-			// ФАЗА 1: Основные компоненты темнеют
-			float PhaseAlpha = Alpha * 2.0f; // от 0 до 1
+                if (bHasContent)
+                {
+                    Comp->SetVisibility(true);
+                    
+                    FLinearColor TargetColor = Character->GetTargetColorForComponent(Comp);
+                    FLinearColor BlackColor = FLinearColor::Black;
+                    BlackColor.A = TargetColor.A;
+                    
+                    FLinearColor CurrentColor = FMath::Lerp(BlackColor, TargetColor, PhaseAlpha);
+                    Character->SetComponentColor(Comp, CurrentColor);
+                }
+            }
+        }
+    }
+    else
+    {
+        // === ИСЧЕЗНОВЕНИЕ (Disappear) ===
+        if (Alpha <= 0.5f)
+        {
+            // ФАЗА 1: Основные компоненты темнеют
+            float PhaseAlpha = Alpha * 2.0f;
 
-			// Тень скрыта
-			if (Character->BodyShadow_Sprite)
-			{
-				Character->BodyShadow_Sprite->SetVisibility(false);
-			}
+            // Тень скрыта
+            if (Character->BodyShadow_Sprite)
+            {
+                Character->BodyShadow_Sprite->SetVisibility(false);
+            }
 
-			// Затемняем основные компоненты
-			for (USceneComponent* Comp : AllMainComponents)
-			{
-				if (Comp && Comp->IsVisible())
-				{
-					FLinearColor TargetColor = Character->GetTargetColorForComponent(Comp);
-					FLinearColor BlackColor = FLinearColor::Black;
-					BlackColor.A = TargetColor.A;
-					
-					FLinearColor CurrentColor = FMath::Lerp(TargetColor, BlackColor, PhaseAlpha);
-					Character->SetComponentColor(Comp, CurrentColor);
-				}
-			}
-		}
-		else
-		{
-			// ФАЗА 2: Основные компоненты скрыты, появляется и исчезает тень
-			float PhaseAlpha = (Alpha - 0.5f) * 2.0f; // от 0 до 1
+            // Затемняем основные компоненты
+            for (USceneComponent* Comp : AllMainComponents)
+            {
+                if (Comp && Comp->IsVisible())
+                {
+                    FLinearColor TargetColor = Character->GetTargetColorForComponent(Comp);
+                    FLinearColor BlackColor = FLinearColor::Black;
+                    BlackColor.A = TargetColor.A;
+                    
+                    FLinearColor CurrentColor = FMath::Lerp(TargetColor, BlackColor, PhaseAlpha);
+                    Character->SetComponentColor(Comp, CurrentColor);
+                }
+            }
+        }
+        else
+        {
+            // ФАЗА 2: Основные компоненты скрыты, появляется и исчезает тень
+            float PhaseAlpha = (Alpha - 0.5f) * 2.0f;
 
-			// Скрываем основные компоненты
-			for (USceneComponent* Comp : AllMainComponents)
-			{
-				if(Comp) Comp->SetVisibility(false);
-			}
-			
-			// Показываем и анимируем исчезновение тени
-			if (Character->BodyShadow_Sprite)
-			{
-				Character->BodyShadow_Sprite->SetVisibility(true);
-				Character->SetComponentAlpha(Character->BodyShadow_Sprite, 1.0f - PhaseAlpha);
-			}
+            // Скрываем основные компоненты
+            for (USceneComponent* Comp : AllMainComponents)
+            {
+                if(Comp) Comp->SetVisibility(false);
+            }
+            
+            // ИСПРАВЛЕНИЕ: Shadow с правильными трансформациями
+            if (Character->BodyShadow_Sprite)
+            {
+                Character->BodyShadow_Sprite->SetVisibility(true);
+                Character->SetComponentAlpha(Character->BodyShadow_Sprite, 1.0f - PhaseAlpha);
+                
+                // Трансформации Shadow сохраняются из DataAsset
+            }
 
-			// В самом конце скрываем всего актора
-			if (Alpha >= 1.0f)
-			{
-				Character->SetActorHiddenInGame(true);
-			}
-		}
-	}
+            // В самом конце скрываем всего актора
+            if (Alpha >= 1.0f)
+            {
+                Character->SetActorHiddenInGame(true);
+            }
+        }
+    }
 }
 
 

@@ -799,4 +799,72 @@ private:
 	void SetupAllComponentLayers();
 
 	void HideAllVisualComponents();
+
+	public:
+    // === УПРАВЛЕНИЕ ТРАНСФОРМАЦИЯМИ SHADOW ===
+    
+    /** Установить трансформации для теневого компонента */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Shadow")
+    void SetShadowTransform(FVector Offset, float Scale = 1.0f);
+
+    /** Получить текущие трансформации теневого компонента */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Shadow")
+    void GetShadowTransform(FVector& OutOffset, float& OutScale) const;
+
+    /** Установить только смещение для теневого компонента */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Shadow")
+    void SetShadowOffset(FVector Offset);
+
+    /** Установить только масштаб для теневого компонента */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Shadow")
+    void SetShadowScale(float Scale);
+
+    /** Получить текущее смещение теневого компонента */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Shadow")
+    FVector GetShadowOffset() const;
+
+    /** Получить текущий масштаб теневого компонента */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Shadow")
+    float GetShadowScale() const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Shadow")
+	void ApplyShadowTransform(const FVector& Offset, float Scale);
+
+    // === УПРАВЛЕНИЕ ГЛОБАЛЬНЫМИ ТРАНСФОРМАЦИЯМИ ===
+    
+    /** Применить глобальные трансформации ко всем компонентам */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Global Transform")
+    void ApplyGlobalTransforms();
+
+    /** Установить глобальное смещение для спрайтов */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Global Transform")
+    void SetGlobalSpriteOffset(FVector Offset);
+
+    /** Установить глобальный масштаб для спрайтов */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Global Transform")
+    void SetGlobalSpriteScale(float Scale);
+
+    /** Получить глобальное смещение для спрайтов */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Global Transform")
+    FVector GetGlobalSpriteOffset() const { return GlobalSpriteOffset; }
+
+    /** Получить глобальный масштаб для спрайтов */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Global Transform")
+    float GetGlobalSpriteScale() const { return GlobalSpriteScale; }
+
+    /** Установить глобальное смещение для Skeletal Mesh */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Global Transform")
+    void SetGlobalSkeletalOffset(FVector Offset);
+
+    /** Установить глобальный масштаб для Skeletal Mesh */
+    UFUNCTION(BlueprintCallable, Category = "VN Character | Global Transform")
+    void SetGlobalSkeletalScale(float Scale);
+
+    /** Получить глобальное смещение для Skeletal Mesh */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Global Transform")
+    FVector GetGlobalSkeletalOffset() const { return GlobalSkeletalOffset; }
+
+    /** Получить глобальный масштаб для Skeletal Mesh */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Global Transform")
+    float GetGlobalSkeletalScale() const { return GlobalSkeletalScale; }
 };

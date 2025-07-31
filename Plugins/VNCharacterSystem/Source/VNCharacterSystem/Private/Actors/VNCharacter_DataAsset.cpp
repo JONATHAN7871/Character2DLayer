@@ -11,16 +11,13 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
 {
     if (!CharacterData)
     {
-        VN_LOG_ERROR(TEXT("ApplyDataAsset FAILED: Received NULL CharacterDataAsset! Check the calling Blueprint or C++ code."));
+        VN_LOG_ERROR(TEXT("ApplyDataAsset FAILED: Received NULL CharacterDataAsset!"));
         return;
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"),
-        *CharacterData->GetName(), bAnimate ? TEXT("true") : TEXT("false"), Duration);
+    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s"), *CharacterData->GetName());
 
     // --- ШАГ 1: ПОДГОТОВКА И СБРОС ---
-    
-    // Прерываем любую активную анимацию перехода.
     if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
     {
         VN_LOG_WARNING(TEXT("ApplyDataAsset: Forcing completion of ongoing transition."));
@@ -28,14 +25,11 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
         FinalizeCurrentTransition();
     }
     
-    // Останавливаем все idle-анимации и сбрасываем спрайты в их базовое состояние из кэша.
     StopAndResetIdleAnimations();
-    
     FadingInComponents.Empty();
     FadingOutComponents.Empty();
     
-    // --- ШАГ 2: ПРИМЕНЕНИЕ ДАННЫХ ---
-    
+    // --- ШАГ 2: ПРИМЕНЕНИЕ ГЛОБАЛЬНЫХ ТРАНСФОРМАЦИЙ ---
     if (CharacterData->bOverrideGlobalTransforms)
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms."));
@@ -45,7 +39,7 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
         GlobalSpriteScale = CharacterData->GlobalSpriteScale;
     }
     
-    // ОБРАБАТЫВАЕМ АССЕТЫ (Skeletal Meshes)
+    // --- ШАГ 3: ОБРАБОТКА АССЕТОВ ---
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig.SkeletalMesh, bAnimate);
@@ -53,7 +47,6 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config.SkeletalMesh, bAnimate);
 
-    // ОБРАБАТЫВАЕМ АССЕТЫ (Sprites)
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig.Sprite, bAnimate);
@@ -69,17 +62,22 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig.Sprite, bAnimate);
     
-    // ОТДЕЛЬНАЯ ОБРАБОТКА ТЕНИ (ЧТОБЫ ИЗБЕЖАТЬ МЕРЦАНИЯ)
+    // --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ОБРАБОТКА ТЕНИ С ТРАНСФОРМАЦИЯМИ ---
+    // Shadow теперь обрабатывается автоматически через ProcessSpriteComponentChange
+    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig.Sprite, bAnimate);
+    
+    // Применяем свойства Shadow (трансформации, цвет и т.д.)
+    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
+    
+    // Shadow остаётся скрытым - его видимость управляется только анимациями Appear/Disappear
     if (BodyShadow_Sprite)
     {
-        // Только обновляем ассет и свойства, видимость НЕ трогаем.
-        TSoftObjectPtr<UPaperSprite> NewShadowSprite = CharacterData->BodyShadowSpriteConfig.Sprite;
-        BodyShadow_Sprite->SetSprite(NewShadowSprite.LoadSynchronous());
-        ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
         BodyShadow_Sprite->SetVisibility(false);
+        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Shadow configured from DataAsset - Offset: %s, Scale: %.2f"), 
+            *CharacterData->BodyShadowSpriteConfig.Offset.ToString(), CharacterData->BodyShadowSpriteConfig.Scale);
     }
     
-    // ПРИМЕНЯЕМ ОСТАЛЬНЫЕ СВОЙСТВА (трансформы, цвета и т.д.)
+    // --- ШАГ 4: ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ ---
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig);
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig);
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig);
@@ -102,28 +100,24 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig);
 
-
-    // --- ШАГ 3: ЗАПУСК АНИМАЦИИ И ПЕРЕЗАПУСК IDLE ---
-    
+    // --- ШАГ 5: ЗАПУСК АНИМАЦИИ И ПЕРЕЗАПУСК IDLE ---
     bool bHasAnimatedChanges = bAnimate && Duration > 0.0f && AnimationManager && (FadingInComponents.Num() > 0 || FadingOutComponents.Num() > 0);
     if (bHasAnimatedChanges)
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: Requesting batched transition commit."));
         RequestTransitionCommit(Duration);
-        // Перезапуск Idle анимаций произойдет в OnAnimationFinished(Transition)
     }
     else
     {
         VN_LOG_DEBUG(TEXT("ApplyDataAsset: No animation needed. Finalizing state immediately."));
         HideAllFadeComponents();
-        // Мгновенный перезапуск Idle-анимаций
         if (IdleAnimationManager)
         {
             IdleAnimationManager->StartAllIdleAnimations();
         }
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed."));
+    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed with proper Shadow transform handling."));
 }
 
 // =====================================================
@@ -157,12 +151,19 @@ void AVNCharacter::ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal ID, 
 
 void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSoftObjectPtr<UPaperSprite> NewSprite, bool bAnimate)
 {
-    // Эта функция больше не обрабатывает тень, так как она вынесена в ApplyDataAsset
+    // СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ SHADOW - он не участвует в анимациях переходов
     if (ID == E_VN_ComponentID_Sprite::BodyShadow)
     {
+        if (BodyShadow_Sprite)
+        {
+            // Просто устанавливаем спрайт без анимации - Shadow управляется только через Appear/Disappear
+            ValidateAndSetupSpriteComponent(BodyShadow_Sprite, NewSprite);
+            VN_LOG_DEBUG(TEXT("ProcessSpriteComponentChange: Shadow sprite updated directly (no transition animation)"));
+        }
         return;
     }
 
+    // Обычная обработка для всех остальных компонентов
     UPaperSpriteComponent* MainComp = GetSpriteComponent(ID);
     if (!MainComp) return;
     
@@ -220,6 +221,7 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
     if (!Comp) return;
 
+    // Обрабатываем прикрепление
     if (Config.AttachTo != E_SpriteAttachmentTarget::None)
     {
         if (USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo))
@@ -232,14 +234,49 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
         ResetComponentAttachmentToDefault(Comp);
     }
     
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Применяем трансформации для ВСЕХ компонентов, включая Shadow
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // Кэшируем и применяем цвет
     CacheComponentBaseColor(Comp, Config.Color);
     ApplyComponentColorWithFocus(Comp);
     
+    // Специальная логика видимости для Shadow
     if (ID != E_VN_ComponentID_Sprite::BodyShadow)
     {
         Comp->SetVisibility(!Config.Sprite.IsNull());
     }
+    
+    VN_LOG_DEBUG(TEXT("ApplySpriteConfigProperties (Attachment): %s - Offset: %s, Scale: %.2f"), 
+        *Comp->GetName(), *Config.Offset.ToString(), Config.Scale);
+}
+
+void AVNCharacter::ApplyShadowTransform(const FVector& Offset, float Scale)
+{
+    if (!BodyShadow_Sprite)
+    {
+        VN_LOG_WARNING(TEXT("ApplyShadowTransform: BodyShadow_Sprite is null"));
+        return;
+    }
+
+    // Применяем трансформации с учётом глобальных настроек
+    UpdateComponentTransform(BodyShadow_Sprite, Offset, Scale);
+    
+    VN_LOG_DEBUG(TEXT("ApplyShadowTransform: Applied offset %s and scale %.2f to shadow"), 
+        *Offset.ToString(), Scale);
+}
+
+void AVNCharacter::GetShadowTransform(FVector& OutOffset, float& OutScale) const
+{
+    if (!BodyShadow_Sprite)
+    {
+        OutOffset = FVector::ZeroVector;
+        OutScale = 1.0f;
+        return;
+    }
+
+    OutOffset = BodyShadow_Sprite->GetRelativeLocation();
+    OutScale = BodyShadow_Sprite->GetRelativeScale3D().X; // Используем X компонент как uniform scale
 }
 
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config)
@@ -247,18 +284,21 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
     if (!Comp) return;
     
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Применяем трансформации для ВСЕХ компонентов, включая Shadow
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
+    
+    // Кэшируем и применяем цвет
     CacheComponentBaseColor(Comp, Config.Color);
     ApplyComponentColorWithFocus(Comp);
     
-    // Важное исключение: видимость тени управляется специальной логикой,
-    // а не общим флагом bVisible из DataAsset.
+    // Специальная логика видимости для Shadow - он управляется отдельно
     if (ID != E_VN_ComponentID_Sprite::BodyShadow)
     {
-        // Скрываем компонент, только если в нем нет спрайта. Флаг bVisible игнорируется для простоты.
-        // Видимость определяется наличием контента.
         Comp->SetVisibility(!Config.Sprite.IsNull());
     }
+    
+    VN_LOG_DEBUG(TEXT("ApplySpriteConfigProperties (Simple): %s - Offset: %s, Scale: %.2f"), 
+        *Comp->GetName(), *Config.Offset.ToString(), Config.Scale);
 }
 
 // =====================================================
