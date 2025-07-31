@@ -113,8 +113,11 @@ private:
     void StartBlinkAnimation();
     void StopBlinkAnimation();
     void ExecuteBlink();
-    void DoubleBlink_FirstOpen();
-    void DoubleBlink_SecondClose();
+    void BlinkPhase2_FullyClosed();
+    void BlinkPhase3_HalfOpen();
+    void BlinkPhase4_SecondClosed();
+    void BlinkPhase5_FinalHalfOpen();
+    void ApplyBlinkColorToEyelids(AVNCharacter* Character);
     void FinishBlinkAnimation();
     void ScheduleNextBlink();
     bool IsCurrentSpritePartOfBlinkAnimation(UPaperSprite* Sprite) const;
