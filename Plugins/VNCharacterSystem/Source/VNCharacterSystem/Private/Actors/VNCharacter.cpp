@@ -17,6 +17,8 @@ AVNCharacter::AVNCharacter()
 	CreateComponents();
 	SetupComponentHierarchy();
 
+	SetAllComponentsVisibilityTrue();
+	
 	bIsInFocus = true;
 	DimColorMultiplier = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
 

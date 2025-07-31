@@ -206,7 +206,10 @@ TArray<USceneComponent*> AVNCharacter::GetAllMainComponents() const
 	if (Eyelids_Sprite) Components.Add(Eyelids_Sprite);
 	if (Wink_Sprite) Components.Add(Wink_Sprite);
 	if (Mouth_Sprite) Components.Add(Mouth_Sprite);
-	if (BodyShadow_Sprite) Components.Add(BodyShadow_Sprite);
+	
+	// --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: ТЕНЬ БОЛЬШЕ НЕ ЯВЛЯЕТСЯ "ОСНОВНЫМ" КОМПОНЕНТОМ ---
+	// if (BodyShadow_Sprite) Components.Add(BodyShadow_Sprite); 
+	
 	if (EmotionHeadEffect01_Sprite) Components.Add(EmotionHeadEffect01_Sprite);
 	if (EmotionHeadEffect02_Sprite) Components.Add(EmotionHeadEffect02_Sprite);
 	if (EmotionHeadEffect03_Sprite) Components.Add(EmotionHeadEffect03_Sprite);
@@ -245,4 +248,63 @@ TArray<USceneComponent*> AVNCharacter::GetAllFadeComponents() const
 	if (EmotionBodyEffect03_Sprite_Fade) Components.Add(EmotionBodyEffect03_Sprite_Fade);
 	
 	return Components;
+}
+
+void AVNCharacter::SetAllComponentsVisibilityTrue()
+{
+	// === SKELETAL MESH КОМПОНЕНТЫ ===
+	if (Body_Skeletal) Body_Skeletal->SetVisibility(true);
+	if (Arms_Skeletal) Arms_Skeletal->SetVisibility(true);
+	if (Head_Skeletal) Head_Skeletal->SetVisibility(true);
+	if (Custom01_Skeletal) Custom01_Skeletal->SetVisibility(true);
+	if (Custom02_Skeletal) Custom02_Skeletal->SetVisibility(true);
+	if (Custom03_Skeletal) Custom03_Skeletal->SetVisibility(true);
+
+	// === SKELETAL MESH FADE КОМПОНЕНТЫ ===
+	if (Body_Skeletal_Fade) Body_Skeletal_Fade->SetVisibility(true);
+	if (Arms_Skeletal_Fade) Arms_Skeletal_Fade->SetVisibility(true);
+	if (Head_Skeletal_Fade) Head_Skeletal_Fade->SetVisibility(true);
+	if (Custom01_Skeletal_Fade) Custom01_Skeletal_Fade->SetVisibility(true);
+	if (Custom02_Skeletal_Fade) Custom02_Skeletal_Fade->SetVisibility(true);
+	if (Custom03_Skeletal_Fade) Custom03_Skeletal_Fade->SetVisibility(true);
+
+	// === SPRITE КОМПОНЕНТЫ ТЕЛА ===
+	if (Body_Sprite) Body_Sprite->SetVisibility(true);
+	if (Arms_Sprite) Arms_Sprite->SetVisibility(true);
+	if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(true); // ← ВАЖНО: Shadow тоже!
+	if (EmotionBodyEffect01_Sprite) EmotionBodyEffect01_Sprite->SetVisibility(true);
+	if (EmotionBodyEffect02_Sprite) EmotionBodyEffect02_Sprite->SetVisibility(true);
+	if (EmotionBodyEffect03_Sprite) EmotionBodyEffect03_Sprite->SetVisibility(true);
+
+	// === SPRITE FADE КОМПОНЕНТЫ ТЕЛА ===
+	if (Body_Sprite_Fade) Body_Sprite_Fade->SetVisibility(true);
+	if (Arms_Sprite_Fade) Arms_Sprite_Fade->SetVisibility(true);
+	if (BodyShadow_Sprite_Fade) BodyShadow_Sprite_Fade->SetVisibility(true); // ← ВАЖНО: Shadow Fade тоже!
+	if (EmotionBodyEffect01_Sprite_Fade) EmotionBodyEffect01_Sprite_Fade->SetVisibility(true);
+	if (EmotionBodyEffect02_Sprite_Fade) EmotionBodyEffect02_Sprite_Fade->SetVisibility(true);
+	if (EmotionBodyEffect03_Sprite_Fade) EmotionBodyEffect03_Sprite_Fade->SetVisibility(true);
+
+	// === SPRITE КОМПОНЕНТЫ ГОЛОВЫ ===
+	if (Head_Sprite) Head_Sprite->SetVisibility(true);
+	if (Eyebrow_Sprite) Eyebrow_Sprite->SetVisibility(true);
+	if (Eyes_Sprite) Eyes_Sprite->SetVisibility(true);
+	if (Eyelids_Sprite) Eyelids_Sprite->SetVisibility(true);
+	if (Wink_Sprite) Wink_Sprite->SetVisibility(true);
+	if (Mouth_Sprite) Mouth_Sprite->SetVisibility(true);
+	if (EmotionHeadEffect01_Sprite) EmotionHeadEffect01_Sprite->SetVisibility(true);
+	if (EmotionHeadEffect02_Sprite) EmotionHeadEffect02_Sprite->SetVisibility(true);
+	if (EmotionHeadEffect03_Sprite) EmotionHeadEffect03_Sprite->SetVisibility(true);
+
+	// === SPRITE FADE КОМПОНЕНТЫ ГОЛОВЫ ===
+	if (Head_Sprite_Fade) Head_Sprite_Fade->SetVisibility(true);
+	if (Eyebrow_Sprite_Fade) Eyebrow_Sprite_Fade->SetVisibility(true);
+	if (Eyes_Sprite_Fade) Eyes_Sprite_Fade->SetVisibility(true);
+	if (Eyelids_Sprite_Fade) Eyelids_Sprite_Fade->SetVisibility(true);
+	if (Wink_Sprite_Fade) Wink_Sprite_Fade->SetVisibility(true);
+	if (Mouth_Sprite_Fade) Mouth_Sprite_Fade->SetVisibility(true);
+	if (EmotionHeadEffect01_Sprite_Fade) EmotionHeadEffect01_Sprite_Fade->SetVisibility(true);
+	if (EmotionHeadEffect02_Sprite_Fade) EmotionHeadEffect02_Sprite_Fade->SetVisibility(true);
+	if (EmotionHeadEffect03_Sprite_Fade) EmotionHeadEffect03_Sprite_Fade->SetVisibility(true);
+
+	UE_LOG(LogTemp, Warning, TEXT("SetAllComponentsVisibilityTrue: All components Visibility set to TRUE"));
 }

@@ -181,54 +181,35 @@ void AVNCharacter::SetIdleEmotionalState(EIdleEmotionalState EmotionState)
 
 void AVNCharacter::ApplyIdleAnimationDataAssetWithEmotionalState(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, EIdleEmotionalState EmotionState, bool bRestartAnimations)
 {
-    if (!IdleAnimationData)
-    {
-        VN_LOG_WARNING(TEXT("ApplyIdleAnimationDataAssetWithEmotionalState: IdleAnimationData is null"));
+    if (!IdleAnimationData) {
+        VN_LOG_WARNING(TEXT("ApplyIdle...: IdleAnimationData is null"));
+        return;
+    }
+    if (!IdleAnimationManager) {
+        VN_LOG_WARNING(TEXT("ApplyIdle...: IdleAnimationManager is null"));
         return;
     }
 
-    if (!IdleAnimationManager)
-    {
-        VN_LOG_WARNING(TEXT("ApplyIdleAnimationDataAssetWithEmotionalState: IdleAnimationManager is null"));
-        return;
-    }
+    VN_LOG_DEBUG(TEXT("Applying Idle DataAsset '%s' with EmotionState '%d'"), *IdleAnimationData->GetName(), (int32)EmotionState);
 
-    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAssetWithEmotionalState: Applying DataAsset with emotion state %d"), (int32)EmotionState);
+    // 1. ПОЛНАЯ ОСТАНОВКА И СБРОС.
+    StopAndResetIdleAnimations();
 
-    // Останавливаем текущие анимации и синхронизируем состояния
-    IdleAnimationManager->StopAllIdleAnimations();
-    SynchronizeIdleAnimationStates();
+    // 2. ПОЛУЧАЕМ НОВУЮ КОНФИГУРАЦИЮ.
+    FVNIdleAnimationsConfig NewConfig = IdleAnimationData->GetIdleAnimationsConfig();
 
-    // Получаем базовую конфигурацию из DataAsset
-    FVNIdleAnimationsConfig BaseConfig = IdleAnimationData->GetIdleAnimationsConfig();
-    
-    // Если эмоциональное состояние не None, модифицируем настройки
+    // 3. ПРИМЕНЯЕМ КОНФИГУРАЦИЮ В МЕНЕДЖЕР.
+    IdleAnimationManager->SetIdleAnimationsConfig(NewConfig);
+
+    // 4. (Опционально) ПРИМЕНЯЕМ ЭМОЦИОНАЛЬНЫЕ НАСТРОЙКИ ПОВЕРХ.
     if (EmotionState != EIdleEmotionalState::None)
     {
-        // Сохраняем flipbook'и из DataAsset
-        TSoftObjectPtr<UPaperFlipbook> BlinkFlipbook = BaseConfig.BlinkConfig.BlinkFlipbook;
-        TSoftObjectPtr<UPaperFlipbook> TalkFlipbook = BaseConfig.TalkConfig.TalkFlipbook;
-        TSoftObjectPtr<UPaperFlipbook> EyesFlipbook = BaseConfig.EyesRandomConfig.EyesDirectionsFlipbook;
-        
-        // Применяем базовую конфигурацию
-        IdleAnimationManager->SetIdleAnimationsConfig(BaseConfig);
-        
-        // Применяем эмоциональные модификации
         SetIdleEmotionalState(EmotionState);
-        
-        VN_LOG_DEBUG(TEXT("Applied emotional state %d over DataAsset configuration"), (int32)EmotionState);
     }
-    else
-    {
-        // Используем настройки из DataAsset как есть
-        IdleAnimationManager->SetIdleAnimationsConfig(BaseConfig);
-        VN_LOG_DEBUG(TEXT("Applied DataAsset configuration without emotional modifications"));
-    }
-
-    // Перезапускаем анимации если нужно  
+    
+    // 5. (Опционально) ПЕРЕЗАПУСКАЕМ АНИМАЦИИ.
     if (bRestartAnimations)
     {
-        VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAssetWithEmotionalState: Restarting animations"));
         IdleAnimationManager->StartAllIdleAnimations();
     }
 }

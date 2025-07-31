@@ -2,6 +2,7 @@
 
 #include "Actors/VNCharacter.h"
 #include "Components/VNCharacterAnimationManager.h"
+#include "Components/VNCharacterIdleAnimationManager.h"
 #include "VNCharacterSystemModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "PaperSpriteComponent.h"
@@ -16,21 +17,21 @@ void AVNCharacter::OnAnimationStarted(EVNAnimationType AnimationType)
 	
 	switch (AnimationType)
 	{
-		case EVNAnimationType::Transition:
-			VN_LOG_DEBUG(TEXT("OnAnimationStarted: Transition animation started with %d FadingIn and %d FadingOut components"), 
-				FadingInComponents.Num(), FadingOutComponents.Num());
-			break;
+	case EVNAnimationType::Transition:
+	case EVNAnimationType::SpawnDespawn:
+		if (IdleAnimationManager)
+		{
+			VN_LOG_DEBUG(TEXT("OnAnimationStarted: Stopping and resetting idle states."));
+			StopAndResetIdleAnimations(); // <--- ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
+		}
+		break;
 			
-		case EVNAnimationType::SpawnDespawn:
-			VN_LOG_DEBUG(TEXT("OnAnimationStarted: SpawnDespawn animation started"));
-			break;
+	case EVNAnimationType::Focus:
+		VN_LOG_DEBUG(TEXT("OnAnimationStarted: Focus animation started"));
+		break;
 			
-		case EVNAnimationType::Focus:
-			VN_LOG_DEBUG(TEXT("OnAnimationStarted: Focus animation started"));
-			break;
-			
-		default:
-			break;
+	default:
+		break;
 	}
 }
 
@@ -42,25 +43,33 @@ void AVNCharacter::OnAnimationFinished(EVNAnimationType AnimationType)
 	{
 	case EVNAnimationType::Transition:
 		{
-			// Завершаем переход с правильной очисткой состояний
 			FinalizeCurrentTransition();
+			// ВАЖНО: Перезапускаем Idle после любого перехода.
+			if (IdleAnimationManager)
+			{
+				VN_LOG_DEBUG(TEXT("OnAnimationFinished (Transition): Restarting idle animations."));
+				IdleAnimationManager->StartAllIdleAnimations();
+			}
 			break;
 		}
 		
 	case EVNAnimationType::SpawnDespawn:
 		{
-			// ИСПРАВЛЕНИЕ: После завершения анимации появления/исчезновения
-			// нужно убедиться, что все цвета соответствуют текущему состоянию фокуса.
 			RefreshAllComponentColors();
 			OnCharacterVisibilityChanged.Broadcast(IsVisible());
+			// ВАЖНО: Перезапускаем Idle, если персонаж стал видимым.
+			if (IsVisible() && IdleAnimationManager)
+			{
+				VN_LOG_DEBUG(TEXT("OnAnimationFinished (SpawnDespawn): Restarting idle animations."));
+				IdleAnimationManager->StartAllIdleAnimations();
+			}
 			break;
 		}
 			
 	case EVNAnimationType::Focus:
 		{
-			// ИСПРАВЛЕНИЕ: Состояние фокуса уже применено в конце анимации,
-			// но мы дополнительно вызовем событие.
 			OnCharacterFocusChanged.Broadcast(bIsInFocus);
+			// Анимация фокуса не должна останавливать/запускать Idle.
 			break;
 		}
 
@@ -113,7 +122,7 @@ void AVNCharacter::FinalizeCurrentTransition()
 			continue;
 		}
 		
-		Component->SetVisibility(false);
+		Component->SetHiddenInGame(true); // ИСПРАВЛЕНО
 		if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component.Get()))
 		{
 			SkeletalComp->SetSkeletalMesh(nullptr);
@@ -158,7 +167,7 @@ void AVNCharacter::FinalizeCurrentTransition()
 		}
 		
 		// Устанавливаем видимость в зависимости от наличия контента и альфы
-		Component->SetVisibility(bHasContent && TargetAlpha > 0.01f);
+		Component->SetHiddenInGame(!(bHasContent && TargetAlpha > 0.01f)); // ИСПРАВЛЕНО
 	}
 	
 	// === ШАГ 3: Очистка анимационных данных ===
@@ -234,10 +243,16 @@ void AVNCharacter::Appear(float Duration)
 		AnimationManager->SkipCurrentAnimation();
 	}
 
+	// 1. Принудительно скрываем все визуальные компоненты ПЕРЕД тем, как сделать актора видимым.
+	// Это предотвращает мерцание на один кадр.
+	HideAllVisualComponents();
+
+	// 2. Делаем самого актора видимым. Его компоненты все еще скрыты, так что он "пустой".
 	SetActorHiddenInGame(false);
 
 	if (Duration > 0.0f && AnimationManager)
 	{
+		// 3. Запускаем анимацию. AnimationManager теперь будет работать с уже "чистым" состоянием.
 		AnimationManager->PlaySpawnDespawn(true, Duration);
 	}
 	else
@@ -280,17 +295,26 @@ void AVNCharacter::ApplyVisibilityStateImmediate(bool bShouldBeVisible)
 	if (bShouldBeVisible)
 	{
 		SetActorHiddenInGame(false);
+		
+		// Показываем все ОСНОВНЫЕ компоненты с контентом
 		TArray<USceneComponent*> AllComponents = GetAllMainComponents();
 		for (USceneComponent* Component : AllComponents)
 		{
-			if (Component && Component != BodyShadow_Sprite)
+			if (Component)
 			{
-				bool bHasContent = (Cast<USkeletalMeshComponent>(Component) && Cast<USkeletalMeshComponent>(Component)->GetSkeletalMeshAsset()) || 
-								   (Cast<UPaperSpriteComponent>(Component) && Cast<UPaperSpriteComponent>(Component)->GetSprite());
-				if(bHasContent)
+				bool bHasContent = false;
+				if (USkeletalMeshComponent* SkeletalComp = Cast<USkeletalMeshComponent>(Component))
+				{
+					bHasContent = (SkeletalComp->GetSkeletalMeshAsset() != nullptr);
+				}
+				else if (UPaperSpriteComponent* SpriteComp = Cast<UPaperSpriteComponent>(Component))
+				{
+					bHasContent = (SpriteComp->GetSprite() != nullptr);
+				}
+				
+				if (bHasContent)
 				{
 					Component->SetVisibility(true);
-					// === ИСПРАВЛЕНИЕ: Применяем цвет из кэша с учетом фокуса ===
 					ApplyComponentColorWithFocus(Component);
 				}
 				else
@@ -299,10 +323,15 @@ void AVNCharacter::ApplyVisibilityStateImmediate(bool bShouldBeVisible)
 				}
 			}
 		}
-		if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
+		// Явно скрываем тень при мгновенном появлении
+		if (BodyShadow_Sprite)
+		{
+			BodyShadow_Sprite->SetVisibility(false);
+		}
 	}
 	else
 	{
+		// При мгновенном исчезновении скрываем всего актора, что скроет и тень
 		SetActorHiddenInGame(true);
 	}
 
@@ -310,7 +339,26 @@ void AVNCharacter::ApplyVisibilityStateImmediate(bool bShouldBeVisible)
 }
 
 
+
 bool AVNCharacter::IsVisible() const
 {
 	return !IsHidden();
+}
+
+void AVNCharacter::HideAllVisualComponents()
+{
+	TArray<USceneComponent*> AllComps = GetAllMainComponents();
+	if (BodyShadow_Sprite)
+	{
+		AllComps.Add(BodyShadow_Sprite);
+	}
+
+	for (USceneComponent* Comp : AllComps)
+	{
+		if (Comp)
+		{
+			Comp->SetVisibility(false, true); // Рекурсивно скрываем
+		}
+	}
+	VN_LOG_DEBUG(TEXT("HideAllVisualComponents: All components forced to be invisible."));
 }

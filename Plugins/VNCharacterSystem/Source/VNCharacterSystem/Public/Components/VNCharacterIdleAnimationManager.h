@@ -121,6 +121,7 @@ private:
     void FinishBlinkAnimation();
     void ScheduleNextBlink();
     bool IsCurrentSpritePartOfBlinkAnimation(UPaperSprite* Sprite) const;
+    void ShowEyelidsAndSetSprite(UPaperSprite* NewSprite);
 
     // Разговор
     void StartTalkAnimation();

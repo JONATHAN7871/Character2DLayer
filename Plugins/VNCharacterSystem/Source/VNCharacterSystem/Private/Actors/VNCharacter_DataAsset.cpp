@@ -11,49 +11,41 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
 {
     if (!CharacterData)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: CharacterData is null"));
+        VN_LOG_ERROR(TEXT("ApplyDataAsset FAILED: Received NULL CharacterDataAsset! Check the calling Blueprint or C++ code."));
         return;
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"), 
+    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Starting application of DataAsset %s (animate=%s, duration=%.2f)"),
         *CharacterData->GetName(), bAnimate ? TEXT("true") : TEXT("false"), Duration);
 
-    // --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ТЕКУЩЕЙ АНИМАЦИИ ---
+    // --- ШАГ 1: ПОДГОТОВКА И СБРОС ---
+    
+    // Прерываем любую активную анимацию перехода.
     if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
     {
-        VN_LOG_WARNING(TEXT("ApplyDataAsset: Forcing completion of ongoing transition to prevent conflicts"));
+        VN_LOG_WARNING(TEXT("ApplyDataAsset: Forcing completion of ongoing transition."));
         AnimationManager->ClearAnimationQueue();
         FinalizeCurrentTransition();
     }
-
-    // --- STEP 2: ИНИЦИАЛИЗАЦИЯ - ОЧИСТКА СПИСКОВ ---
+    
+    // Останавливаем все idle-анимации и сбрасываем спрайты в их базовое состояние из кэша.
+    StopAndResetIdleAnimations();
+    
     FadingInComponents.Empty();
     FadingOutComponents.Empty();
-
-    // --- STEP 3: ПРИНУДИТЕЛЬНОЕ ПОКАЗАНИЕ ВСЕХ MAIN КОМПОНЕНТОВ ---
-    // Это предотвращает проблемы с HiddenInGame при быстрой смене
-    TArray<USceneComponent*> AllMainComponents = GetAllMainComponents();
-    for (USceneComponent* Component : AllMainComponents)
-    {
-        if (Component)
-        {
-            Component->SetHiddenInGame(false);
-        }
-    }
-
-    // --- STEP 4: ГЛОБАЛЬНЫЕ ТРАНСФОРМАЦИИ ---
+    
+    // --- ШАГ 2: ПРИМЕНЕНИЕ ДАННЫХ ---
+    
     if (CharacterData->bOverrideGlobalTransforms)
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms"));
+        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Overriding global transforms."));
         GlobalSkeletalOffset = CharacterData->GlobalSkeletalOffset;
         GlobalSkeletalScale = CharacterData->GlobalSkeletalScale;
         GlobalSpriteOffset = CharacterData->GlobalSpriteOffset;
         GlobalSpriteScale = CharacterData->GlobalSpriteScale;
     }
     
-    // --- STEP 5: ОБРАБОТКА ИЗМЕНЕНИЙ С УЛУЧШЕННЫМ КЭШИРОВАНИЕМ ---
-    
-    // === SKELETAL КОМПОНЕНТЫ ===
+    // ОБРАБАТЫВАЕМ АССЕТЫ (Skeletal Meshes)
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig.SkeletalMesh, bAnimate);
@@ -61,26 +53,33 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom02, CharacterData->Custom02Config.SkeletalMesh, bAnimate);
     ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal::Custom03, CharacterData->Custom03Config.SkeletalMesh, bAnimate);
 
-    // === SPRITE КОМПОНЕНТЫ С ПРАВИЛЬНЫМ КЭШИРОВАНИЕМ ===
+    // ОБРАБАТЫВАЕМ АССЕТЫ (Sprites)
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig.Sprite, bAnimate);
-    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig.Sprite, bAnimate);
-    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig.Sprite, bAnimate);
-    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig.Sprite, bAnimate);
-    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig.Sprite, bAnimate);
-    
-    // === КРИТИЧЕСКИ ВАЖНЫЕ FACIAL КОМПОНЕНТЫ ===
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig.Sprite, bAnimate);
+    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig.Sprite, bAnimate);
+    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig.Sprite, bAnimate);
+    ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig.Sprite, bAnimate);
     ProcessSpriteComponentChange(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig.Sprite, bAnimate);
-
-    // --- ПРИМЕНЕНИЕ ОСТАЛЬНЫХ СВОЙСТВ КОНФИГУРАЦИЙ ---
+    
+    // ОТДЕЛЬНАЯ ОБРАБОТКА ТЕНИ (ЧТОБЫ ИЗБЕЖАТЬ МЕРЦАНИЯ)
+    if (BodyShadow_Sprite)
+    {
+        // Только обновляем ассет и свойства, видимость НЕ трогаем.
+        TSoftObjectPtr<UPaperSprite> NewShadowSprite = CharacterData->BodyShadowSpriteConfig.Sprite;
+        BodyShadow_Sprite->SetSprite(NewShadowSprite.LoadSynchronous());
+        ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
+        BodyShadow_Sprite->SetVisibility(false);
+    }
+    
+    // ПРИМЕНЯЕМ ОСТАЛЬНЫЕ СВОЙСТВА (трансформы, цвета и т.д.)
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Body, CharacterData->BodyConfig);
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Arms, CharacterData->ArmsConfig);
     ApplySkeletalConfigProperties(E_VN_ComponentID_Skeletal::Head, CharacterData->HeadConfig);
@@ -90,41 +89,41 @@ void AVNCharacter::ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAn
     
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Body, CharacterData->BodySpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Arms, CharacterData->ArmsSpriteConfig);
-    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::BodyShadow, CharacterData->BodyShadowSpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Head, CharacterData->HeadSpriteConfig);
-    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig);
-    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig);
-    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig);
-    
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Eyebrow, CharacterData->EyebrowSpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Eyes, CharacterData->EyesSpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Eyelids, CharacterData->EyelidsSpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Wink, CharacterData->WinkSpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::Mouth, CharacterData->MouthSpriteConfig);
+    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_01, CharacterData->EmotionBodyEffect01SpriteConfig);
+    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_02, CharacterData->EmotionBodyEffect02SpriteConfig);
+    ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionBody_03, CharacterData->EmotionBodyEffect03SpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionHead_01, CharacterData->EmotionHeadEffect01SpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionHead_02, CharacterData->EmotionHeadEffect02SpriteConfig);
     ApplySpriteConfigProperties(E_VN_ComponentID_Sprite::EmotionHead_03, CharacterData->EmotionHeadEffect03SpriteConfig);
 
-    // --- СКРЫТИЕ ТЕНЕВЫХ КОМПОНЕНТОВ ---
-    if (BodyShadow_Sprite) BodyShadow_Sprite->SetVisibility(false);
-    if (BodyShadow_Sprite_Fade) BodyShadow_Sprite_Fade->SetVisibility(false);
 
-    // --- ЗАПУСК АНИМАЦИИ ---
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: FadingIn components: %d, FadingOut components: %d"), 
-        FadingInComponents.Num(), FadingOutComponents.Num());
-
-    if (bAnimate && Duration > 0.0f && AnimationManager && (FadingInComponents.Num() > 0 || FadingOutComponents.Num() > 0))
+    // --- ШАГ 3: ЗАПУСК АНИМАЦИИ И ПЕРЕЗАПУСК IDLE ---
+    
+    bool bHasAnimatedChanges = bAnimate && Duration > 0.0f && AnimationManager && (FadingInComponents.Num() > 0 || FadingOutComponents.Num() > 0);
+    if (bHasAnimatedChanges)
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Requesting batched transition commit with duration %.2f"), Duration);
+        VN_LOG_DEBUG(TEXT("ApplyDataAsset: Requesting batched transition commit."));
         RequestTransitionCommit(Duration);
+        // Перезапуск Idle анимаций произойдет в OnAnimationFinished(Transition)
     }
     else
     {
-        VN_LOG_DEBUG(TEXT("ApplyDataAsset: No animation needed or animation disabled, finalizing state immediately"));
+        VN_LOG_DEBUG(TEXT("ApplyDataAsset: No animation needed. Finalizing state immediately."));
         HideAllFadeComponents();
+        // Мгновенный перезапуск Idle-анимаций
+        if (IdleAnimationManager)
+        {
+            IdleAnimationManager->StartAllIdleAnimations();
+        }
     }
 
-    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed application of DataAsset %s"), *CharacterData->GetName());
+    VN_LOG_DEBUG(TEXT("ApplyDataAsset: Completed."));
 }
 
 // =====================================================
@@ -158,18 +157,25 @@ void AVNCharacter::ProcessSkeletalComponentChange(E_VN_ComponentID_Skeletal ID, 
 
 void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSoftObjectPtr<UPaperSprite> NewSprite, bool bAnimate)
 {
+    // Эта функция больше не обрабатывает тень, так как она вынесена в ApplyDataAsset
+    if (ID == E_VN_ComponentID_Sprite::BodyShadow)
+    {
+        return;
+    }
+
     UPaperSpriteComponent* MainComp = GetSpriteComponent(ID);
     if (!MainComp) return;
     
-    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Всегда обновляем кэш при изменении в DataAsset ===
+    // Обновляем кэш, объявляя этот спрайт новым "базовым"
     UpdateCacheForComponent(ID, NewSprite);
     
     const UPaperSprite* CurrentSprite = MainComp->GetSprite();
     bool bAssetChanged = false;
     
-    if (!CurrentSprite && !NewSprite.IsNull()) bAssetChanged = true;
-    else if (CurrentSprite && NewSprite.IsNull()) bAssetChanged = true;
-    else if (CurrentSprite && !NewSprite.IsNull()) bAssetChanged = (CurrentSprite->GetPathName() != NewSprite.ToString());
+    if ((!CurrentSprite && !NewSprite.IsNull()) || (CurrentSprite && NewSprite.IsNull()) || (CurrentSprite && !NewSprite.IsNull() && CurrentSprite->GetPathName() != NewSprite.ToString()))
+    {
+        bAssetChanged = true;
+    }
     
     if (bAssetChanged && bAnimate)
     {
@@ -182,9 +188,6 @@ void AVNCharacter::ProcessSpriteComponentChange(E_VN_ComponentID_Sprite ID, TSof
     {
         ValidateAndSetupSpriteComponent(MainComp, NewSprite);
     }
-    
-    // === НОВОЕ: Уведомляем IdleManager об изменении ===
-    NotifyIdleManagerAboutSpriteChange(ID, NewSprite);
 }
 
 // =====================================================
@@ -216,7 +219,7 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
 {
     UPaperSpriteComponent* Comp = GetSpriteComponent(ID);
     if (!Comp) return;
-    
+
     if (Config.AttachTo != E_SpriteAttachmentTarget::None)
     {
         if (USkeletalMeshComponent* AttachTarget = GetSkeletalComponentBySpriteTarget(Config.AttachTo))
@@ -230,13 +233,13 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     }
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
     CacheComponentBaseColor(Comp, Config.Color);
-    // Применяем цвет с учетом фокуса
     ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
+    if (ID != E_VN_ComponentID_Sprite::BodyShadow)
+    {
+        Comp->SetVisibility(!Config.Sprite.IsNull());
+    }
 }
 
 void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const F_VN_SpriteConfig_Simple& Config)
@@ -245,13 +248,17 @@ void AVNCharacter::ApplySpriteConfigProperties(E_VN_ComponentID_Sprite ID, const
     if (!Comp) return;
     
     UpdateComponentTransform(Comp, Config.Offset, Config.Scale);
-    
-    // === ИСПРАВЛЕНИЕ: КЭШИРУЕМ БАЗОВЫЙ ЦВЕТ ИЗ КОНФИГА ===
     CacheComponentBaseColor(Comp, Config.Color);
-    // Применяем цвет с учетом фокуса
     ApplyComponentColorWithFocus(Comp);
     
-    if (!Config.Sprite.IsNull()) Comp->SetVisibility(Config.bVisible);
+    // Важное исключение: видимость тени управляется специальной логикой,
+    // а не общим флагом bVisible из DataAsset.
+    if (ID != E_VN_ComponentID_Sprite::BodyShadow)
+    {
+        // Скрываем компонент, только если в нем нет спрайта. Флаг bVisible игнорируется для простоты.
+        // Видимость определяется наличием контента.
+        Comp->SetVisibility(!Config.Sprite.IsNull());
+    }
 }
 
 // =====================================================

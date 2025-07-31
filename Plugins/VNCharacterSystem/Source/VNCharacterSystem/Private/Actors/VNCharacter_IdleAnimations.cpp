@@ -119,3 +119,21 @@ bool AVNCharacter::IsEyesRandomActive() const
 
     return IdleAnimationManager->IsEyesRandomActive();
 }
+
+void AVNCharacter::StopAndResetIdleAnimations()
+{
+    if (!IdleAnimationManager)
+    {
+        return;
+    }
+
+    // ШАГ 1: Полностью останавливаем всю активность в менеджере.
+    IdleAnimationManager->StopAllIdleAnimations();
+
+    // ШАГ 2: Восстанавливаем компоненты из кэша. Кэш - это единственный источник правды о базовом состоянии.
+    RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Mouth);
+    RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyes);
+    RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Eyelids);
+
+    VN_LOG_DEBUG(TEXT("StopAndResetIdleAnimations: All idle animations stopped and components restored from cache."));
+}

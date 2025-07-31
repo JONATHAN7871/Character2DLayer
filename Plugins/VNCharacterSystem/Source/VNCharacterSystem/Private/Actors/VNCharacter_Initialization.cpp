@@ -11,11 +11,14 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/AssetManager.h"
 
-void AVNCharacter::RequestSpawn(const FString& NewName, bool bIsNarrator, TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
+void AVNCharacter::RequestSpawn(const FString& NewName, const FTransform& NewTransform, int32 CharacterLayer, bool bIsNarrator, 
+                                TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
                                 bool bAnimateAsset, float AssetDuration, bool bShouldAppear, float AppearDuration)
 {
     // 1. Сохраняем все параметры запроса в структуру
     CurrentSpawnRequest.CharacterName = NewName;
+    CurrentSpawnRequest.Transform = NewTransform;
+    CurrentSpawnRequest.Layer = CharacterLayer;
     CurrentSpawnRequest.bIsNarrator = bIsNarrator;
     CurrentSpawnRequest.CharacterDataPtr = InCharacterData;
     CurrentSpawnRequest.IdleDataPtr = InIdleData;
@@ -53,6 +56,8 @@ void AVNCharacter::OnAssetsLoadedForSpawn()
 {
     // Используем данные из сохраненного запроса
     const FString& NewName = CurrentSpawnRequest.CharacterName;
+    const FTransform& NewTransform = CurrentSpawnRequest.Transform;
+    const int32 CharacterLayer = CurrentSpawnRequest.Layer;
     const bool bIsNarrator = CurrentSpawnRequest.bIsNarrator;
     UVNCharacterDataAsset* InCharacterData = CurrentSpawnRequest.CharacterDataPtr.Get();
     UVNCharacterIdleAnimationDataAsset* InIdleData = CurrentSpawnRequest.IdleDataPtr.Get();
@@ -62,6 +67,8 @@ void AVNCharacter::OnAssetsLoadedForSpawn()
     const float AppearDuration = CurrentSpawnRequest.AppearDuration;
 
     SetCharacterName(NewName);
+    SetActorTransform(NewTransform, false, nullptr, ETeleportType::ResetPhysics);
+    SetCharacterLayer(CharacterLayer);
     VN_LOG_DEBUG(TEXT("OnAssetsLoadedForSpawn: Assets loaded. Initializing character '%s'."), *NewName);
 
     if (AnimationManager) AnimationManager->ClearAnimationQueue();

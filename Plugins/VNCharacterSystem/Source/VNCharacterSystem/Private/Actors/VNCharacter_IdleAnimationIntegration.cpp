@@ -7,51 +7,14 @@
 
 void AVNCharacter::ApplyDataAssetWithIdleAnimations(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bAnimate, float Duration)
 {
-    if (!IdleAnimationData)
-    {
-        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleAnimations: IdleAnimationData is null"));
-        return;
-    }
-
-    if (!IdleAnimationManager)
-    {
-        VN_LOG_WARNING(TEXT("ApplyDataAssetWithIdleAnimations: IdleAnimationManager is null"));
-        return;
-    }
-
-    VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Applying IdleAnimationDataAsset %s"), *IdleAnimationData->GetName());
-
-    IdleAnimationManager->StopAllIdleAnimations();
-    SynchronizeIdleAnimationStates();
-
+    // Эта функция теперь просто вызывает основной метод.
     ApplyIdleAnimationDataAssetWithEmotionalState(IdleAnimationData, IdleAnimationData->DefaultEmotionalState, true);
-
-    VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleAnimations: Applied successfully"));
 }
 
 void AVNCharacter::ApplyIdleAnimationDataAsset(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, bool bRestartAnimations)
 {
-    if (!IdleAnimationData)
-    {
-        VN_LOG_WARNING(TEXT("ApplyIdleAnimationDataAsset: IdleAnimationData is null"));
-        return;
-    }
-
-    if (!IdleAnimationManager)
-    {
-        VN_LOG_WARNING(TEXT("ApplyIdleAnimationDataAsset: IdleAnimationManager is null"));
-        return;
-    }
-
-    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAsset: Applying %s"), *IdleAnimationData->GetName());
-
-    IdleAnimationManager->StopAllIdleAnimations();
-    SynchronizeIdleAnimationStates();
-
+    // Эта функция тоже просто вызывает основной метод.
     ApplyIdleAnimationDataAssetWithEmotionalState(IdleAnimationData, IdleAnimationData->DefaultEmotionalState, bRestartAnimations);
-
-    VN_LOG_DEBUG(TEXT("ApplyIdleAnimationDataAsset: Applied successfully - %s"), 
-        *IdleAnimationData->GetConfigSummary());
 }
 
 void AVNCharacter::ApplyIdleAnimationDataAssetSmooth(UVNCharacterIdleAnimationDataAsset* IdleAnimationData, float DelayBeforeRestart)
@@ -144,45 +107,18 @@ void AVNCharacter::ApplyDataAssetWithIdleSupport(UVNCharacterDataAsset* Characte
         return;
     }
 
-    if (IdleAnimationManager)
-    {
-        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: Synchronizing states before DataAsset application"));
-        IdleAnimationManager->StopAllIdleAnimations();
-        SynchronizeIdleAnimationStates();
-    }
-
+    // НИЧЕГО НЕ ДЕЛАЕМ С IDLE ЗДЕСЬ.
+    // Просто вызываем ApplyDataAsset.
+    // ApplyDataAsset вызовет SetSprite, а новая версия SetSprite
+    // сама позаботится об остановке, сбросе, обновлении кэша и перезапуске Idle.
+    
+    VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: Delegating all logic to ApplyDataAsset."));
     ApplyDataAsset(CharacterData, bAnimate, Duration);
 
-    if (IdleAnimationManager)
-    {
-        if (bAnimate && Duration > 0.0f)
-        {
-            FTimerHandle SyncTimer;
-            GetWorld()->GetTimerManager().SetTimer(
-                SyncTimer,
-                [this]()
-                {
-                    if (IdleAnimationManager)
-                    {
-                        // Принудительно обновляем все кэшированные спрайты
-                        UpdateSpriteCache();
-                        
-                        IdleAnimationManager->StartAllIdleAnimations();
-                        
-                        VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized and idle animations restarted"));
-                    }
-                },
-                Duration + 0.1f,
-                false
-            );
-        }
-        else
-        {
-            UpdateSpriteCache();
-            IdleAnimationManager->StartAllIdleAnimations();
-            VN_LOG_DEBUG(TEXT("ApplyDataAssetWithIdleSupport: States synchronized immediately"));
-        }
-    }
+    // Если DataAsset был применен мгновенно (неанимированно), SetSprite/SetFace
+    // уже перезапустили Idle анимации. Если анимированно, они перезапустятся
+    // в OnAnimationFinished(Transition), что абсолютно правильно.
+    // Больше здесь ничего не нужно.
 }
 
 void AVNCharacter::RestoreComponentStates()

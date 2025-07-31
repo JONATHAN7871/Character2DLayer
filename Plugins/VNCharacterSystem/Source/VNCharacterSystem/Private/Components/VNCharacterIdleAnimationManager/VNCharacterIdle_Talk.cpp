@@ -5,63 +5,29 @@
 
 void UVNCharacterIdleAnimationManager::StartTalkAnimation()
 {
-    if (!IdleAnimationsConfig.TalkConfig.IsValid())
-    {
-        LogIdleAnimation(TEXT("Cannot start talk: invalid config"));
-        return;
-    }
-
+    if (!IdleAnimationsConfig.TalkConfig.IsValid() || !GetWorld()) return;
     AVNCharacter* Character = GetVNCharacterOwner();
-    if (!Character || !Character->Mouth_Sprite)
-    {
-        LogIdleAnimation(TEXT("Cannot start talk: invalid character"));
-        return;
-    }
+    if (!Character || !Character->Mouth_Sprite) return;
 
-    VN_LOG_DEBUG(TEXT("StartTalkAnimation: Starting talk animation"));
+    FString CachedSpriteName = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Mouth).ToString();
+    UE_LOG(LogTemp, Error, TEXT(">>> StartTalkAnimation. Mouth Cache at start is: %s"), *CachedSpriteName);
 
     float FrameInterval = IdleAnimationsConfig.TalkConfig.GetFrameInterval();
-    GetWorld()->GetTimerManager().SetTimer(
-        TalkTimerHandle,
-        this,
-        &UVNCharacterIdleAnimationManager::UpdateTalkFrame,
-        FrameInterval,
-        true
-    );
-    
-    LogIdleAnimation(TEXT("Talk animation started"));
+    GetWorld()->GetTimerManager().SetTimer(TalkTimerHandle, this, &UVNCharacterIdleAnimationManager::UpdateTalkFrame, FrameInterval, true);
 }
 
 void UVNCharacterIdleAnimationManager::StopTalkAnimation()
 {
-    VN_LOG_DEBUG(TEXT("StopTalkAnimation: Stopping talk animation"));
-    
-    UWorld* World = GetWorld();
-    if (World)
-    {
-        World->GetTimerManager().ClearTimer(TalkTimerHandle);
+    if (GetWorld()) {
+        GetWorld()->GetTimerManager().ClearTimer(TalkTimerHandle);
     }
     
     AVNCharacter* Character = GetVNCharacterOwner();
-    if (Character && Character->Mouth_Sprite)
-    {
-        UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
-        
-        if (IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
-        {
-            // Восстанавливаем из кэша
-            Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Mouth);
-            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Restored mouth from cache"));
-        }
-        else
-        {
-            // Спрайт был изменен извне - обновляем кэш
-            Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
-            VN_LOG_DEBUG(TEXT("StopTalkAnimation: Updated cache with external mouth sprite"));
-        }
+    if (Character && Character->Mouth_Sprite) {
+        FString CachedSpriteName = Character->GetCachedSprite(E_VN_ComponentID_Sprite::Mouth).ToString();
+        UE_LOG(LogTemp, Error, TEXT("<<< StopTalkAnimation. Mouth Cache right before restore is: %s"), *CachedSpriteName);
+        Character->RestoreSpriteFromCache(E_VN_ComponentID_Sprite::Mouth);
     }
-    
-    LogIdleAnimation(TEXT("Talk animation stopped"));
 }
 
 void UVNCharacterIdleAnimationManager::UpdateTalkFrame()

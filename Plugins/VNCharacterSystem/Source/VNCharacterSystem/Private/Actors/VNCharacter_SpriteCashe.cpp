@@ -24,36 +24,22 @@ TSoftObjectPtr<UPaperSprite> AVNCharacter::GetCachedSprite(E_VN_ComponentID_Spri
 
 void AVNCharacter::SetCachedSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite)
 {
+    // Универсальная логика для всех компонентов, чтобы не сломать остальное
     switch (ComponentID)
     {
-        case E_VN_ComponentID_Sprite::Eyes:
-            CachedEyesSprite = Sprite;
-            VN_LOG_DEBUG(TEXT("SetCachedSprite: Eyes cached: %s"), 
-                Sprite.IsNull() ? TEXT("NULL") : *Sprite.ToString());
-            break;
-        case E_VN_ComponentID_Sprite::Mouth:
-            CachedMouthSprite = Sprite;
-            VN_LOG_DEBUG(TEXT("SetCachedSprite: Mouth cached: %s"), 
-                Sprite.IsNull() ? TEXT("NULL") : *Sprite.ToString());
-            break;
-        case E_VN_ComponentID_Sprite::Eyebrow:
-            CachedEyebrowSprite = Sprite;
-            VN_LOG_DEBUG(TEXT("SetCachedSprite: Eyebrow cached: %s"), 
-                Sprite.IsNull() ? TEXT("NULL") : *Sprite.ToString());
-            break;
-        case E_VN_ComponentID_Sprite::Eyelids:
-            CachedEyelidsSprite = Sprite;
-            VN_LOG_DEBUG(TEXT("SetCachedSprite: Eyelids cached: %s"), 
-                Sprite.IsNull() ? TEXT("NULL") : *Sprite.ToString());
-            break;
-        case E_VN_ComponentID_Sprite::Wink:
-            CachedWinkSprite = Sprite;
-            VN_LOG_DEBUG(TEXT("SetCachedSprite: Wink cached: %s"), 
-                Sprite.IsNull() ? TEXT("NULL") : *Sprite.ToString());
-            break;
-        default:
-            VN_LOG_WARNING(TEXT("SetCachedSprite: Unsupported component ID: %d"), (int32)ComponentID);
-            break;
+    case E_VN_ComponentID_Sprite::Eyes:    CachedEyesSprite = Sprite; break;
+    case E_VN_ComponentID_Sprite::Mouth:   CachedMouthSprite = Sprite; break;
+    case E_VN_ComponentID_Sprite::Eyebrow: CachedEyebrowSprite = Sprite; break;
+    case E_VN_ComponentID_Sprite::Eyelids: CachedEyelidsSprite = Sprite; break;
+    case E_VN_ComponentID_Sprite::Wink:    CachedWinkSprite = Sprite; break;
+    default: break;
+    }
+    
+    // --- ОСОБОЕ ЛОГИРОВАНИЕ ТОЛЬКО ДЛЯ РТА ---
+    if (ComponentID == E_VN_ComponentID_Sprite::Mouth)
+    {
+        FString SpriteName = Sprite.IsNull() ? TEXT("NULL") : Sprite.ToString();
+        UE_LOG(LogTemp, Error, TEXT("!!! SET CACHED MOUTH SPRITE -> %s"), *SpriteName);
     }
 }
 
@@ -107,26 +93,24 @@ void AVNCharacter::RestoreSpriteFromCache(E_VN_ComponentID_Sprite ComponentID)
 {
     TSoftObjectPtr<UPaperSprite> CachedSprite = GetCachedSprite(ComponentID);
     UPaperSpriteComponent* Component = GetSpriteComponent(ComponentID);
-    
-    if (!Component)
+    if(Component) 
     {
-        VN_LOG_WARNING(TEXT("RestoreSpriteFromCache: Component not found for ID %d"), (int32)ComponentID);
-        return;
+        Component->SetSprite(CachedSprite.LoadSynchronous());
     }
-    
-    // ✅ КРИТИЧЕСКИ ВАЖНО: NULL в кэше - это валидное состояние!
-    if (!CachedSprite.IsNull())
+
+    // --- ОСОБОЕ ЛОГИРОВАНИЕ ТОЛЬКО ДЛЯ РТА ---
+    if (ComponentID == E_VN_ComponentID_Sprite::Mouth)
     {
-        UPaperSprite* LoadedSprite = CachedSprite.LoadSynchronous();
-        Component->SetSprite(LoadedSprite);
-        VN_LOG_DEBUG(TEXT("RestoreSpriteFromCache: Restored %d to: %s"), 
-            (int32)ComponentID, LoadedSprite ? *LoadedSprite->GetName() : TEXT("NULL"));
-    }
-    else
-    {
-        // ✅ ИСПРАВЛЕНИЕ: Кэш содержит NULL - компонент должен быть пустым
-        Component->SetSprite(nullptr);
-        VN_LOG_DEBUG(TEXT("RestoreSpriteFromCache: Restored %d to NULL (cached empty state)"), (int32)ComponentID);
+        FString CachedSpriteName = CachedSprite.IsNull() ? TEXT("NULL") : CachedSprite.ToString();
+        UE_LOG(LogTemp, Error, TEXT("!!! RESTORE MOUTH FROM CACHE -> Attempting to restore to: %s"), *CachedSpriteName);
+        if(Component && Component->GetSprite())
+        {
+            UE_LOG(LogTemp, Error, TEXT("!!!                        Success. Component now has: %s"), *Component->GetSprite()->GetName());
+        }
+        else if (Component)
+        {
+            UE_LOG(LogTemp, Error, TEXT("!!!                        Success. Component now has: NULL"));
+        }
     }
 }
 

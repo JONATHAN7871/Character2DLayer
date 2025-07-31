@@ -36,6 +36,10 @@ struct FVNCharacterSpawnRequestPayload
 	UPROPERTY()
 	FString CharacterName;
 	UPROPERTY()
+	FTransform Transform;
+	UPROPERTY()
+	int32 Layer = 0;
+	UPROPERTY()
 	bool bIsNarrator = false;
 	UPROPERTY()
 	TSoftObjectPtr<UVNCharacterDataAsset> CharacterDataPtr;
@@ -354,7 +358,8 @@ public:
 	/**
 	 * Асинхронно запрашивает инициализацию персонажа. Запускает загрузку ассетов.
 	 */
-	void RequestSpawn(const FString& NewName, bool bIsNarrator, TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
+	void RequestSpawn(const FString& NewName, const FTransform& NewTransform, int32 CharacterLayer, bool bIsNarrator, 
+						TSoftObjectPtr<UVNCharacterDataAsset> InCharacterData, TSoftObjectPtr<UVNCharacterIdleAnimationDataAsset> InIdleData, 
 						bool bAnimateAsset, float AssetDuration, bool bShouldAppear, float AppearDuration);
 
 	// === ОСНОВНОЕ API - УСТАНОВКА КОНТЕНТА ===
@@ -374,6 +379,18 @@ public:
 	/** Применить DataAsset с полной конфигурацией персонажа */
 	UFUNCTION(BlueprintCallable, Category = "VN Character | Data Asset") 
 	void ApplyDataAsset(UVNCharacterDataAsset* CharacterData, bool bAnimate = true, float Duration = 1.0f);
+
+	/** Показать/скрыть теневой компонент (используется только для анимаций Appear/Disappear) */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Shadow")
+	void SetBodyShadowVisible(bool bVisible);
+
+	/** Проверить, виден ли теневой компонент */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Shadow")
+	bool IsBodyShadowVisible() const;
+
+	/** Установить альфу теневого компонента (для анимаций) */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Shadow")
+	void SetBodyShadowAlpha(float Alpha);
 
 	// === СИСТЕМА ФОКУСА И ВИДИМОСТИ ===
 	
@@ -700,6 +717,7 @@ private:
 	void ResetComponentAttachmentToDefault(USceneComponent* ComponentToReset);
 	bool IsChildOfHeadSprite(USceneComponent* Component) const;
 	bool IsChildOfHeadSprite(E_VN_ComponentID_Sprite ComponentID) const;
+	void SetAllComponentsVisibilityTrue();
 
 	// === УПРАВЛЕНИЕ ТРАНСФОРМАЦИЯМИ ===
 	void UpdateComponentTransform(USceneComponent* Component, const FVector& LocalOffset, float LocalScale);
@@ -762,6 +780,7 @@ private:
 
 	// === IDLE АНИМАЦИИ - ИНТЕГРАЦИЯ ===
 	void SynchronizeIdleAnimationStates();
+	void StopAndResetIdleAnimations();
 	void ApplyFocusStateImmediate();
 	void ApplyVisibilityStateImmediate(bool bShouldBeVisible);
 
@@ -778,4 +797,6 @@ private:
 
 	// === СЛОИ ===
 	void SetupAllComponentLayers();
+
+	void HideAllVisualComponents();
 };

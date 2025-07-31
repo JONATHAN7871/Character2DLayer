@@ -65,180 +65,88 @@ void AVNCharacter::SetSkeletalMesh(E_VN_ComponentID_Skeletal ComponentID, TSoftO
 void AVNCharacter::SetSprite(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> Sprite, bool bAnimate, float Duration)
 {
 	UPaperSpriteComponent* MainComponent = GetSpriteComponent(ComponentID);
-	if (!MainComponent)
-	{
-		UE_LOG(LogTemp, Error, TEXT("SetSprite: Component not found for ID %d"), (int32)ComponentID);
-		return;
-	}
+	if (!MainComponent) return;
 
-	// === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: УМНОЕ КЭШИРОВАНИЕ ===
-	// Всегда обновляем кэш при установке нового спрайта, независимо от анимаций
-	UpdateCacheForComponent(ComponentID, Sprite);
+	// ШАГ 1: ПОЛНАЯ ОСТАНОВКА И СБРОС
+	// Неважно, что происходило до этого, возвращаем персонажа в базовое состояние.
+	StopAndResetIdleAnimations();
+    
+	// ШАГ 2: ОБНОВЛЕНИЕ БАЗОВОГО СОСТОЯНИЯ
+	// Теперь, когда все чисто, объявляем новый спрайт новым "базовым" состоянием в кэше.
+	SetCachedSprite(ComponentID, Sprite);
 
-	if (AnimationManager && AnimationManager->IsAnimating() && AnimationManager->GetCurrentAnimationType() == EVNAnimationType::Transition)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("SetSprite: Forcing completion of ongoing transition"));
-		AnimationManager->ClearAnimationQueue();
-		FinalizeCurrentTransition();
-	}
-
+	// ШАГ 3: ВИЗУАЛЬНОЕ ПРИМЕНЕНИЕ
 	bool bAssetChanged = false;
+	// ... (логика определения bAssetChanged, как и раньше)
 	const UPaperSprite* CurrentSprite = MainComponent->GetSprite();
-	
-	if (!CurrentSprite && !Sprite.IsNull())
+	if ((!CurrentSprite && !Sprite.IsNull()) || (CurrentSprite && Sprite.IsNull()) || (CurrentSprite && !Sprite.IsNull() && CurrentSprite->GetPathName() != Sprite.ToString()))
 	{
 		bAssetChanged = true;
-	}
-	else if (CurrentSprite && Sprite.IsNull())
-	{
-		bAssetChanged = true;
-	}
-	else if (CurrentSprite && !Sprite.IsNull())
-	{
-		bAssetChanged = (CurrentSprite->GetPathName() != Sprite.ToString());
 	}
 
 	if (bAnimate && bAssetChanged && Duration > 0.0f && AnimationManager)
 	{
-		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID))
+		// ... (логика с PrepareSpriteTransition, как и раньше)
+		if (UPaperSpriteComponent* FadeComponent = GetSpriteFadeComponent(ComponentID)) 
 		{
 			PrepareSpriteTransition(MainComponent, FadeComponent, Sprite);
 			RequestTransitionCommit(Duration);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("SetSprite: Fade component not found for ID %d"), (int32)ComponentID);
-			ValidateAndSetupSpriteComponent(MainComponent, Sprite);
-		}
+		} else { ValidateAndSetupSpriteComponent(MainComponent, Sprite); }
 	}
 	else
 	{
-		if (!bAssetChanged)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("SetSprite: Asset unchanged, but cache updated"));
-		}
 		ValidateAndSetupSpriteComponent(MainComponent, Sprite);
 	}
-
-	// === НОВОЕ: Уведомляем Idle Manager об изменении ===
-	NotifyIdleManagerAboutSpriteChange(ComponentID, Sprite);
-
+	
+	// ШАГ 4: ПЕРЕЗАПУСК IDLE (если нужно)
+	// Если мы не ждем завершения анимации перехода (Transition), то можно сразу запускать Idle.
+	if (!(bAnimate && bAssetChanged && Duration > 0.0f))
+	{
+		if(IdleAnimationManager) IdleAnimationManager->StartAllIdleAnimations();
+	}
+    
 	OnCharacterComponentChanged.Broadcast(ComponentID);
 }
 
+
 void AVNCharacter::SetFace(TSoftObjectPtr<UPaperSprite> EyesSprite, TSoftObjectPtr<UPaperSprite> MouthSprite, TSoftObjectPtr<UPaperSprite> EyebrowSprite, bool bAnimate, float Duration)
 {
-    VN_LOG_DEBUG(TEXT("SetFace: Setting multiple face components with animate=%s, duration=%.2f"), bAnimate ? TEXT("true") : TEXT("false"), Duration);
+	// ШАГ 1: ПОЛНАЯ ОСТАНОВКА И СБРОС (один раз для всех)
+	StopAndResetIdleAnimations();
+    
+	// ШАГ 2: ОБНОВЛЕНИЕ КЭША (для всех компонентов)
+	SetCachedSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite);
+	SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite);
+	SetCachedSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite);
 
-    // === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем кэш для всех компонентов ===
-    UpdateCacheForComponent(E_VN_ComponentID_Sprite::Eyes, EyesSprite);
-    UpdateCacheForComponent(E_VN_ComponentID_Sprite::Mouth, MouthSprite);
-    UpdateCacheForComponent(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite);
+	// ШАГ 3: ВИЗУАЛЬНОЕ ПРИМЕНЕНИЕ (вызываем базовую функцию SetSprite без анимации)
+	// Это автоматически и мгновенно установит спрайты.
+	// Важно: мы не вызываем полную SetSprite, так как она снова вызовет StopAndReset.
+	ValidateAndSetupSpriteComponent(GetSpriteComponent(E_VN_ComponentID_Sprite::Eyes), EyesSprite);
+	ValidateAndSetupSpriteComponent(GetSpriteComponent(E_VN_ComponentID_Sprite::Mouth), MouthSprite);
+	ValidateAndSetupSpriteComponent(GetSpriteComponent(E_VN_ComponentID_Sprite::Eyebrow), EyebrowSprite);
 
-    if (bAnimate && Duration > 0.0f && AnimationManager)
-    {
-        bool bAnyComponentChanged = false;
-
-        // Проверяем и подготавливаем ГЛАЗА
-        UPaperSpriteComponent* EyesComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyes);
-        if (EyesComp)
-        {
-            const UPaperSprite* CurrentSprite = EyesComp->GetSprite();
-            const bool bAssetChanged = (!CurrentSprite && !EyesSprite.IsNull()) ||
-                                       (CurrentSprite && EyesSprite.IsNull()) ||
-                                       (CurrentSprite && !EyesSprite.IsNull() && CurrentSprite->GetPathName() != EyesSprite.ToString());
-            if (bAssetChanged)
-            {
-                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Eyes))
-                {
-                    PrepareSpriteTransition(EyesComp, FadeComp, EyesSprite);
-                    bAnyComponentChanged = true;
-                }
-            }
-        }
-
-        // Проверяем и подготавливаем РОТ
-        UPaperSpriteComponent* MouthComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Mouth);
-        if (MouthComp)
-        {
-            const UPaperSprite* CurrentSprite = MouthComp->GetSprite();
-            const bool bAssetChanged = (!CurrentSprite && !MouthSprite.IsNull()) ||
-                                       (CurrentSprite && MouthSprite.IsNull()) ||
-                                       (CurrentSprite && !MouthSprite.IsNull() && CurrentSprite->GetPathName() != MouthSprite.ToString());
-            if (bAssetChanged)
-            {
-                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Mouth))
-                {
-                    PrepareSpriteTransition(MouthComp, FadeComp, MouthSprite);
-                    bAnyComponentChanged = true;
-                }
-            }
-        }
-
-        // Проверяем и подготавливаем БРОВИ
-        UPaperSpriteComponent* EyebrowComp = GetSpriteComponent(E_VN_ComponentID_Sprite::Eyebrow);
-        if (EyebrowComp)
-        {
-            const UPaperSprite* CurrentSprite = EyebrowComp->GetSprite();
-            const bool bAssetChanged = (!CurrentSprite && !EyebrowSprite.IsNull()) ||
-                                       (CurrentSprite && EyebrowSprite.IsNull()) ||
-                                       (CurrentSprite && !EyebrowSprite.IsNull() && CurrentSprite->GetPathName() != EyebrowSprite.ToString());
-            if (bAssetChanged)
-            {
-                if (UPaperSpriteComponent* FadeComp = GetSpriteFadeComponent(E_VN_ComponentID_Sprite::Eyebrow))
-                {
-                    PrepareSpriteTransition(EyebrowComp, FadeComp, EyebrowSprite);
-                    bAnyComponentChanged = true;
-                }
-            }
-        }
-
-        if (bAnyComponentChanged)
-        {
-            RequestTransitionCommit(Duration);
-        }
-    }
-    else
-    {
-        // Мгновенное применение - используем SetSprite с выключенной анимацией
-        // Это автоматически обработает кэширование
-        SetSprite(E_VN_ComponentID_Sprite::Eyes, EyesSprite, false, 0.0f);
-        SetSprite(E_VN_ComponentID_Sprite::Mouth, MouthSprite, false, 0.0f);
-        SetSprite(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite, false, 0.0f);
-    }
-
-    // === НОВОЕ: Уведомляем обо всех изменениях ===
-    NotifyIdleManagerAboutSpriteChange(E_VN_ComponentID_Sprite::Eyes, EyesSprite);
-    NotifyIdleManagerAboutSpriteChange(E_VN_ComponentID_Sprite::Mouth, MouthSprite);
-    NotifyIdleManagerAboutSpriteChange(E_VN_ComponentID_Sprite::Eyebrow, EyebrowSprite);
+	// ШАГ 4: ПЕРЕЗАПУСК IDLE (один раз для всех)
+	if (IdleAnimationManager)
+	{
+		IdleAnimationManager->StartAllIdleAnimations();
+	}
 }
 
 // === НОВЫЕ МЕТОДЫ ДЛЯ УЛУЧШЕННОГО КЭШИРОВАНИЯ ===
 
 void AVNCharacter::UpdateCacheForComponent(E_VN_ComponentID_Sprite ComponentID, TSoftObjectPtr<UPaperSprite> NewSprite)
 {
-	VN_LOG_DEBUG(TEXT("UpdateCacheForComponent: %d -> %s"), 
-		(int32)ComponentID, 
-		NewSprite.IsNull() ? TEXT("NULL") : *NewSprite.ToString());
+	// УПРОЩЕННАЯ ВЕРСЯ: Просто обновляем кэш. Без "умных" проверок.
+	// Команда "UpdateCache" должна всегда выполняться.
+	SetCachedSprite(ComponentID, NewSprite);
+	VN_LOG_DEBUG(TEXT("UpdateCacheForComponent: New base sprite cached for %d -> %s"), 
+		(int32)ComponentID, NewSprite.IsNull() ? TEXT("NULL") : *NewSprite.ToString());
 
-	// Проверяем, не является ли текущий спрайт частью активной анимации
-	if (IdleAnimationManager && IsComponentInActiveIdleAnimation(ComponentID))
+	// Уведомляем IdleManager, чтобы он обновил свое внутреннее состояние.
+	if (IdleAnimationManager)
 	{
-		VN_LOG_DEBUG(TEXT("UpdateCacheForComponent: Component %d is in active idle animation, updating cache directly"), (int32)ComponentID);
-		
-		// Если компонент участвует в idle анимации, обновляем кэш напрямую
-		SetCachedSprite(ComponentID, NewSprite);
-		
-		// Дополнительно обновляем состояние в IdleAnimationManager
-		if (IdleAnimationManager)
-		{
-			IdleAnimationManager->HandleExternalSpriteChange(ComponentID, NewSprite);
-		}
-	}
-	else
-	{
-		VN_LOG_DEBUG(TEXT("UpdateCacheForComponent: Component %d not in active animation, normal cache update"), (int32)ComponentID);
-		SetCachedSprite(ComponentID, NewSprite);
+		IdleAnimationManager->HandleExternalSpriteChange(ComponentID, NewSprite);
 	}
 }
 

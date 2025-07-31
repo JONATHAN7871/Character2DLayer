@@ -217,18 +217,7 @@ void UVNCharacterIdleAnimationManager::SetTalkEnabled(bool bEnable)
     
     if (!bEnable && IdleAnimationsConfig.TalkConfig.bEnabled)
     {
-        AVNCharacter* Character = GetVNCharacterOwner();
-        if (Character && Character->Mouth_Sprite)
-        {
-            // ИСПРАВЛЕНО: Используем кэширование VNCharacter напрямую
-            UPaperSprite* CurrentSprite = Character->Mouth_Sprite->GetSprite();
-            if (CurrentSprite && !IsCurrentSpritePartOfTalkAnimation(CurrentSprite))
-            {
-                Character->SetCachedSprite(E_VN_ComponentID_Sprite::Mouth, CurrentSprite);
-                VN_LOG_DEBUG(TEXT("SetTalkEnabled: Updated mouth cache before stopping"));
-            }
-        }
-        
+        // Эта функция теперь просто и надежно сбрасывает состояние.
         StopTalkAnimation();
     }
     
