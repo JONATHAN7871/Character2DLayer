@@ -11,9 +11,6 @@
 
 AVNCharacter::AVNCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
-	PrimaryActorTick.bStartWithTickEnabled = false;
-
 	CreateComponents();
 	SetupComponentHierarchy();
 
@@ -23,8 +20,8 @@ AVNCharacter::AVNCharacter()
 	DimColorMultiplier = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
 
 	// Настройка Tick для поддержки движения (по умолчанию выключен)
-	PrimaryActorTick.bCanEverTick = false;
-	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
 	PrimaryActorTick.TickGroup = TG_PrePhysics;
 
 	// Инициализация переменных движения

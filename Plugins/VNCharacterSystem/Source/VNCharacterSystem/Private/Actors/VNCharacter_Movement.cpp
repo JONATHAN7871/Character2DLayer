@@ -1,3 +1,5 @@
+// VNCharacter_Movement.cpp - ИСПРАВЛЕННАЯ версия
+
 #include "Actors/VNCharacter.h"
 #include "AnimInstance/VNCharacterAnimInstance.h"
 #include "VNCharacterSystemModule.h"
@@ -79,78 +81,139 @@ void AVNCharacter::SetVNAnimInstanceForAllComponents(TSubclassOf<UVNCharacterAni
 }
 
 // =====================================================
-// СИСТЕМА ПЕРЕМЕЩЕНИЯ И МАСШТАБИРОВАНИЯ
+// СИСТЕМА ПЕРЕМЕЩЕНИЯ И МАСШТАБИРОВАНИЯ - ИСПРАВЛЕННАЯ
 // =====================================================
 
 void AVNCharacter::MoveTo(bool bTeleport, FVector NewLocation, bool bApplyScale, FVector NewScale, float Duration)
 {
-    // Останавливаем текущее движение если есть
-    if (bIsMoving)
-    {
-        StopMovement();
-    }
-
+    // ИСПОЛЬЗУЕМ Warning/Error вместо Fatal!
+    UE_LOG(LogTemp, Error, TEXT("=== MOVETO FUNCTION CALLED ==="));
+    UE_LOG(LogTemp, Warning, TEXT("MoveTo Parameters:"));
+    UE_LOG(LogTemp, Warning, TEXT("  bTeleport: %s"), bTeleport ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  NewLocation: %s"), *NewLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("  bApplyScale: %s"), bApplyScale ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  NewScale: %s"), *NewScale.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("  Duration: %.3f"), Duration);
+    
+    // Проверяем состояние актора
+    UE_LOG(LogTemp, Warning, TEXT("Actor state:"));
+    UE_LOG(LogTemp, Warning, TEXT("  Actor Name: %s"), *GetName());
+    UE_LOG(LogTemp, Warning, TEXT("  Current Location: %s"), *GetActorLocation().ToString());
+    UE_LOG(LogTemp, Warning, TEXT("  IsValid: %s"), IsValid(this) ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  IsBeingDestroyed: %s"), IsActorBeingDestroyed() ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  World: %s"), GetWorld() ? TEXT("Valid") : TEXT("NULL"));
+    
+    // Проверяем текущее состояние движения
+    UE_LOG(LogTemp, Warning, TEXT("Movement state:"));
+    UE_LOG(LogTemp, Warning, TEXT("  bIsMoving: %s"), bIsMoving ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  CanEverTick: %s"), PrimaryActorTick.bCanEverTick ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  IsTickEnabled: %s"), IsActorTickEnabled() ? TEXT("true") : TEXT("false"));
+    
+    // Если это телепорт - делаем его сразу
     if (bTeleport)
     {
-        // Мгновенное перемещение
+        UE_LOG(LogTemp, Warning, TEXT("EXECUTING TELEPORT"));
+        FVector OldLocation = GetActorLocation();
         SetActorLocation(NewLocation);
+        FVector ActualNewLocation = GetActorLocation();
+        
+        UE_LOG(LogTemp, Warning, TEXT("Teleport: %s -> %s (actual: %s)"), 
+            *OldLocation.ToString(), *NewLocation.ToString(), *ActualNewLocation.ToString());
         
         if (bApplyScale)
         {
             SetActorScale3D(NewScale);
+            UE_LOG(LogTemp, Warning, TEXT("Scale applied: %s"), *NewScale.ToString());
         }
         
-        VN_LOG_DEBUG(TEXT("MoveTo: Teleported to %s%s"), 
-            *NewLocation.ToString(), 
-            bApplyScale ? *FString::Printf(TEXT(" with scale %s"), *NewScale.ToString()) : TEXT(""));
+        OnMovementStarted.Broadcast();
+        OnMovementFinished.Broadcast();
+        UE_LOG(LogTemp, Warning, TEXT("TELEPORT COMPLETED"));
+        return;
+    }
+    
+    // Для плавного движения
+    UE_LOG(LogTemp, Warning, TEXT("SETTING UP SMOOTH MOVEMENT"));
+    
+    // Останавливаем текущее движение
+    if (bIsMoving)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Stopping current movement"));
+        bIsMoving = false;
+        bShouldInterpolateScale = false;
+    }
+    
+    // Проверяем длительность
+    if (Duration <= 0.0f)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid Duration %.3f, setting to 1.0f"), Duration);
+        Duration = 1.0f;
+    }
+    
+    // Проверяем мир
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        UE_LOG(LogTemp, Error, TEXT("CRITICAL ERROR: GetWorld() returned NULL!"));
+        return;
+    }
+    
+    // Устанавливаем параметры движения
+    StartLocation = GetActorLocation();
+    TargetLocation = NewLocation;
+    MovementStartTime = World->GetTimeSeconds();
+    MovementDuration = Duration;
+    
+    UE_LOG(LogTemp, Warning, TEXT("Movement parameters set:"));
+    UE_LOG(LogTemp, Warning, TEXT("  StartLocation: %s"), *StartLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("  TargetLocation: %s"), *TargetLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("  StartTime: %.3f"), MovementStartTime);
+    UE_LOG(LogTemp, Warning, TEXT("  Duration: %.3f"), MovementDuration);
+    
+    if (bApplyScale)
+    {
+        StartScale = GetActorScale3D();
+        TargetScale = NewScale;
+        bShouldInterpolateScale = true;
+        UE_LOG(LogTemp, Warning, TEXT("Scale interpolation: %s -> %s"), *StartScale.ToString(), *NewScale.ToString());
     }
     else
     {
-        // Интерполированное перемещение
-        StartLocation = GetActorLocation();
-        TargetLocation = NewLocation;
-        
-        if (bApplyScale)
-        {
-            StartScale = GetActorScale3D();
-            TargetScale = NewScale;
-            bShouldInterpolateScale = true;
-        }
-        else
-        {
-            bShouldInterpolateScale = false;
-        }
-        
-        MovementStartTime = GetWorld()->GetTimeSeconds();
-        MovementDuration = FMath::Max(Duration, 0.01f); // Минимум 0.01 секунды
-        bIsMoving = true;
-        
-        // Включаем Tick для обновления движения
-        PrimaryActorTick.bCanEverTick = true;
-        PrimaryActorTick.bStartWithTickEnabled = true;
-        
-        OnMovementStarted.Broadcast();
-        
-        VN_LOG_DEBUG(TEXT("MoveTo: Started interpolated movement to %s%s over %.2f seconds"), 
-            *NewLocation.ToString(), 
-            bApplyScale ? *FString::Printf(TEXT(" with scale %s"), *NewScale.ToString()) : TEXT(""),
-            Duration);
+        bShouldInterpolateScale = false;
+        UE_LOG(LogTemp, Warning, TEXT("No scale interpolation"));
     }
+    
+    // КРИТИЧЕСКИ ВАЖНО: включаем движение и тик
+    bIsMoving = true;
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = true;
+    SetActorTickEnabled(true);
+    
+    UE_LOG(LogTemp, Warning, TEXT("Movement flags set:"));
+    UE_LOG(LogTemp, Warning, TEXT("  bIsMoving: %s"), bIsMoving ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  CanEverTick: %s"), PrimaryActorTick.bCanEverTick ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Warning, TEXT("  IsTickEnabled: %s"), IsActorTickEnabled() ? TEXT("true") : TEXT("false"));
+    
+    // Отправляем событие
+    OnMovementStarted.Broadcast();
+    UE_LOG(LogTemp, Warning, TEXT("OnMovementStarted broadcasted"));
+    
+    UE_LOG(LogTemp, Error, TEXT("=== MOVETO SETUP COMPLETE ==="));
 }
 
 void AVNCharacter::MoveToActor(AActor* TargetActor, bool bTeleport, FVector LocationOffset, bool bApplyScale, FVector NewScale, float Duration)
 {
     if (!TargetActor)
     {
-        VN_LOG_WARNING(TEXT("MoveToActor: TargetActor is null"));
+        UE_LOG(LogTemp, Warning, TEXT("MoveToActor: TargetActor is null"));
         return;
     }
 
     FVector FinalTargetLocation = TargetActor->GetActorLocation() + LocationOffset;
-    MoveTo(bTeleport, FinalTargetLocation, bApplyScale, NewScale, Duration);
+    UE_LOG(LogTemp, Warning, TEXT("MoveToActor: Moving to actor %s at location %s"), 
+        *TargetActor->GetName(), *FinalTargetLocation.ToString());
     
-    VN_LOG_DEBUG(TEXT("MoveToActor: Moving to actor %s at location %s"), 
-        *TargetActor->GetName(), *TargetLocation.ToString());
+    MoveTo(bTeleport, FinalTargetLocation, bApplyScale, NewScale, Duration);
 }
 
 void AVNCharacter::StopMovement()
@@ -160,19 +223,22 @@ void AVNCharacter::StopMovement()
         return;
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("StopMovement: Stopping movement"));
+    
     bIsMoving = false;
     bShouldInterpolateScale = false;
     
-    // Можем отключить Tick если не нужны другие обновления
-    if (!IsAnimating())
+    // Проверяем, нужно ли отключить Tick
+    if (!IsAnimating()) // Если нет других активных процессов
     {
         PrimaryActorTick.bCanEverTick = false;
         PrimaryActorTick.bStartWithTickEnabled = false;
+        SetActorTickEnabled(false);
+        UE_LOG(LogTemp, Log, TEXT("StopMovement: Tick disabled"));
     }
     
     OnMovementFinished.Broadcast();
-    
-    VN_LOG_DEBUG(TEXT("StopMovement: Movement stopped"));
+    UE_LOG(LogTemp, Warning, TEXT("StopMovement: Movement stopped"));
 }
 
 bool AVNCharacter::IsMoving() const
@@ -192,21 +258,68 @@ float AVNCharacter::GetMovementProgress() const
         return 1.0f;
     }
 
-    float ElapsedTime = GetWorld()->GetTimeSeconds() - MovementStartTime;
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return -1.0f;
+    }
+
+    float ElapsedTime = World->GetTimeSeconds() - MovementStartTime;
     return FMath::Clamp(ElapsedTime / MovementDuration, 0.0f, 1.0f);
 }
 
+
 void AVNCharacter::UpdateMovement(float DeltaTime)
 {
+    UE_LOG(LogTemp, Error, TEXT("=== UpdateMovement CALLED ==="));
+    UE_LOG(LogTemp, Error, TEXT("UpdateMovement: bIsMoving=%s"), bIsMoving ? TEXT("true") : TEXT("false"));
+    
     if (!bIsMoving)
     {
+        UE_LOG(LogTemp, Error, TEXT("UpdateMovement: bIsMoving is false, returning"));
         return;
     }
 
-    float Progress = GetMovementProgress();
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UpdateMovement: World is NULL"));
+        StopMovement();
+        return;
+    }
+
+    float CurrentTime = World->GetTimeSeconds();
+    float ElapsedTime = CurrentTime - MovementStartTime;
+    float Progress = FMath::Clamp(ElapsedTime / MovementDuration, 0.0f, 1.0f);
+    
+    UE_LOG(LogTemp, Error, TEXT("UpdateMovement: CurrentTime=%.3f, StartTime=%.3f, ElapsedTime=%.3f"), 
+        CurrentTime, MovementStartTime, ElapsedTime);
+    UE_LOG(LogTemp, Error, TEXT("UpdateMovement: Duration=%.3f, Progress=%.3f"), MovementDuration, Progress);
     
     // Применяем интерполяцию
-    ApplyMovementInterpolation(Progress);
+    float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, Progress);
+    FVector CurrentLocation = FMath::Lerp(StartLocation, TargetLocation, SmoothAlpha);
+    
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: SmoothAlpha=%.3f"), SmoothAlpha);
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: StartLocation=%s"), *StartLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: TargetLocation=%s"), *TargetLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: CurrentLocation=%s"), *CurrentLocation.ToString());
+    
+    // ВАЖНО: Проверяем, что локация действительно устанавливается
+    FVector BeforeLocation = GetActorLocation();
+    SetActorLocation(CurrentLocation);
+    FVector AfterLocation = GetActorLocation();
+    
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: Location BEFORE SetActorLocation: %s"), *BeforeLocation.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("UpdateMovement: Location AFTER SetActorLocation: %s"), *AfterLocation.ToString());
+    
+    // Интерполируем масштаб если нужно
+    if (bShouldInterpolateScale)
+    {
+        FVector CurrentScale = FMath::Lerp(StartScale, TargetScale, SmoothAlpha);
+        SetActorScale3D(CurrentScale);
+        UE_LOG(LogTemp, Log, TEXT("UpdateMovement: Scale applied: %s"), *CurrentScale.ToString());
+    }
     
     // Уведомляем о прогрессе
     OnMovementProgress.Broadcast(Progress);
@@ -214,7 +327,12 @@ void AVNCharacter::UpdateMovement(float DeltaTime)
     // Проверяем завершение
     if (Progress >= 1.0f)
     {
+        UE_LOG(LogTemp, Error, TEXT("UpdateMovement: Movement completed (Progress=%.3f), calling FinishMovement"), Progress);
         FinishMovement();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("UpdateMovement: Movement continuing (Progress=%.3f)"), Progress);
     }
 }
 
@@ -222,35 +340,45 @@ void AVNCharacter::FinishMovement()
 {
     if (!bIsMoving)
     {
-        return;
+        return; // Уже завершено
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("FinishMovement: Setting final location to %s"), *TargetLocation.ToString());
+    
     // Устанавливаем финальные значения точно
     SetActorLocation(TargetLocation);
     
     if (bShouldInterpolateScale)
     {
         SetActorScale3D(TargetScale);
+        UE_LOG(LogTemp, Warning, TEXT("FinishMovement: Set final scale to %s"), *TargetScale.ToString());
     }
     
     // Завершаем движение
-    StopMovement();
+    bIsMoving = false;
+    bShouldInterpolateScale = false;
     
-    VN_LOG_DEBUG(TEXT("FinishMovement: Movement completed at %s%s"), 
-        *TargetLocation.ToString(),
-        bShouldInterpolateScale ? *FString::Printf(TEXT(" with scale %s"), *TargetScale.ToString()) : TEXT(""));
+    // Проверяем, нужно ли отключить Tick
+    if (!IsAnimating()) // Если нет других активных процессов
+    {
+        PrimaryActorTick.bCanEverTick = false;
+        PrimaryActorTick.bStartWithTickEnabled = false;
+        SetActorTickEnabled(false);
+        UE_LOG(LogTemp, Log, TEXT("FinishMovement: Tick disabled"));
+    }
+    
+    OnMovementFinished.Broadcast();
+    UE_LOG(LogTemp, Warning, TEXT("FinishMovement: Movement finished, OnMovementFinished broadcasted"));
 }
 
 void AVNCharacter::ApplyMovementInterpolation(float Alpha)
 {
-    // Применяем сглаживание (ease in-out)
+    // Эта функция больше не используется, логика перенесена в UpdateMovement
+    // Оставляем для совместимости
     float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);
-    
-    // Интерполируем позицию
     FVector CurrentLocation = FMath::Lerp(StartLocation, TargetLocation, SmoothAlpha);
     SetActorLocation(CurrentLocation);
     
-    // Интерполируем масштаб если нужно
     if (bShouldInterpolateScale)
     {
         FVector CurrentScale = FMath::Lerp(StartScale, TargetScale, SmoothAlpha);
@@ -259,24 +387,38 @@ void AVNCharacter::ApplyMovementInterpolation(float Alpha)
 }
 
 // =====================================================
-// ОБНОВЛЕНИЕ TICK ДЛЯ ПОДДЕРЖКИ ДВИЖЕНИЯ
+// ОБНОВЛЕНИЕ TICK ДЛЯ ПОДДЕРЖКИ ДВИЖЕНИЯ - ИСПРАВЛЕННАЯ
 // =====================================================
 
-// Добавить в существующий метод Tick или создать новый если его нет:
 void AVNCharacter::Tick(float DeltaTime)
 {
-    Super::Tick(DeltaTime);
+    // ВСЕГДА логируем первые несколько вызовов, чтобы убедиться что Tick работает
+    static int32 TickCallCount = 0;
+    TickCallCount++;
     
-    // Обновляем движение
-    if (bIsMoving)
+    if (TickCallCount <= 5) // Первые 5 вызовов
     {
-        UpdateMovement(DeltaTime);
+        UE_LOG(LogTemp, Error, TEXT("=== TICK CALLED #%d ==="), TickCallCount);
+        UE_LOG(LogTemp, Error, TEXT("Tick: DeltaTime=%.4f"), DeltaTime);
+        UE_LOG(LogTemp, Error, TEXT("Tick: bIsMoving=%s"), bIsMoving ? TEXT("true") : TEXT("false"));
+        UE_LOG(LogTemp, Error, TEXT("Tick: IsAnimating=%s"), IsAnimating() ? TEXT("true") : TEXT("false"));
     }
     
-    // Если нет активных процессов, отключаем Tick
-    if (!bIsMoving && !IsAnimating())
+    // ОБЯЗАТЕЛЬНО вызываем Super::Tick
+    Super::Tick(DeltaTime);
+    
+    // Логируем каждый раз когда движемся
+    if (bIsMoving)
     {
-        PrimaryActorTick.bCanEverTick = false;
-        PrimaryActorTick.bStartWithTickEnabled = false;
+        UE_LOG(LogTemp, Error, TEXT("TICK: Movement active, calling UpdateMovement"));
+        UpdateMovement(DeltaTime);
+        
+        // Дополнительная информация о прогрессе
+        float Progress = GetMovementProgress();
+        UE_LOG(LogTemp, Warning, TEXT("TICK: Movement Progress=%.3f"), Progress);
+    }
+    else if (TickCallCount <= 10) // Логируем первые 10 тиков даже если не движемся
+    {
+        UE_LOG(LogTemp, Log, TEXT("Tick #%d: Not moving"), TickCallCount);
     }
 }
