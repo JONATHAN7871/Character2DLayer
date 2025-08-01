@@ -867,4 +867,22 @@ private:
     /** Получить глобальный масштаб для Skeletal Mesh */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Global Transform")
     float GetGlobalSkeletalScale() const { return GlobalSkeletalScale; }
+
+protected:
+	/** Является ли персонаж активным спикером */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Settings") 
+	bool bIsSpeaker = false;
+
+	// Добавить в секцию public методов:
+
+public:
+	// === УПРАВЛЕНИЕ СПИКЕРОМ ===
+    
+	/** Установить, является ли персонаж спикером */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Speaker") 
+	void SetSpeaker(bool bInSpeaker) { bIsSpeaker = bInSpeaker; }
+
+	/** Проверить, является ли персонаж спикером */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "VN Character | Speaker") 
+	bool IsSpeaker() const { return bIsSpeaker; }
 };
