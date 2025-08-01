@@ -68,6 +68,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVNCharacterMovementStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVNCharacterMovementFinished);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVNCharacterMovementProgress, float, Progress);
 
+// Добавить событие для уведомления об изменении имени
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVNCharacterNameChanged, const FString&, OldName, const FString&, NewName);
+
+
 /**
  * Модульная система 2D layered персонажей для визуальных новелл
  * 
@@ -353,6 +357,11 @@ protected:
 	// =====================================================
 
 public:
+
+	/** Изменить имя персонажа с уведомлением */
+	UFUNCTION(BlueprintCallable, Category = "VN Character | Status")
+	void ChangeCharacterName(const FString& NewName);
+	
     // === НОВАЯ ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ ===
     
 	/**
@@ -673,6 +682,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "VN Character Events")
 	FOnVNCharacterMovementProgress OnMovementProgress;
 
+	/** Событие изменения имени персонажа */
+	UPROPERTY(BlueprintAssignable, Category = "VN Character Events") 
+	FOnVNCharacterNameChanged OnCharacterNameChanged;
+	
 	// =====================================================
 	// C++ ТОЛЬКО МЕТОДЫ (НЕ ДОСТУПНЫ В BLUEPRINT)
 	// =====================================================

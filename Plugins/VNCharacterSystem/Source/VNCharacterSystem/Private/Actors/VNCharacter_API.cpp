@@ -245,3 +245,26 @@ FLinearColor AVNCharacter::GetBaseColorForComponent(USceneComponent* Component) 
 	// Возвращаем кэшированный базовый цвет
 	return GetCachedBaseColor(Component);
 }
+
+void AVNCharacter::ChangeCharacterName(const FString& NewName)
+{
+	if (NewName.IsEmpty())
+	{
+		VN_LOG_WARNING(TEXT("ChangeCharacterName: Cannot set empty character name"));
+		return;
+	}
+
+	if (CharacterName == NewName)
+	{
+		VN_LOG_DEBUG(TEXT("ChangeCharacterName: Name is already '%s', no change needed"), *NewName);
+		return;
+	}
+
+	FString OldName = CharacterName;
+	CharacterName = NewName;
+
+	VN_LOG_DEBUG(TEXT("ChangeCharacterName: Changed from '%s' to '%s'"), *OldName, *NewName);
+
+	// Уведомляем о смене имени
+	OnCharacterNameChanged.Broadcast(OldName, NewName);
+}
